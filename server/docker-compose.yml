@@ -1,0 +1,23 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: pgvector-db
+    restart: always
+    environment:
+      # ดึงค่าจากไฟล์ .env มาใช้งาน
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      # ใช้ตัวแปรในคำสั่ง healthcheck ด้วยเพื่อความ Consistency
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgvector_data:
