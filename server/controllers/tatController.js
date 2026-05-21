@@ -12,24 +12,6 @@ const tatHeaders = {
     'Accept-Language': 'th'
 };
 
-/**
- * ฟังก์ชัน fetch พร้อม timeout
- * @param {string} url - URL ที่ต้องการเรียก
- * @param {object} options - ตัวเลือกสำหรับ fetch
- * @param {number} timeoutMs - เวลา timeout (มิลลิวินาที)
- * @returns {Response} - ผลลัพธ์จาก fetch
- */
-async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        const response = await fetch(url, { ...options, signal: controller.signal });
-        return response;
-    } finally {
-        clearTimeout(timer);
-    }
-}
-
  // ค้นหาสถานที่จาก TAT API
  // GET /api/v2/places
 const searchPlaces = async (req, res) => {
@@ -44,7 +26,7 @@ const searchPlaces = async (req, res) => {
         if (province) params.set('provinceName', province);
 
         const url = `${TAT_API_BASE}/places?${params}`;
-        const response = await fetchWithTimeout(url, { headers: tatHeaders });
+        const response = await fetch(url, { headers: tatHeaders });
         const data = await response.json();
 
         res.json(data);
@@ -59,7 +41,7 @@ const searchPlaces = async (req, res) => {
 const getPlaceById = async (req, res) => {
     try {
         const url = `${TAT_API_BASE}/places/${req.params.id}`;
-        const response = await fetchWithTimeout(url, { headers: tatHeaders });
+        const response = await fetch(url, { headers: tatHeaders });
         const data = await response.json();
 
         res.json(data);
@@ -73,10 +55,25 @@ const getPlaceById = async (req, res) => {
 // GET /api/v2/events
 const getEvents = async (req, res) => {
     try {
-
+        const url = `${TAT_API_BASE}/events`;
+        const response = await fetch(url, { headers: tatHeaders });
+        const data = await response.json();
+        res.json(data);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงข้อมูล TAT API (Events):', err);
         res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน tatController - getEvents" });
+    }
+}
+
+const getEventById = async (req, res) => {
+    try {
+        const url = `${TAT_API_BASE}/events/${req.params.id}`;
+        const response = await fetch(url, { headers: tatHeaders });
+        const data = await response.json();
+        res.json(data);
+    } catch (err) {
+        console.error('เกิดข้อผิดพลาดในการดึงข้อมูล TAT API (รายละเอียด Event):', err);
+        res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน tatController - getEventById" });       
     }
 }
 
