@@ -3,9 +3,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { query } = require('../db');
+const { pool, query } = require('../db');
 
-const insertImages = async (destId, images) => {
+const insertImages = async (destId, images, dbClient = { query }) => {
     const imageList = Array.isArray(images) ? images : [];
     const validUrls = imageList.filter(Boolean);
 
@@ -20,7 +20,7 @@ const insertImages = async (destId, images) => {
         values.push(destId, url);
     });
 
-    await query(
+    await dbClient.query(
         `INSERT INTO destination_images (destination_id, image_url) VALUES ${placeholders.join(', ')}`,
         values
     );
@@ -28,25 +28,30 @@ const insertImages = async (destId, images) => {
 
 // ลบไฟล์จริงจาก /uploads (เฉพาะไฟล์ที่อยู่ใน /uploads เท่านั้น)
 const deleteUploadedFiles = (imagePaths) => {
-    console.log('[deleteUploadedFiles] paths:', imagePaths);
     for (const imgPath of imagePaths) {
         if (!imgPath) continue;
-        // imgPath เช่น /uploads/filename.jpg
         if (!imgPath.startsWith('/uploads/')) {
-            console.log('[deleteUploadedFiles] skip (not /uploads/):', imgPath);
             continue;
         }
         const filename = path.basename(imgPath);
         const fullPath = path.join(__dirname, '..', 'uploads', filename);
-        console.log('[deleteUploadedFiles] deleting:', fullPath);
         fs.unlink(fullPath, (err) => {
-            if (err) {
+            if (err && err.code !== 'ENOENT') {
                 console.error('[deleteUploadedFiles] error:', fullPath, err.message);
-            } else {
-                console.log('[deleteUploadedFiles] deleted:', fullPath);
             }
         });
     }
+};
+
+const normalizeImageUrls = (images) => {
+    if (!Array.isArray(images)) return [];
+
+    return [...new Set(images.filter((image) => typeof image === 'string' && image.trim()).map((image) => image.trim()))];
+};
+
+const getRemovedImages = (currentImages, nextImages) => {
+    const nextSet = new Set(nextImages);
+    return currentImages.filter((image) => image && !nextSet.has(image));
 };
 
 /**
@@ -125,6 +130,9 @@ const getDestinationById = async (req, res) => {
  * POST /api/destinations
  */
 const createDestination = async (req, res) => {
+    const client = await pool.connect();
+    let transactionStarted = false;
+
     try {
         const { name } = req.body;
 
@@ -143,7 +151,10 @@ const createDestination = async (req, res) => {
         const lat = latitude !== '' && latitude != null ? parseFloat(latitude) : null;
         const lng = longitude !== '' && longitude != null ? parseFloat(longitude) : null;
 
-        const { rows } = await query(
+        await client.query('BEGIN');
+        transactionStarted = true;
+
+        const { rows } = await client.query(
             `INSERT INTO destinations (name, province, description, latitude, longitude, opening_time, closing_time, status, source, image_url)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'admin', $9)
              RETURNING id`,
@@ -161,11 +172,21 @@ const createDestination = async (req, res) => {
         );
 
         const destId = rows[0].id;
-        await insertImages(destId, images);
+        await insertImages(destId, images, client);
+
+        await client.query('COMMIT');
+        transactionStarted = false;
+
         res.status(201).json({ id: destId, message: 'เพิ่มสถานที่สำเร็จ' });
     } catch (err) {
+        if (transactionStarted) {
+            await client.query('ROLLBACK');
+        }
+
         console.error('เกิดข้อผิดพลาดในการเพิ่มสถานที่:', err);
         res.status(400).json({ message: "เกิดข้อผิดพลาดภายใน destinationController - createDestination" });
+    } finally {
+        client.release();
     }
 };
 
@@ -174,6 +195,9 @@ const createDestination = async (req, res) => {
  * PUT /api/destinations/:id
  */
 const updateDestination = async (req, res) => {
+    const client = await pool.connect();
+    let transactionStarted = false;
+
     try {
         const {
             name, province, description,
@@ -185,20 +209,26 @@ const updateDestination = async (req, res) => {
         const destId = parseInt(req.params.id, 10);
         const lat = latitude !== '' && latitude != null ? parseFloat(latitude) : null;
         const lng = longitude !== '' && longitude != null ? parseFloat(longitude) : null;
+        const nextImages = normalizeImageUrls(images);
 
-        const { rows: existingRows } = await query(
-            'SELECT id FROM destinations WHERE id = $1 AND source = $2 LIMIT 1',
+        await client.query('BEGIN');
+        transactionStarted = true;
+
+        const { rows: existingRows } = await client.query(
+            'SELECT id, image_url FROM destinations WHERE id = $1 AND source = $2 LIMIT 1',
             [destId, 'admin']
         );
 
         if (existingRows.length === 0) {
+            await client.query('ROLLBACK');
+            transactionStarted = false;
             return res.status(404).json({ message: 'ไม่พบสถานที่ หรือไม่ใช่ข้อมูลของ Admin' });
         }
 
-        await query(
+        await client.query(
             `UPDATE destinations
              SET name = $1, province = $2, description = $3, latitude = $4, longitude = $5,
-                 opening_time = $6, closing_time = $7, status = $8, image_url = $9, updated_at = NOW()
+                  opening_time = $6, closing_time = $7, status = $8, image_url = $9, updated_at = NOW()
              WHERE id = $10`,
             [
                 name,
@@ -214,22 +244,51 @@ const updateDestination = async (req, res) => {
             ]
         );
 
-        const { rows: oldImgs } = await query(
+        const { rows: oldImgs } = await client.query(
             'SELECT image_url FROM destination_images WHERE destination_id = $1',
             [destId]
         );
-        const removedImagePaths = oldImgs.map((row) => row.image_url).filter(Boolean);
+        const currentGalleryImages = oldImgs.map((row) => row.image_url).filter(Boolean);
 
-        await query('DELETE FROM destination_images WHERE destination_id = $1', [destId]);
-        await insertImages(destId, images);
+        await client.query('DELETE FROM destination_images WHERE destination_id = $1', [destId]);
 
-        // ลบไฟล์รูปเก่าที่ถูกแทนที่ออกจาก /uploads
+        if (nextImages.length > 0) {
+            const values = [];
+            const placeholders = [];
+
+            nextImages.forEach((url, i) => {
+                const offset = i * 2;
+                placeholders.push(`($${offset + 1}, $${offset + 2})`);
+                values.push(destId, url);
+            });
+
+            await client.query(
+                `INSERT INTO destination_images (destination_id, image_url) VALUES ${placeholders.join(', ')}`,
+                values
+            );
+        }
+
+        await client.query('COMMIT');
+        transactionStarted = false;
+
+        const removedImagePaths = getRemovedImages(currentGalleryImages, nextImages);
+        const previousMainImage = existingRows[0].image_url;
+
+        if (previousMainImage && previousMainImage !== image_url && !nextImages.includes(previousMainImage)) {
+            removedImagePaths.push(previousMainImage);
+        }
+
         deleteUploadedFiles(removedImagePaths);
 
         res.json({ message: 'อัปเดตสถานที่สำเร็จ' });
     } catch (err) {
+        if (transactionStarted) {
+            await client.query('ROLLBACK');
+        }
         console.error('เกิดข้อผิดพลาดในการอัปเดตสถานที่:', err);
         res.status(400).json({ message: "เกิดข้อผิดพลาดภายใน destinationController - updateDestination" });
+    } finally {
+        client.release();
     }
 };
 

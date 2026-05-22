@@ -1,6 +1,5 @@
 const { Pool } = require('pg');
-// โหลดตัวแปรสภาพแวดล้อมจากไฟล์ .env ที่อยู่ในโฟลเดอร์หลักของโปรเจค
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+require('./config/env');
 
 // ตั้งค่าการเชื่อมต่อ PostgreSQL
 const pool = new Pool({

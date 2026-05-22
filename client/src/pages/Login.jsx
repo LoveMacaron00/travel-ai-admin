@@ -18,6 +18,7 @@ const Login = ({ onLogin }) => {
             const data = res.data;
 
             localStorage.setItem('admin', JSON.stringify(data.admin));
+            localStorage.setItem('adminToken', data.token);
             await showSuccessAlert('เข้าสู่ระบบสำเร็จ', 'ยินดีต้อนรับ');
             onLogin(data.admin);
         } catch (err) {

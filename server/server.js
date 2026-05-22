@@ -1,11 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
-const dotenv = require('dotenv');
 const path = require('path');
 const morgan = require('morgan');
+require('./config/env');
+const { requireAdminAuth } = require('./middleware/adminAuth');
 
-dotenv.config();
 const app = express();
 
 // ตั้งค่า Middleware
@@ -29,16 +29,28 @@ const userRoutes = require('./routes/userRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
 
 app.use('/api/auth', authRoutes);            // เส้นทางการยืนยันตัวตน
-app.use('/api/destinations', destinationRoutes); // เส้นทาง CRUD สถานที่
-app.use('/api/analytics', analyticsRoutes);  // เส้นทางสถิติภาพรวม
-app.use('/api/upload', uploadRoutes);        // เส้นทางอัปโหลดรูปภาพ
-app.use('/api/v2', tatRoutes);               // เส้นทาง TAT API ภายนอก
+app.use('/api/destinations', requireAdminAuth, destinationRoutes); // เส้นทาง CRUD สถานที่
+app.use('/api/analytics', requireAdminAuth, analyticsRoutes);  // เส้นทางสถิติภาพรวม
+app.use('/api/upload', requireAdminAuth, uploadRoutes);        // เส้นทางอัปโหลดรูปภาพ
+app.use('/api/v2', requireAdminAuth, tatRoutes);               // เส้นทาง TAT API ภายนอก
 app.use('/api/users', userRoutes);           // เส้นทางจัดการผู้ใช้
-app.use('/api/feedback', feedbackRoutes);   // เส้นทางจัดการ feedback
+app.use('/api/feedback', requireAdminAuth, feedbackRoutes);   // เส้นทางจัดการ feedback
 
 // ตรวจสอบสถานะ API
 app.get('/', (req, res) => {
     res.send('Smart Travel Admin API กำลังทำงาน');
+});
+
+app.use((err, req, res, next) => {
+    if (err && err.name === 'MulterError') {
+        return res.status(400).json({ message: err.message });
+    }
+
+    if (err) {
+        return res.status(400).json({ message: err.message || 'คำขอไม่ถูกต้อง' });
+    }
+
+    next();
 });
 
 // เริ่มต้น Server

@@ -124,10 +124,21 @@ function App() {
 
     useEffect(() => {
         const stored = localStorage.getItem('admin');
+        const token = localStorage.getItem('adminToken');
+
+        if (!stored || !token) {
+            localStorage.removeItem('admin');
+            localStorage.removeItem('adminToken');
+            return;
+        }
+
         if (stored) {
             try {
                 setAdmin(JSON.parse(stored));
-            } catch {}
+            } catch {
+                localStorage.removeItem('admin');
+                localStorage.removeItem('adminToken');
+            }
         }
     }, []);
 
@@ -147,6 +158,7 @@ function App() {
 
         if (result.isConfirmed) {
             localStorage.removeItem('admin');
+            localStorage.removeItem('adminToken');
             setAdmin(null);
             showSuccessAlert('ออกจากระบบสำเร็จ');
         }

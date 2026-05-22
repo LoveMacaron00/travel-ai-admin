@@ -1,7 +1,7 @@
 // Controller: TAT (Tourism Authority of Thailand)
 // จัดการ logic การเชื่อมต่อกับ TAT API ภายนอก
 
-require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '.env') });
+require('../config/env');
 
 const TAT_API_BASE = 'https://tatdataapi.io/api/v2';
 const TAT_API_KEY = process.env.TATDATAAPI;
@@ -65,6 +65,8 @@ const getEvents = async (req, res) => {
     }
 }
 
+// ดูรายละเอียด event จาก TAT API ตาม ID
+// GET /api/v2/events/:id
 const getEventById = async (req, res) => {
     try {
         const url = `${TAT_API_BASE}/events/${req.params.id}`;
@@ -80,5 +82,7 @@ const getEventById = async (req, res) => {
 
 module.exports = {
     searchPlaces,
-    getPlaceById
+    getPlaceById,
+    getEvents,
+    getEventById
 };
