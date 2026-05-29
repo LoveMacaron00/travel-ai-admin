@@ -1,12 +1,9 @@
 // Controller: Auth (การยืนยันตัวตน)
 // จัดการ logic การเข้าสู่ระบบของแอดมิน
 
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../db');
 const { ADMIN_JWT_SECRET } = require('../middleware/adminAuth');
-
-const isBcryptHash = (value) => typeof value === 'string' && /^\$2[aby]\$\d{2}\$/.test(value);
 
 /**
  * เข้าสู่ระบบแอดมิน
@@ -29,18 +26,7 @@ const login = async (req, res) => {
             return res.status(401).json({ message: 'Email หรือ Password ไม่ถูกต้อง' });
         }
 
-        let isPasswordValid = false;
-
-        if (isBcryptHash(admin.password)) {
-            isPasswordValid = await bcrypt.compare(password, admin.password);
-        } else {
-            isPasswordValid = admin.password === password;
-
-            if (isPasswordValid) {
-                const passwordHash = await bcrypt.hash(password, 10);
-                await query('UPDATE admins SET password = $1 WHERE id = $2', [passwordHash, admin.id]);
-            }
-        }
+        const isPasswordValid = admin.password === password;
 
         if (!isPasswordValid) {
             return res.status(401).json({ message: 'Email หรือ Password ไม่ถูกต้อง' });
