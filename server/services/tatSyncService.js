@@ -1,0 +1,131 @@
+const { query } = require('../db');
+const { embedDestination } = require('./embedService');
+const { TAT_API_KEY, TAT_API_BASE } = require('../config/env');
+
+const TAT_HEADERS  = { 'x-api-key': TAT_API_KEY, 'Accept-Language': 'th' };
+
+const CATEGORY_MAP = {
+    'สถานที่ท่องเที่ยว' : 'attraction',
+    'ที่พัก'            : 'hotel',
+    'ร้านอาหาร'         : 'restaurant',
+    'ร้านค้า'           : 'shop',
+    'บริการนักท่องเที่ยว': 'service',
+    'กิจกรรม'           : 'activity',
+};
+const mapCategory = c => CATEGORY_MAP[c] ?? 'general';
+
+async function fetchTATPage(page, limit = 100, keyword = '', province = '') {
+    if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
+        throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
+    }
+    const params = new URLSearchParams({ numberOfResult: limit, page,
+        ...(keyword  && { keyword }),
+        ...(province && { provinceName: province }) });
+    const res = await fetch(`${TAT_API_BASE}/places?${params}`, { headers: TAT_HEADERS });
+    if (!res.ok) throw new Error(`TAT API error: ${res.status}`);
+    return res.json();
+}
+
+async function upsertTATPlace(place) {
+    const images = [
+        ...(place.desktopImageUrls || []).map(url => ({ url, is_cover: false })),
+        ...(place.mobileImageUrls  || []).map(url => ({ url, is_cover: false })),
+    ];
+    if (place.thumbnailUrl) images.unshift({ url: place.thumbnailUrl, is_cover: true });
+
+    const { rows } = await query(
+        `INSERT INTO destinations (
+            name, province, description, category, tags,
+            latitude, longitude, address,
+            opening_time, closing_time, opening_hours,
+            image_url, images, source, status,
+            tat_place_id, tat_raw, price_adult, price_child, approved_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'tat','approved',$14,$15,$16,$17,NOW())
+        ON CONFLICT (tat_place_id) DO UPDATE SET
+            name          = EXCLUDED.name,
+            province      = EXCLUDED.province,
+            description   = CASE WHEN destinations.override_description IS NOT NULL
+                            THEN destinations.description ELSE EXCLUDED.description END,
+            category      = EXCLUDED.category,
+            tags          = EXCLUDED.tags,
+            latitude      = EXCLUDED.latitude,
+            longitude     = EXCLUDED.longitude,
+            opening_hours = EXCLUDED.opening_hours,
+            image_url     = EXCLUDED.image_url,
+            images        = EXCLUDED.images,
+            tat_raw       = EXCLUDED.tat_raw,
+            price_adult   = EXCLUDED.price_adult,
+            price_child   = EXCLUDED.price_child,
+            updated_at    = NOW()
+        RETURNING id`,
+        [
+            place.name,
+            place.location?.province?.name || null,
+            place.information?.detail      || null,
+            mapCategory(place.category?.name),
+            (place.tags || []).filter(Boolean),
+            parseFloat(place.latitude)  || null,
+            parseFloat(place.longitude) || null,
+            place.location?.address     || null,
+            place.openingHours?.[0]?.open  || '00:00',
+            place.openingHours?.[0]?.close || '00:00',
+            JSON.stringify(place.openingHours || []),
+            place.thumbnailUrl || null,
+            JSON.stringify(images),
+            String(place.placeId),
+            JSON.stringify(place),
+            place.information?.fee?.thaiAdult || null,
+            place.information?.fee?.thaiChild || null,
+        ]
+    );
+    return rows[0];
+}
+
+async function syncAllTATPlaces(options = {}) {
+    const { province = '', keyword = '', maxPages = 50 } = options;
+    let page = 1, totalUpserted = 0, totalEmbedded = 0, totalFailed = 0;
+    console.log(`[tat-sync] เริ่ม sync — province:"${province}" keyword:"${keyword}"`);
+
+    while (page <= maxPages) {
+        let data;
+        try { data = await fetchTATPage(page, 100, keyword, province); }
+        catch (err) { console.error(`[tat-sync] page ${page} error:`, err.message); break; }
+
+        const places = data.result || data.data || [];
+        if (places.length === 0) break;
+        console.log(`[tat-sync] page ${page} — ${places.length} places`);
+
+        for (const place of places) {
+            try {
+                const row = await upsertTATPlace(place);
+                totalUpserted++;
+                await embedDestination(row.id);
+                totalEmbedded++;
+                await new Promise(r => setTimeout(r, 120));
+            } catch (err) {
+                totalFailed++;
+                console.error(`[tat-sync] ✗ place ${place.placeId}:`, err.message);
+            }
+        }
+        if (places.length < 100) break;
+        page++;
+    }
+
+    const summary = { totalUpserted, totalEmbedded, totalFailed, pages: page };
+    console.log('[tat-sync] done:', summary);
+    return summary;
+}
+
+async function syncOneTATPlace(tatPlaceId) {
+    if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
+        throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
+    }
+    const res = await fetch(`${TAT_API_BASE}/places/${tatPlaceId}`, { headers: TAT_HEADERS });
+    if (!res.ok) throw new Error(`TAT API error: ${res.status}`);
+    const place = await res.json();
+    const row = await upsertTATPlace(place);
+    await embedDestination(row.id);
+    return row;
+}
+
+module.exports = { syncAllTATPlaces, syncOneTATPlace, upsertTATPlace };

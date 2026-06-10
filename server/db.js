@@ -1,21 +1,8 @@
 const { Pool } = require('pg');
-require('./config/env');
+const { DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_NAME } = require('./config/env');
 
-// ตั้งค่าการเชื่อมต่อ PostgreSQL
-const pool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASS || '',
-    database: process.env.DB_NAME || 'smarttravel',
-});
+const pool = new Pool({ host: DB_HOST, port: DB_PORT, user: DB_USER, password: DB_PASS, database: DB_NAME });
 
-/**
- * ฟังก์ชันช่วยสำหรับรัน query
- * @param {string} text - SQL query string
- * @param {Array} params - พารามิเตอร์สำหรับ parameterized query
- * @returns {import('pg').QueryResult}
- */
 async function query(text, params) {
     return pool.query(text, params);
 }
