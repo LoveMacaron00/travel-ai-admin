@@ -4,17 +4,17 @@ services:
     container_name: pgvector-db
     restart: always
     environment:
-      # ดึงค่าจากไฟล์ .env มาใช้งาน
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASS}
-      POSTGRES_DB: ${DB_NAME}
+      # ดึงค่าจากไฟล์ .env มาใช้งาน หากไม่มีให้ใช้ค่าเริ่มต้นตามที่กำหนด
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASS:-Weblogin13579}
+      POSTGRES_DB: ${DB_NAME:-smarttravel}
     ports:
-      - "${DB_PORT}:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - pgvector_data:/var/lib/postgresql/data
     healthcheck:
-      # ใช้ตัวแปรในคำสั่ง healthcheck ด้วยเพื่อความ Consistency
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      # ใช้ตัวแปรสภาพแวดล้อมภายในคอนเทนเนอร์เพื่อความ Consistency และถูกต้อง
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
