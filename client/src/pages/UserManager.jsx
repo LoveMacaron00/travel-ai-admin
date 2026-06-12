@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, Shield, MessageSquare, Ban, Check, X } from 'lucide-react';
+import { Users, Shield, MessageSquare, Ban, Check, Search, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
 
 const UserManager = () => {
@@ -7,28 +7,26 @@ const UserManager = () => {
     const [feedbacks, setFeedbacks] = useState([]);
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyText, setReplyText] = useState('');
+    const [isLoading, setIsLoading] = useState(true);
 
-    const fetchUsers = async () => {
+    const fetchData = async () => {
+        setIsLoading(true);
         try {
-            const res = await api.get('/users');
-            setUsers(res.data);
+            const [usersRes, feedbackRes] = await Promise.all([
+                api.get('/users'),
+                api.get('/feedback')
+            ]);
+            setUsers(usersRes.data || []);
+            setFeedbacks(feedbackRes.data || []);
         } catch (err) {
-            console.error('Error fetching users:', err);
-        }
-    }
-
-    const fetchFeedbacks = async () => {
-        try {
-            const res = await api.get('/feedback');
-            setFeedbacks(res.data);
-        } catch (err) {
-            console.error('Error fetching feedbacks:', err);
+            console.error('Error fetching data:', err);
+        } finally {
+            setIsLoading(false);
         }
     }
 
     useEffect(() => {
-        fetchUsers();
-        fetchFeedbacks();
+        fetchData();
     }, []);
 
     const handleBan = async (id) => {
@@ -48,6 +46,7 @@ const UserManager = () => {
     };
 
     const handleReply = async (id) => {
+        if (!replyText.trim()) return;
         try {
             const res = await api.put(`/feedback/${id}`, {
                 status: 'replied',
@@ -69,197 +68,288 @@ const UserManager = () => {
     };
 
     return (
-        <div className="p-6">
-
+        <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
+            
             {/* HEADER */}
-            <div className="mb-6">
-                <p className="text-sm text-gray-500">Homiie; User Management</p>
-                <h1 className="text-2xl font-bold text-yellow-400">
-                    User Manager
-                </h1>
-                <p className="text-gray-400 text-sm mt-1">
-                    Manage user access and review feedback
-                </p>
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 bg-gradient-to-r from-gray-900 to-gray-800 p-8 rounded-3xl border border-gray-800 shadow-xl relative overflow-hidden">
+                {/* Decorative background element */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+                
+                <div className="relative z-10">
+                    <div className="flex items-center gap-2 mb-3">
+                        <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">Homiie Admin</span>
+                    </div>
+                    <h1 className="text-4xl font-extrabold text-white tracking-tight">
+                        User Management
+                    </h1>
+                    <p className="text-gray-400 mt-2 text-base max-w-xl leading-relaxed">
+                        Monitor user activity, manage access permissions, and engage with community feedback from a centralized dashboard.
+                    </p>
+                </div>
+                
+                <button 
+                    onClick={fetchData}
+                    disabled={isLoading}
+                    className="relative z-10 flex items-center gap-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-gray-700 hover:border-gray-600 rounded-xl transition-all duration-200 text-sm font-medium text-gray-300 disabled:opacity-50"
+                >
+                    <RefreshCw size={16} className={isLoading ? "animate-spin text-yellow-400" : "text-yellow-400"} />
+                    Refresh Data
+                </button>
             </div>
 
             {/* STAT CARDS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-
-                <div className="card">
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2 rounded-lg bg-blue-500/20">
-                            <Users size={22} className="text-blue-400" />
-                        </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-lg hover:border-blue-500/30 transition-colors group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-6 opacity-[0.03] group-hover:opacity-10 transition-opacity">
+                        <Users size={80} className="text-blue-500" />
                     </div>
-                    <p className="text-sm text-gray-400">Total Users</p>
-                    <p className="text-3xl font-bold mt-1">{users.length}</p>
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="p-3.5 rounded-2xl bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20 shadow-[0_0_20px_rgba(59,130,246,0.1)]">
+                            <Users size={24} />
+                        </div>
+                        <p className="font-semibold text-gray-400">Total Users</p>
+                    </div>
+                    <div className="flex items-baseline gap-3">
+                        <p className="text-4xl font-extrabold text-white tracking-tight">{users.length}</p>
+                    </div>
                 </div>
 
-                <div className="card">
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2 rounded-lg bg-yellow-500/20">
-                            <Shield size={22} className="text-yellow-400" />
-                        </div>
+                <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-lg hover:border-red-500/30 transition-colors group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-6 opacity-[0.03] group-hover:opacity-10 transition-opacity">
+                        <Shield size={80} className="text-red-500" />
                     </div>
-                    <p className="text-sm text-gray-400">Banned Users</p>
-                    <p className="text-3xl font-bold mt-1">
-                        {users.filter(u => u.is_banned).length}
-                    </p>
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="p-3.5 rounded-2xl bg-red-500/10 text-red-400 ring-1 ring-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
+                            <Shield size={24} />
+                        </div>
+                        <p className="font-semibold text-gray-400">Restricted</p>
+                    </div>
+                    <div className="flex items-baseline gap-3">
+                        <p className="text-4xl font-extrabold text-white tracking-tight">
+                            {users.filter(u => u.is_banned).length}
+                        </p>
+                    </div>
                 </div>
 
-                <div className="card">
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2 rounded-lg bg-green-500/20">
-                            <MessageSquare size={22} className="text-green-400" />
-                        </div>
+                <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-lg hover:border-emerald-500/30 transition-colors group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-6 opacity-[0.03] group-hover:opacity-10 transition-opacity">
+                        <MessageSquare size={80} className="text-emerald-500" />
                     </div>
-                    <p className="text-sm text-gray-400">Feedback Received</p>
-                    <p className="text-3xl font-bold mt-1">{feedbacks.length}</p>
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="p-3.5 rounded-2xl bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+                            <MessageSquare size={24} />
+                        </div>
+                        <p className="font-semibold text-gray-400">Feedback</p>
+                    </div>
+                    <div className="flex items-baseline gap-3">
+                        <p className="text-4xl font-extrabold text-white tracking-tight">{feedbacks.length}</p>
+                        <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md">
+                            {feedbacks.filter(f => f.status !== 'replied').length} Pending
+                        </span>
+                    </div>
                 </div>
             </div>
 
-            {/* USER TABLE */}
-            <div className="card mb-6">
-                <h2 className="text-lg font-semibold mb-4">All Users</h2>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                {/* USER TABLE */}
+                <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-3xl shadow-xl overflow-hidden flex flex-col h-[650px]">
+                    <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-gray-900/80">
+                        <div>
+                            <h2 className="text-xl font-bold text-white">Directory</h2>
+                            <p className="text-sm text-gray-500 mt-1">Manage user accounts and statuses</p>
+                        </div>
+                        <div className="relative">
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+                            <input 
+                                type="text" 
+                                placeholder="Search users..." 
+                                className="pl-10 pr-4 py-2.5 bg-black/40 border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/50 transition-all w-64 shadow-inner"
+                            />
+                        </div>
+                    </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="text-sm text-gray-400 border-b border-gray-700">
-                            <tr>
-                                <th className="py-3">Name</th>
-                                <th>Email</th>
-                                <th>Status</th>
-                                <th className="text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {users.map((user) => (
-                                <tr
-                                    key={user.id}
-                                    className="border-b border-gray-800 hover:bg-white/5 transition"
-                                >
-                                    <td className="py-4 font-medium">
-                                        {user.username || 'Unknown'}
-                                    </td>
-                                    <td className="text-gray-400">
-                                        {user.email}
-                                    </td>
-                                    <td>
-                                        <span
-                                            className={`px-3 py-1 text-xs rounded-full ${user.is_banned
-                                                ? 'bg-red-500/20 text-red-400'
-                                                : 'bg-green-500/20 text-green-400'
-                                                }`}
-                                        >
-                                            {user.is_banned ? 'Banned' : 'Active'}
-                                        </span>
-                                    </td>
-                                    <td className="text-right">
-                                        {user.is_banned ? (
-                                            <span className="text-gray-500 text-sm">Banned</span>
-                                        ) : (
-                                            <button
-                                                onClick={() => handleBan(user.id)}
-                                                className="text-red-400 hover:underline text-sm flex items-center gap-1 justify-end"
-                                            >
-                                                <Ban size={14} />
-                                                Ban
-                                            </button>
-                                        )}
-                                    </td>
+                    <div className="overflow-y-auto flex-1 p-0 custom-scrollbar bg-gray-900/30">
+                        <table className="w-full text-left border-collapse">
+                            <thead className="sticky top-0 bg-gray-900/95 backdrop-blur-md text-xs text-gray-500 font-semibold uppercase tracking-wider z-10 shadow-sm border-b border-gray-800">
+                                <tr>
+                                    <th className="py-5 px-6">User Details</th>
+                                    <th className="py-5 px-6">Status</th>
+                                    <th className="py-5 px-6 text-right">Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800/50">
+                                {users.length === 0 && !isLoading ? (
+                                    <tr>
+                                        <td colSpan="3" className="py-16 text-center text-gray-500">
+                                            No users found.
+                                        </td>
+                                    </tr>
+                                ) : users.map((user) => (
+                                    <tr
+                                        key={user.id}
+                                        className="hover:bg-white/[0.03] transition-colors group"
+                                    >
+                                        <td className="py-4 px-6">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-gray-800 to-gray-700 flex items-center justify-center border border-gray-600 flex-shrink-0 text-white font-bold shadow-inner">
+                                                    {(user.username || 'U')[0].toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p className="font-semibold text-gray-200 group-hover:text-white transition-colors">
+                                                        {user.username || 'Unknown User'}
+                                                    </p>
+                                                    <p className="text-sm text-gray-500 mt-0.5">
+                                                        {user.email}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="py-4 px-6">
+                                            <span
+                                                className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg border ${user.is_banned
+                                                    ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                    : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                    }`}
+                                            >
+                                                <span className={`w-1.5 h-1.5 rounded-full ${user.is_banned ? 'bg-red-400' : 'bg-emerald-400'}`}></span>
+                                                {user.is_banned ? 'Suspended' : 'Active'}
+                                            </span>
+                                        </td>
+                                        <td className="py-4 px-6 text-right">
+                                            {user.is_banned ? (
+                                                <span className="inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 bg-gray-800/50">
+                                                    Banned
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleBan(user.id)}
+                                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-red-400/90 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all shadow-sm"
+                                                >
+                                                    <Ban size={15} />
+                                                    Ban User
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
 
-            {/* FEEDBACK SECTION */}
-            <div className="card">
-                <h2 className="text-lg font-semibold mb-4">
-                    User Feedback
-                </h2>
+                {/* FEEDBACK SECTION */}
+                <div className="bg-gray-900 border border-gray-800 rounded-3xl shadow-xl overflow-hidden flex flex-col h-[650px]">
+                    <div className="p-6 border-b border-gray-800 bg-gray-900/80">
+                        <div className="flex justify-between items-center mb-1">
+                            <h2 className="text-xl font-bold text-white">User Voices</h2>
+                        </div>
+                        <p className="text-sm text-gray-500">Recent feedback & inquiries</p>
+                    </div>
 
-                <div className="space-y-4">
-                    {feedbacks.map((fb) => (
-                        <div
-                            key={fb.id}
-                            className="p-4 rounded-lg bg-white/5 border border-gray-800"
-                        >
-                            <div className="flex justify-between items-start mb-2">
-                                <div>
-                                    <span className="font-medium">
-                                        {fb.username || 'Unknown User'}
-                                    </span>
-                                    <span className="text-gray-500 text-sm ml-2">
-                                        ({fb.user_email})
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className={`text-xs px-2 py-1 rounded-full ${fb.status === 'replied'
-                                        ? 'bg-blue-500/20 text-blue-400'
-                                        : 'bg-yellow-500/20 text-yellow-400'
+                    <div className="overflow-y-auto flex-1 p-5 space-y-5 custom-scrollbar bg-gray-900/30">
+                        {feedbacks.length === 0 && !isLoading ? (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
+                                <MessageSquare size={40} className="opacity-20" />
+                                <p className="font-medium">No feedback available</p>
+                            </div>
+                        ) : feedbacks.map((fb) => (
+                            <div
+                                key={fb.id}
+                                className="p-5 rounded-2xl bg-black/30 border border-gray-800/80 hover:border-gray-700 transition-all group relative shadow-sm hover:shadow-md"
+                            >
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-800 to-gray-700 flex items-center justify-center text-sm font-bold text-gray-300 border border-gray-700">
+                                            {(fb.username || 'U')[0].toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-gray-200 text-sm block">
+                                                {fb.username || 'Unknown'}
+                                            </span>
+                                            <span className="text-gray-500 text-xs font-medium">
+                                                {fb.user_email}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <span className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-md border ${fb.status === 'replied'
+                                        ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                        : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
                                         }`}>
                                         {fb.status === 'replied' ? 'Replied' : 'Pending'}
                                     </span>
-                                    <span className="text-xs text-gray-500">
-                                        {new Date(fb.created_at).toLocaleDateString()}
-                                    </span>
                                 </div>
-                            </div>
-                            <p className="text-gray-300 text-sm mb-2">
-                                {fb.message}
-                            </p>
-                            {fb.admin_reply && (
-                                <div className="pl-3 border-l-2 border-blue-500/50 mt-2">
-                                    <p className="text-xs text-gray-500 mb-1">Admin reply:</p>
-                                    <p className="text-gray-400 text-sm">{fb.admin_reply}</p>
+                                
+                                <div className="text-gray-300 text-sm mb-4 leading-relaxed bg-white/[0.03] p-4 rounded-xl border border-white/[0.02]">
+                                    {fb.message}
                                 </div>
-                            )}
-                            {replyingTo === fb.id ? (
-                                <div className="mt-3">
-                                    <textarea
-                                        value={replyText}
-                                        onChange={(e) => setReplyText(e.target.value)}
-                                        placeholder="Write your reply..."
-                                        className="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm text-white mb-2"
-                                        rows={2}
-                                    />
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => handleReply(fb.id)}
-                                            className="flex items-center gap-1 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
-                                        >
-                                            <Check size={14} />
-                                            Send
-                                        </button>
-                                        <button
-                                            onClick={() => { setReplyingTo(null); setReplyText(''); }}
-                                            className="flex items-center gap-1 px-3 py-1 bg-gray-700 text-gray-300 rounded text-sm hover:bg-gray-600"
-                                        >
-                                            <X size={14} />
-                                            Cancel
-                                        </button>
+                                
+                                {fb.admin_reply && (
+                                    <div className="pl-4 border-l-2 border-blue-500/40 mt-4 relative">
+                                        <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                                        <p className="text-[11px] font-bold text-blue-400 mb-1.5 uppercase tracking-wider">Admin Response</p>
+                                        <p className="text-gray-400 text-sm bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">{fb.admin_reply}</p>
                                     </div>
-                                </div>
-                            ) : (
-                                fb.status !== 'replied' && (
-                                    <button
-                                        onClick={() => setReplyingTo(fb.id)}
-                                        className="mt-2 text-blue-400 hover:underline text-sm"
-                                    >
-                                        Reply
-                                    </button>
-                                )
-                            )}
-                        </div>
-                    ))}
-                    {feedbacks.length === 0 && (
-                        <p className="text-gray-500 text-center py-4">No feedback yet</p>
-                    )}
+                                )}
+                                
+                                {replyingTo === fb.id ? (
+                                    <div className="mt-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                                        <textarea
+                                            value={replyText}
+                                            onChange={(e) => setReplyText(e.target.value)}
+                                            placeholder="Type your response here..."
+                                            className="w-full p-4 bg-gray-900/80 border border-gray-700 focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 rounded-xl text-sm text-gray-200 mb-3 transition-all outline-none resize-none shadow-inner"
+                                            rows={3}
+                                            autoFocus
+                                        />
+                                        <div className="flex gap-2 justify-end">
+                                            <button
+                                                onClick={() => { setReplyingTo(null); setReplyText(''); }}
+                                                className="px-4 py-2 bg-transparent text-gray-400 hover:text-white rounded-xl text-sm font-semibold transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={() => handleReply(fb.id)}
+                                                disabled={!replyText.trim()}
+                                                className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition-all shadow-[0_4px_14px_0_rgba(37,99,235,0.39)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.23)] disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
+                                            >
+                                                <Check size={16} />
+                                                Send Reply
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    fb.status !== 'replied' && (
+                                        <button
+                                            onClick={() => setReplyingTo(fb.id)}
+                                            className="mt-3 flex items-center gap-1.5 text-blue-400 hover:text-blue-300 text-sm font-semibold transition-all opacity-80 hover:opacity-100"
+                                        >
+                                            <MessageSquare size={15} />
+                                            Write Reply
+                                        </button>
+                                    )
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
 
+            <style>{`
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: rgba(255, 255, 255, 0.1);
+                    border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255, 255, 255, 0.2);
+                }
+            `}</style>
         </div>
     );
 };

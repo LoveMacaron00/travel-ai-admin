@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, MapPin, Eye, Tag, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Plus, MapPin, Eye, Tag, ChevronLeft, ChevronRight, Filter, Compass, LayoutGrid } from 'lucide-react';
 import api from '../utils/api';
 import { showConfirmAlert, showErrorAlert, showSuccessAlert } from '../utils/alerts';
 
@@ -279,363 +279,376 @@ const Destinations = () => {
     // UI
     // -----------------------
     return (
-        <div className="p-6">
+        <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex justify-between items-start mb-6">
-                <div>
-                    <p className="text-sm text-gray-500">
-                        Home &gt; Destinations
-                    </p>
-                    <h1
-                        className="text-2xl font-bold"
-                        style={{ color: '#f0a500' }}
-                    >
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 bg-gradient-to-r from-gray-900 to-gray-800 p-8 rounded-3xl border border-gray-800 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+                <div className="absolute bottom-0 left-10 w-40 h-40 bg-blue-500/5 rounded-full blur-2xl -mb-10 pointer-events-none" />
+
+                <div className="relative z-10">
+                    <div className="flex items-center gap-2 mb-3">
+                        <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">Explore</span>
+                    </div>
+                    <h1 className="text-4xl font-extrabold text-white tracking-tight">
                         Destinations
                     </h1>
+                    <p className="text-gray-400 mt-2 text-base max-w-xl leading-relaxed">
+                        Manage all travel destinations. Browse places from TAT API or create your own custom locations.
+                    </p>
                     {sourceTotalCount > 0 && (
-                        <p className="text-xs text-gray-400 mt-1">
-                            ทั้งหมด {sourceTotalCount.toLocaleString()} สถานที่ ({filters.source === 'tat' ? 'TAT API' : 'Admin Added'})
-                        </p>
+                        <div className="flex items-center gap-2 mt-4">
+                            <span className="bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-700">
+                                Total: {sourceTotalCount.toLocaleString()} places
+                            </span>
+                            <span className="bg-gray-800/50 text-gray-400 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-700/50">
+                                Source: {filters.source === 'tat' ? 'TAT API' : 'Admin Added'}
+                            </span>
+                        </div>
                     )}
                 </div>
 
-                <div className="flex gap-3 items-center">
-                    <form onSubmit={handleSearch} className="relative">
+                <div className="relative z-10 flex flex-col sm:flex-row gap-3 items-stretch lg:items-center">
+                    <form onSubmit={handleSearch} className="relative group">
                         <Search
                             size={18}
-                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-yellow-500 transition-colors"
                         />
                         <input
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Search by name"
-                            className="input-field !pl-10 !w-72"
+                            placeholder="Search places..."
+                            className="pl-10 pr-4 py-3 w-full sm:w-72 bg-black/40 border border-gray-700 focus:border-yellow-500/50 focus:ring-2 focus:ring-yellow-500/20 rounded-xl text-sm text-white transition-all shadow-inner outline-none"
                         />
                     </form>
 
                     <button
                         onClick={() => navigate('/destinations/add')}
-                        className="btn-gold flex items-center gap-2"
+                        className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-black font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:shadow-[0_0_25px_rgba(234,179,8,0.5)] transform hover:-translate-y-0.5"
                     >
                         <Plus size={18} />
-                        Destinations
+                        Add New
                     </button>
                 </div>
             </div>
 
-            <div className="flex gap-6">
-                {/* Filters */}
-                <div className="w-56 shrink-0">
-                    <div className="card">
-                        <div className="flex justify-between mb-4">
-                            <h3 className="font-semibold text-sm uppercase">
+            <div className="flex flex-col lg:flex-row gap-8">
+                {/* Filters Sidebar */}
+                <div className="lg:w-64 shrink-0 space-y-6">
+                    <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-xl sticky top-6">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-white flex items-center gap-2">
+                                <Filter size={18} className="text-yellow-500" />
                                 Filters
                             </h3>
-
                             <button
                                 onClick={() =>
-                                    setFilters({
-                                        source: 'tat',
-                                        status: 'all'
-                                    })
+                                    setFilters({ source: 'tat', status: 'all' })
                                 }
-                                className="text-xs text-yellow-500"
+                                className="text-xs font-semibold text-yellow-500/80 hover:text-yellow-400 transition-colors px-2 py-1 bg-yellow-500/10 rounded-lg"
                             >
-                                Reset All
+                                Reset
                             </button>
                         </div>
 
-                        {/* Source */}
-                        <label className="flex items-center gap-2 text-sm mb-1 cursor-pointer">
-                            <input
-                                type="radio"
-                                name="source-filter"
-                                checked={filters.source === 'tat'}
-                                onChange={() =>
-                                    setFilters({
-                                        ...filters,
-                                        source: 'tat'
-                                    })
-                                }
-                            />
-                            TAT API
-                        </label>
-
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
-                            <input
-                                type="radio"
-                                name="source-filter"
-                                checked={filters.source === 'admin'}
-                                onChange={() =>
-                                    setFilters({
-                                        ...filters,
-                                        source: 'admin'
-                                    })
-                                }
-                            />
-                            Admin Added
-                        </label>
-
-                        <div className="mt-4 pt-4 border-t border-gray-700">
-                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Status</p>
-
-                            <label className="flex items-center gap-2 text-sm mb-1 cursor-pointer">
+                        {/* Source Filter */}
+                        <div className="space-y-3">
+                            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">Data Source</p>
+                            
+                            <label className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${filters.source === 'tat' ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-black/20 border-transparent hover:bg-white/5'}`}>
                                 <input
                                     type="radio"
-                                    name="status-filter"
-                                    checked={filters.status === 'all'}
-                                    onChange={() =>
-                                        setFilters({
-                                            ...filters,
-                                            status: 'all'
-                                        })
-                                    }
+                                    name="source-filter"
+                                    className="hidden"
+                                    checked={filters.source === 'tat'}
+                                    onChange={() => setFilters({ ...filters, source: 'tat' })}
                                 />
-                                All
+                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${filters.source === 'tat' ? 'border-yellow-500' : 'border-gray-500'}`}>
+                                    {filters.source === 'tat' && <div className="w-2 h-2 rounded-full bg-yellow-500" />}
+                                </div>
+                                <span className={`text-sm font-medium ${filters.source === 'tat' ? 'text-yellow-400' : 'text-gray-400'}`}>TAT API</span>
                             </label>
 
-                            <label className="flex items-center gap-2 text-sm mb-1 cursor-pointer">
+                            <label className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${filters.source === 'admin' ? 'bg-blue-500/10 border-blue-500/30' : 'bg-black/20 border-transparent hover:bg-white/5'}`}>
                                 <input
                                     type="radio"
-                                    name="status-filter"
-                                    checked={filters.status === 'published'}
-                                    onChange={() =>
-                                        setFilters({
-                                            ...filters,
-                                            status: 'published'
-                                        })
-                                    }
+                                    name="source-filter"
+                                    className="hidden"
+                                    checked={filters.source === 'admin'}
+                                    onChange={() => setFilters({ ...filters, source: 'admin' })}
                                 />
-                                Published
-                                <span className="ml-auto text-gray-400">{statusCounts.published}</span>
+                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${filters.source === 'admin' ? 'border-blue-500' : 'border-gray-500'}`}>
+                                    {filters.source === 'admin' && <div className="w-2 h-2 rounded-full bg-blue-500" />}
+                                </div>
+                                <span className={`text-sm font-medium ${filters.source === 'admin' ? 'text-blue-400' : 'text-gray-400'}`}>Admin Added</span>
                             </label>
+                        </div>
 
-                            <label className="flex items-center gap-2 text-sm cursor-pointer">
-                                <input
-                                    type="radio"
-                                    name="status-filter"
-                                    checked={filters.status === 'draft'}
-                                    onChange={() =>
-                                        setFilters({
-                                            ...filters,
-                                            status: 'draft'
-                                        })
-                                    }
-                                />
-                                Draft
-                                <span className="ml-auto text-gray-400">{statusCounts.draft}</span>
-                            </label>
+                        {/* Status Filter */}
+                        <div className="mt-8 pt-6 border-t border-gray-800 space-y-3">
+                            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">Status</p>
+
+                            {[
+                                { id: 'all', label: 'All Status', count: null },
+                                { id: 'published', label: 'Published', count: statusCounts.published },
+                                { id: 'draft', label: 'Draft', count: statusCounts.draft }
+                            ].map((status) => (
+                                <label key={status.id} className={`flex items-center justify-between p-2.5 rounded-xl transition-all cursor-pointer group ${filters.status === status.id ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="radio"
+                                            name="status-filter"
+                                            className="hidden"
+                                            checked={filters.status === status.id}
+                                            onChange={() => setFilters({ ...filters, status: status.id })}
+                                        />
+                                        <div className={`w-4 h-4 flex items-center justify-center`}>
+                                            <div className={`w-2.5 h-2.5 rounded-full ${filters.status === status.id ? 'bg-white' : 'bg-gray-600 group-hover:bg-gray-500'} transition-colors`} />
+                                        </div>
+                                        <span className={`text-sm ${filters.status === status.id ? 'text-white font-medium' : 'text-gray-400'}`}>{status.label}</span>
+                                    </div>
+                                    {status.count !== null && (
+                                        <span className="text-xs bg-black/40 text-gray-400 px-2 py-1 rounded-md">{status.count}</span>
+                                    )}
+                                </label>
+                            ))}
                         </div>
                     </div>
                 </div>
 
-                {/* Cards */}
-                <div className="flex-1">
-                    {loading && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-5">
+                {/* Main Content Area */}
+                <div className="flex-1 space-y-6">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                            <LayoutGrid size={20} className="text-gray-400" />
+                            Results Showcase
+                        </h2>
+                    </div>
+
+                    {loading ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                             {Array.from({ length: 6 }).map((_, i) => (
-                                <div key={i} className="card p-0 overflow-hidden animate-pulse">
-                                    <div className="h-44 bg-gray-700" />
-                                    <div className="p-4 space-y-3">
-                                        <div className="h-4 bg-gray-700 rounded w-3/4" />
-                                        <div className="h-3 bg-gray-700 rounded w-1/2" />
-                                        <div className="h-3 bg-gray-700 rounded w-1/3" />
+                                <div key={i} className="bg-gray-900 border border-gray-800 rounded-3xl overflow-hidden animate-pulse">
+                                    <div className="h-48 bg-gray-800" />
+                                    <div className="p-5 space-y-4">
+                                        <div className="h-5 bg-gray-800 rounded-md w-3/4" />
+                                        <div className="flex gap-2">
+                                            <div className="h-4 bg-gray-800 rounded-md w-1/4" />
+                                            <div className="h-4 bg-gray-800 rounded-md w-1/4" />
+                                        </div>
+                                        <div className="h-10 bg-gray-800 rounded-xl w-full mt-4" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                            {allItems.map((item, i) => (
+                                <div
+                                    key={`${item.source}-${item.id}-${i}`}
+                                    className="bg-gray-900 border border-gray-800 rounded-3xl overflow-hidden group hover:border-gray-600 hover:shadow-2xl transition-all duration-300 flex flex-col"
+                                >
+                                    <div className="h-48 bg-gray-800 relative overflow-hidden">
+                                        {item.image ? (
+                                            <img
+                                                src={item.image}
+                                                alt={item.name}
+                                                loading="lazy"
+                                                decoding="async"
+                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-in-out"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
+                                                <Compass size={40} className="text-gray-600 mb-2" />
+                                                <span className="text-xs text-gray-500">No Image</span>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Overlay Gradient */}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/20 to-transparent opacity-80" />
+
+                                        {/* Badges */}
+                                        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
+                                            <span
+                                                className={`px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase rounded-lg backdrop-blur-md border ${
+                                                    item.source === 'tat_api'
+                                                        ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
+                                                        : 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                                                }`}
+                                            >
+                                                {item.source === 'tat_api' ? 'TAT API' : 'ADMIN'}
+                                            </span>
+                                            {item.status === 'published' && (
+                                                <span className="px-2 py-1 bg-emerald-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-emerald-400/50">
+                                                    PUBLISHED
+                                                </span>
+                                            )}
+                                            {item.status === 'draft' && (
+                                                <span className="px-2 py-1 bg-gray-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-gray-400/50">
+                                                    DRAFT
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="absolute bottom-4 left-4 right-4">
+                                            <h3 className="font-bold text-lg text-white truncate text-shadow-sm group-hover:text-yellow-400 transition-colors">
+                                                {item.name}
+                                            </h3>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-5 flex-1 flex flex-col">
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+                                            <p className="text-xs text-gray-400 flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/5">
+                                                <MapPin size={12} className="text-gray-500" />
+                                                <span className="truncate max-w-[120px]">{item.province || 'N/A'}</span>
+                                            </p>
+
+                                            {item.category && (
+                                                <p className="text-xs text-gray-400 flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/5">
+                                                    <Tag size={12} className="text-gray-500" />
+                                                    <span className="truncate max-w-[100px]">{item.category}</span>
+                                                </p>
+                                            )}
+
+                                            {item.viewer > 0 && (
+                                                <span className="text-xs text-gray-400 flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/5">
+                                                    <Eye size={12} className="text-gray-500" />
+                                                    {item.viewer.toLocaleString()}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {item.tags?.length > 0 && (
+                                            <div className="flex gap-1.5 flex-wrap mb-4">
+                                                {item.tags.slice(0, 3).map((tag, idx) => (
+                                                    <span
+                                                        key={idx}
+                                                        className="text-[10px] px-2 py-1 rounded-lg bg-black/40 text-gray-400 border border-gray-800"
+                                                    >
+                                                        #{tag}
+                                                    </span>
+                                                ))}
+                                                {item.tags.length > 3 && (
+                                                    <span className="text-[10px] px-2 py-1 rounded-lg bg-black/40 text-gray-500 border border-gray-800">
+                                                        +{item.tags.length - 3}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div className="mt-auto pt-4 flex gap-3">
+                                            {item.source === 'tat_api' ? (
+                                                <button
+                                                    onClick={() => navigate(`/destinations/read-tat/${item.id}`, { state: { introduction: item.introduction } })}
+                                                    className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold rounded-xl border border-gray-700 hover:border-gray-500 transition-all text-center flex items-center justify-center gap-2"
+                                                >
+                                                    <Eye size={16} />
+                                                    View Details
+                                                </button>
+                                            ) : (
+                                                <>
+                                                    <button
+                                                        onClick={() => navigate(`/destinations/edit/${item.id}`)}
+                                                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl transition-all text-center shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(item.id)}
+                                                        className="flex-1 py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white text-sm font-semibold rounded-xl transition-all text-center border border-red-500/20 hover:border-transparent"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {allItems.map((item, i) => (
-                            <div
-                                key={`${item.source}-${item.id}-${i}`}
-                                className="card p-0 overflow-hidden group"
-                            >
-                                <div className="h-44 bg-gray-700 relative overflow-hidden">
-                                    {item.image ? (
-                                        <img
-                                            src={item.image}
-                                            alt={item.name}
-                                            loading="lazy"
-                                            decoding="async"
-                                            className="w-full h-full object-cover group-hover:scale-105 transition"
-                                        />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center">
-                                            <MapPin
-                                                size={40}
-                                                className="text-gray-500"
-                                            />
-                                        </div>
-                                    )}
-
-                                    <span
-                                        className={`badge absolute top-3 right-3 ${item.source === 'tat_api'
-                                            ? 'badge-tat'
-                                            : 'badge-admin'
-                                            }`}
-                                    >
-                                        {item.source === 'tat_api'
-                                            ? 'TAT API'
-                                            : 'ADMIN'}
-                                    </span>
-                                </div>
-
-                                <div className="p-4">
-                                    <h3 className="font-semibold text-sm truncate">
-                                        {item.name}
-                                    </h3>
-
-                                    <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                                        <MapPin size={12} />
-                                        {item.province || 'N/A'}
-                                    </p>
-
-                                    {item.category && (
-                                        <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                                            <Tag size={12} />
-                                            {item.category}
-                                        </p>
-                                    )}
-
-
-                                    <div className="flex items-center gap-3 mt-2">
-                                        {item.viewer > 0 && (
-                                            <span className="text-xs text-gray-500 flex items-center gap-1">
-                                                <Eye size={10} />
-                                                {item.viewer.toLocaleString()}
-                                            </span>
-                                        )}
-                                        {item.tags.length > 0 && (
-                                            <div className="flex gap-1 flex-wrap">
-                                                {item.tags.slice(0, 2).map((tag, idx) => (
-                                                    <span
-                                                        key={idx}
-                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-400"
-                                                    >
-                                                        {tag}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex gap-2 mt-4 pt-4 border-t border-gray-700">
-                                        {item.source === 'tat_api' ? (
-                                            <button
-                                                onClick={() =>
-                                                    navigate(
-                                                        `/destinations/read-tat/${item.id}`,
-                                                        { state: { introduction: item.introduction } }
-                                                    )
-                                                }
-                                                className="destination-action-btn destination-action-btn-secondary w-full"
-                                            >
-                                                Read
-                                            </button>
-                                        ) : (
-                                            <>
-                                                <button
-                                                    onClick={() =>
-                                                        navigate(
-                                                            `/destinations/edit/${item.id}`
-                                                        )
-                                                    }
-                                                    className="destination-action-btn destination-action-btn-primary flex-1"
-                                                >
-                                                    Manage
-                                                </button>
-
-                                                <button
-                                                    onClick={() =>
-                                                        handleDelete(item.id)
-                                                    }
-                                                    className="destination-action-btn destination-action-btn-danger flex-1"
-                                                >
-                                                    Delete
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
                     {allItems.length === 0 && !loading && (
-                        <div className="text-center py-12 text-gray-500">
-                            ไม่พบข้อมูลสถานที่
+                        <div className="bg-gray-900 border border-gray-800 rounded-3xl p-12 flex flex-col items-center justify-center text-center">
+                            <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                                <Search size={32} className="text-gray-500" />
+                            </div>
+                            <h3 className="text-xl font-bold text-white mb-2">No Destinations Found</h3>
+                            <p className="text-gray-500 max-w-sm">
+                                Try adjusting your search or filters to find what you're looking for, or add a new destination manually.
+                            </p>
                         </div>
                     )}
 
                     {/* Pagination */}
                     {filters.source === 'tat' && totalPages > 1 && (
-                        <div className="flex items-center justify-center gap-2 mt-8">
-                            <button
-                                onClick={() => handlePageChange(page - 1)}
-                                disabled={page <= 1}
-                                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition"
-                            >
-                                <ChevronLeft size={18} />
-                            </button>
-
-                            {getPageNumbers()[0] > 1 && (
-                                <>
-                                    <button
-                                        onClick={() => handlePageChange(1)}
-                                        className="w-9 h-9 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition"
-                                    >
-                                        1
-                                    </button>
-                                    {getPageNumbers()[0] > 2 && (
-                                        <span className="text-gray-500 text-sm px-1">...</span>
-                                    )}
-                                </>
-                            )}
-
-                            {getPageNumbers().map((p) => (
+                        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 shadow-lg">
+                            <p className="text-sm text-gray-400">
+                                Showing page <span className="text-white font-medium">{visiblePage}</span> of <span className="text-white font-medium">{visibleTotalPages}</span>
+                            </p>
+                            
+                            <div className="flex items-center gap-1.5 bg-black/30 p-1.5 rounded-xl border border-gray-800">
                                 <button
-                                    key={p}
-                                    onClick={() => handlePageChange(p)}
-                                    className={`w-9 h-9 rounded-lg text-sm transition ${p === page
-                                        ? 'font-bold text-black'
-                                        : 'text-gray-400 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    style={p === page ? { background: '#f0a500' } : {}}
+                                    onClick={() => handlePageChange(page - 1)}
+                                    disabled={page <= 1}
+                                    className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
                                 >
-                                    {p}
+                                    <ChevronLeft size={18} />
                                 </button>
-                            ))}
 
-                            {getPageNumbers()[getPageNumbers().length - 1] < totalPages && (
-                                <>
-                                    {getPageNumbers()[getPageNumbers().length - 1] < totalPages - 1 && (
-                                        <span className="text-gray-500 text-sm px-1">...</span>
-                                    )}
+                                {getPageNumbers()[0] > 1 && (
+                                    <>
+                                        <button
+                                            onClick={() => handlePageChange(1)}
+                                            className="w-10 h-10 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all"
+                                        >
+                                            1
+                                        </button>
+                                        {getPageNumbers()[0] > 2 && (
+                                            <span className="text-gray-600 px-1">...</span>
+                                        )}
+                                    </>
+                                )}
+
+                                {getPageNumbers().map((p) => (
                                     <button
-                                        onClick={() => handlePageChange(totalPages)}
-                                        className="w-9 h-9 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition"
+                                        key={p}
+                                        onClick={() => handlePageChange(p)}
+                                        className={`w-10 h-10 rounded-lg text-sm font-medium transition-all ${
+                                            p === page
+                                                ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20'
+                                                : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                                        }`}
                                     >
-                                        {totalPages}
+                                        {p}
                                     </button>
-                                </>
-                            )}
+                                ))}
 
-                            <button
-                                onClick={() => handlePageChange(page + 1)}
-                                disabled={page >= totalPages}
-                                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition"
-                            >
-                                <ChevronRight size={18} />
-                            </button>
+                                {getPageNumbers()[getPageNumbers().length - 1] < totalPages && (
+                                    <>
+                                        {getPageNumbers()[getPageNumbers().length - 1] < totalPages - 1 && (
+                                            <span className="text-gray-600 px-1">...</span>
+                                        )}
+                                        <button
+                                            onClick={() => handlePageChange(totalPages)}
+                                            className="w-10 h-10 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all"
+                                        >
+                                            {totalPages}
+                                        </button>
+                                    </>
+                                )}
+
+                                <button
+                                    onClick={() => handlePageChange(page + 1)}
+                                    disabled={page >= totalPages}
+                                    className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+                                >
+                                    <ChevronRight size={18} />
+                                </button>
+                            </div>
                         </div>
                     )}
-
-                    <p className="text-center text-sm text-gray-500 mt-4">
-                        หน้า {visiblePage} / {visibleTotalPages} — แสดง {allItems.length} รายการ
-                    </p>
                 </div>
             </div>
         </div>
