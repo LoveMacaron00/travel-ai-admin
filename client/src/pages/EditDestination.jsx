@@ -77,6 +77,7 @@ const EditDestination = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [hasOpeningHours, setHasOpeningHours] = useState(false);
 
     // -----------------------
     // Fetch existing data
@@ -96,6 +97,7 @@ const EditDestination = () => {
                     closing_time: data.closing_time || '17:00',
                     status: data.status || 'published',
                 });
+                setHasOpeningHours(!!data.opening_time);
                 // Collect existing images
                 const existingImages = [];
                 if (data.image_url) existingImages.push(data.image_url);
@@ -218,6 +220,8 @@ const EditDestination = () => {
         try {
             const payload = {
                 ...form,
+                opening_time: hasOpeningHours ? form.opening_time : null,
+                closing_time: hasOpeningHours ? form.closing_time : null,
                 image_url: images[0] || '',
                 images: images
             };
@@ -403,22 +407,39 @@ const EditDestination = () => {
                         {/* Time & Status */}
                         <div className="flex flex-col gap-6">
                             <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Opening Hours</label>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="time"
-                                        className="w-full bg-black/40 border border-gray-700 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-                                        value={form.opening_time}
-                                        onChange={e => handleChange('opening_time', e.target.value)}
-                                    />
-                                    <span className="text-gray-500 font-medium">-</span>
-                                    <input
-                                        type="time"
-                                        className="w-full bg-black/40 border border-gray-700 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-                                        value={form.closing_time}
-                                        onChange={e => handleChange('closing_time', e.target.value)}
-                                    />
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Opening Hours</label>
+                                    <label className="flex items-center gap-2 cursor-pointer group">
+                                        <input 
+                                            type="checkbox" 
+                                            className="w-4 h-4 rounded bg-black/40 border border-gray-700 text-yellow-500 focus:ring-yellow-500 focus:ring-offset-gray-900" 
+                                            checked={hasOpeningHours}
+                                            onChange={(e) => setHasOpeningHours(e.target.checked)}
+                                        />
+                                        <span className="text-xs text-gray-400 group-hover:text-yellow-400 transition-colors">Specify hours</span>
+                                    </label>
                                 </div>
+                                {hasOpeningHours ? (
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="time"
+                                            className="w-full bg-black/40 border border-gray-700 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
+                                            value={form.opening_time}
+                                            onChange={e => handleChange('opening_time', e.target.value)}
+                                        />
+                                        <span className="text-gray-500 font-medium">-</span>
+                                        <input
+                                            type="time"
+                                            className="w-full bg-black/40 border border-gray-700 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
+                                            value={form.closing_time}
+                                            onChange={e => handleChange('closing_time', e.target.value)}
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="bg-black/20 border border-gray-800 rounded-xl px-4 py-2.5 text-gray-500 text-sm flex items-center justify-center h-[46px]">
+                                        No opening hours specified
+                                    </div>
+                                )}
                             </div>
 
                             <div>
