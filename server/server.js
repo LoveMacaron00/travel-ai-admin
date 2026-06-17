@@ -6,12 +6,6 @@ const morgan = require('morgan'); // ใช้สำหรับบันทึ�
 const { requireAdminAuth } = require('./middleware/adminAuth');
 require("dotenv").config();
 
-// ตรวจ required keys ตอน startup warn ถ้าขาด
-const REQUIRED = ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'TATDATAAPI'];
-for (const key of REQUIRED) {
-    if (!process.env[key]) console.warn(`[env] ${key} ไม่ได้ตั้งค่าใน .env`);
-}
-
 
 const app = express();
 
@@ -31,6 +25,12 @@ app.use((err, req, res, next) => {
     if (err) return res.status(400).json({ message: err.message || 'คำขอไม่ถูกต้อง' });
     next();
 });
+
+// ตรวจ required keys ตอน startup warn ถ้าขาด
+const REQUIRED = ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'TATDATAAPI'];
+for (const key of REQUIRED) {
+    if (!process.env[key]) console.warn(`[env] ${key} ไม่ได้ตั้งค่าใน .env`);
+}
 
 // Routes
 const authRoutes = require('./routes/auth');
