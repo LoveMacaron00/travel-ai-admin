@@ -1,6 +1,3 @@
-// =============================================================
-// adminEmbedController.js — Admin endpoints สำหรับจัดการ embed
-// =============================================================
 // POST /api/admin/embed/bulk       — embed ทุก approved ที่ยังไม่มี vector
 // POST /api/admin/embed/:id        — re-embed destination เดียว
 // POST /api/admin/sync/tat         — trigger TAT sync
@@ -8,7 +5,7 @@
 
 const { embedDestination, bulkEmbedMissing } = require('../services/embedService');
 const { syncAllTATPlaces, syncOneTATPlace }   = require('../services/tatSyncService');
-const { query } = require('../db');
+const AdminEmbedModel = require('../models/adminEmbedModel');
 
 // POST /api/admin/embed/bulk
 const bulkEmbed = async (req, res) => {
@@ -63,15 +60,9 @@ const approvePlace = async (req, res) => {
         const placeId = parseInt(req.params.id);
         const adminId = req.admin?.id;
 
-        const { rows } = await query(
-            `UPDATE destinations
-             SET status = 'approved', approved_by = $1, approved_at = NOW(), updated_at = NOW()
-             WHERE id = $2 AND status = 'pending'
-             RETURNING id, name`,
-            [adminId, placeId]
-        );
+        const approvedPlace = await AdminEmbedModel.approvePlace(placeId, adminId);
 
-        if (rows.length === 0) {
+        if (!approvedPlace) {
             return res.status(404).json({ message: 'ไม่พบ destination หรือไม่ได้อยู่ในสถานะ pending' });
         }
 
@@ -80,7 +71,7 @@ const approvePlace = async (req, res) => {
             console.error(`[adminEmbed] embed after approve ${placeId}:`, err.message)
         );
 
-        res.json({ message: `อนุมัติ "${rows[0].name}" สำเร็จ กำลัง embed...`, id: placeId });
+        res.json({ message: `อนุมัติ "${approvedPlace.name}" สำเร็จ กำลัง embed...`, id: placeId });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -90,15 +81,11 @@ const approvePlace = async (req, res) => {
 const rejectPlace = async (req, res) => {
     try {
         const { reason } = req.body;
-        const { rows } = await query(
-            `UPDATE destinations
-             SET status = 'rejected', updated_at = NOW()
-             WHERE id = $1 AND status = 'pending'
-             RETURNING id, name`,
-            [req.params.id]
-        );
-        if (rows.length === 0) return res.status(404).json({ message: 'ไม่พบ destination' });
-        res.json({ message: `ปฏิเสธ "${rows[0].name}" สำเร็จ`, reason });
+        const rejectedPlace = await AdminEmbedModel.rejectPlace(parseInt(req.params.id));
+        
+        if (!rejectedPlace) return res.status(404).json({ message: 'ไม่พบ destination' });
+        
+        res.json({ message: `ปฏิเสธ "${rejectedPlace.name}" สำเร็จ`, reason });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

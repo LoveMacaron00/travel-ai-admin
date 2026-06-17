@@ -1,17 +1,11 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { query } = require('../db');
-const { USER_JWT_SECRET } = require('../config/env');
-
-const PUBLIC_COLUMNS = 'id, email, username, profile_image_url, interests, is_private_location, is_banned, created_at';
+const UserModel = require('../models/userModel');
+const USER_JWT_SECRET = process.env.USER_JWT_SECRET;
 
 const getAllUsers = async (req, res) => {
     try {
-        const { rows } = await query(
-            `SELECT ${PUBLIC_COLUMNS} FROM users ORDER BY created_at DESC`
-        );
-        const users = rows;
-
+        const users = await UserModel.getAll();
         res.status(200).json(users);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงข้อมูล users:', err);
@@ -21,11 +15,8 @@ const getAllUsers = async (req, res) => {
 
 const getUserById = async (req, res) => {
     try {
-        const { rows } = await query(
-            `SELECT ${PUBLIC_COLUMNS} FROM users WHERE id = $1`,
-            [parseInt(req.params.id, 10)]
-        );
-        const user = rows[0] || null;
+        const userId = parseInt(req.params.id, 10);
+        const user = await UserModel.getById(userId);
 
         if (!user) {
             return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
@@ -55,11 +46,7 @@ const registerUser = async (req, res) => {
             });
         }
 
-        const { rows: existingUserRows } = await query(
-            `SELECT ${PUBLIC_COLUMNS} FROM users WHERE email = $1`,
-            [email]
-        );
-        const existingUser = existingUserRows[0] || null;
+        const existingUser = await UserModel.getByEmail(email);
 
         if (existingUser) {
             return res.status(409).json({
@@ -67,14 +54,7 @@ const registerUser = async (req, res) => {
             });
         }
 
-        const passwordHash = await bcrypt.hash(password, 10);
-        const { rows: newUserRows } = await query(
-            `INSERT INTO users (email, hash_password, username)
-             VALUES ($1, $2, $3)
-             RETURNING ${PUBLIC_COLUMNS}`,
-            [email, passwordHash, null]
-        );
-        const newUser = newUserRows[0];
+        const newUser = await UserModel.create(email, password);
 
         const token = jwt.sign(
             { id: newUser.id, email: newUser.email },
@@ -104,11 +84,7 @@ const loginUser = async (req, res) => {
             });
         }
 
-        const { rows } = await query(
-            `SELECT ${PUBLIC_COLUMNS}, hash_password FROM users WHERE email = $1`,
-            [email]
-        );
-        const user = rows[0] || null;
+        const user = await UserModel.getByEmail(email, true);
 
         if (!user) {
             return res.status(401).json({
@@ -166,11 +142,7 @@ const checkBanStatus = async (req, res) => {
             });
         }
 
-        const { rows } = await query(
-            `SELECT ${PUBLIC_COLUMNS} FROM users WHERE email = $1`,
-            [email]
-        );
-        const user = rows[0] || null;
+        const user = await UserModel.getByEmail(email);
 
         if (!user) {
             return res.status(404).json({
@@ -199,22 +171,11 @@ const checkBanStatus = async (req, res) => {
 const toggleBanUser = async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
-        const { rows: userRows } = await query(
-            'SELECT is_banned FROM users WHERE id = $1',
-            [userId]
-        );
+        const user = await UserModel.toggleBanStatus(userId);
 
-        if (userRows.length === 0) {
+        if (!user) {
             return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
         }
-
-        const newBanStatus = !userRows[0].is_banned;
-        const { rows } = await query(
-            `UPDATE users SET is_banned = $1 WHERE id = $2
-             RETURNING ${PUBLIC_COLUMNS}`,
-            [newBanStatus, userId]
-        );
-        const user = rows[0] || null;
 
         res.status(200).json({
             message: 'อัปเดตสถานะการแบนผู้ใช้สำเร็จ',
@@ -229,45 +190,20 @@ const toggleBanUser = async (req, res) => {
 const updateUserProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { username, interests, is_private_location } = req.body;
-
-        const updates = [];
-        const values = [];
-        let index = 1;
-
-        if (username !== undefined) {
-            updates.push(`username = $${index++}`);
-            values.push(username);
-        }
-        if (interests !== undefined) {
-            updates.push(`interests = $${index++}`);
-            values.push(JSON.stringify(Array.isArray(interests) ? interests : []));
-        }
-        if (is_private_location !== undefined) {
-            updates.push(`is_private_location = $${index++}`);
-            values.push(is_private_location === true);
-        }
-        if (req.body.profile_image_url !== undefined) {
-            updates.push(`profile_image_url = $${index++}`);
-            values.push(req.body.profile_image_url);
-        }
-
-        if (updates.length === 0) {
+        
+        if (Object.keys(req.body).length === 0) {
             return res.status(400).json({ message: 'ไม่มีข้อมูลที่ต้องการอัปเดต' });
         }
 
-        values.push(userId);
-        const { rows } = await query(
-            `UPDATE users 
-             SET ${updates.join(', ')} 
-             WHERE id = $${index} 
-             RETURNING ${PUBLIC_COLUMNS}`,
-            values
-        );
+        const updatedUser = await UserModel.updateProfile(userId, {
+            username: req.body.username,
+            interests: req.body.interests,
+            is_private_location: req.body.is_private_location,
+            profile_image_url: req.body.profile_image_url
+        });
 
-        const updatedUser = rows[0] || null;
         if (!updatedUser) {
-            return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
+            return res.status(404).json({ message: 'ไม่พบผู้ใช้ หรือไม่มีข้อมูลอัปเดต' });
         }
 
         res.status(200).json({
@@ -289,12 +225,8 @@ const uploadProfileImage = async (req, res) => {
         const userId = req.user.id;
         const imageUrl = `/uploads/${req.file.filename}`;
 
-        const { rows } = await query(
-            `UPDATE users SET profile_image_url = $1 WHERE id = $2 RETURNING ${PUBLIC_COLUMNS}`,
-            [imageUrl, userId]
-        );
+        const updatedUser = await UserModel.updateProfileImage(userId, imageUrl);
 
-        const updatedUser = rows[0] || null;
         if (!updatedUser) {
             return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
         }

@@ -5,7 +5,7 @@
 //          คืน top-k destinations พร้อม chunk_text สำหรับ inject prompt
 // =============================================================
 
-const { query } = require('../db');
+const { query } = require('../config/db');
 const { getEmbedding } = require('./embedService');
 
 // -------------------------------------------------------------

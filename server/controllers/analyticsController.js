@@ -1,5 +1,5 @@
 // Controller: Analytics (สถิติภาพรวม)
-const { query } = require('../db');
+const AnalyticsModel = require('../models/analyticsModel');
 
 /**
  * ดึงข้อมูลสถิติภาพรวมสำหรับแดชบอร์ด
@@ -7,9 +7,9 @@ const { query } = require('../db');
  */
 const getOverview = async (req, res) => {
     try {
-        const { rows } = await query('SELECT COUNT(*)::int AS total FROM destinations');
+        const totalDestinations = await AnalyticsModel.getTotalDestinations();
         const overview = {
-            totalDestinations: rows[0].total,
+            totalDestinations: totalDestinations,
             monthlyActiveUsers: 12450,
             peakUsageTime: '14:00 - 16:00',
             visits: 245000,

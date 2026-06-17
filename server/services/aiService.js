@@ -6,9 +6,10 @@
 //   ragChat()          — ตอบคำถามด้วย RAG context stream SSE → Flutter
 // =============================================================
 
-const { query } = require('../db');
+const { query } = require('../config/db');
 const { retrieveRelevantPlaces, formatPlacesContext } = require('./ragService');
-const { GEMINI_API_KEY, GEMINI_MODEL } = require('../config/env');
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = 'gemini-1.5-flash';
 
 // -------------------------------------------------------------
 // helper: เรียก Gemini API พร้อม stream

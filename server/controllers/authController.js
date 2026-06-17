@@ -1,8 +1,7 @@
-// Controller: Auth (การยืนยันตัวตน)
 // จัดการ logic การเข้าสู่ระบบของแอดมิน
 
 const jwt = require('jsonwebtoken');
-const { query } = require('../db');
+const AdminModel = require('../models/adminModel');
 const { ADMIN_JWT_SECRET } = require('../middleware/adminAuth');
 
 /**
@@ -19,8 +18,7 @@ const login = async (req, res) => {
         }
 
         // ค้นหาแอดมินจากฐานข้อมูล
-        const { rows } = await query('SELECT id, email, password FROM admins WHERE email = $1 LIMIT 1', [email]);
-        const admin = rows[0] || null;
+        const admin = await AdminModel.getByEmail(email);
 
         if (!admin) {
             return res.status(401).json({ message: 'Email หรือ Password ไม่ถูกต้อง' });

@@ -1,6 +1,7 @@
-const { query } = require('../db');
+const { query } = require('../config/db');
 const { embedDestination } = require('./embedService');
-const { TAT_API_KEY, TAT_API_BASE } = require('../config/env');
+const TAT_API_KEY = process.env.TATDATAAPI;
+const TAT_API_BASE = 'https://tatdataapi.io/api/v2';
 
 const TAT_HEADERS  = { 'x-api-key': TAT_API_KEY, 'Accept-Language': 'th' };
 

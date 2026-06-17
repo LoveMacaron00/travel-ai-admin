@@ -1,5 +1,6 @@
-const { query } = require('../db');
-const { OPENAI_API_KEY, EMBED_MODEL } = require('../config/env');
+const { query } = require('../config/db');
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const EMBED_MODEL = 'text-embedding-3-small';
 
 async function getEmbedding(text) {
     const response = await fetch('https://api.openai.com/v1/embeddings', {
