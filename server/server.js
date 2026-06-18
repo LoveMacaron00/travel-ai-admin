@@ -1,8 +1,11 @@
-require("dotenv").config({ path: require('path').resolve(__dirname, '../.env') });
+const path = require('path');
+require("dotenv").config({
+  path: path.join(__dirname, "../.env"),
+});
+
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression'); // ใช้สำหรับบีบอัดข้อมูล
-const path = require('path');
 const morgan = require('morgan'); // ใช้สำหรับบันทึก Log การทำงานของ HTTP Request
 const { requireAdminAuth } = require('./middleware/adminAuth');
 const { secureUploads } = require('./middleware/secureUploads');
