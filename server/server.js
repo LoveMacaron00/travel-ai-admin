@@ -1,23 +1,30 @@
+require("dotenv").config();
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression'); // ใช้สำหรับบีบอัดข้อมูล
 const path = require('path');
 const morgan = require('morgan'); // ใช้สำหรับบันทึก Log การทำงานของ HTTP Request
 const { requireAdminAuth } = require('./middleware/adminAuth');
-require("dotenv").config();
+const { secureUploads } = require('./middleware/secureUploads');
 
 
 const app = express();
 
 // Middleware
 app.use(morgan('dev'));
-app.use(cors());
+app.use(cors({
+    origin: process.env.ALLOWED_ORIGINS 
+        ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) 
+        : ['http://localhost:3000', 'http://localhost:5173'],
+    credentials: true
+}));
 app.use(compression());
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '2mb' }));
 
-// uploads รูป
+// uploads รูป (ปกป้องการเข้าถึงไฟล์โดยตรง)
 const uploadsDir = path.join(__dirname, 'uploads');
-app.use('/uploads', express.static(uploadsDir));
+
+app.use('/uploads', secureUploads, express.static(uploadsDir));
 
 // error handler
 app.use((err, req, res, next) => {

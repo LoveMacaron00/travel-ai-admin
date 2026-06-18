@@ -6,13 +6,21 @@ class DestinationModel {
         const conditions = [];
         const params = [];
 
-        if (province) {
-            params.push(province);
-            conditions.push(`province = $${params.length}`);
+        const allowedStatuses = ['pending', 'approved', 'rejected'];
+
+        if (province && typeof province === 'string' && province.trim()) {
+            const cleanProvince = province.trim();
+            if (/^[a-zA-Z0-9ก-๙\s\.-]+$/.test(cleanProvince)) {
+                params.push(cleanProvince);
+                conditions.push(`province = $${params.length}`);
+            }
         }
-        if (status) {
-            params.push(status);
-            conditions.push(`status = $${params.length}`);
+        if (status && typeof status === 'string') {
+            const cleanStatus = status.trim().toLowerCase();
+            if (allowedStatuses.includes(cleanStatus)) {
+                params.push(cleanStatus);
+                conditions.push(`status = $${params.length}`);
+            }
         }
         if (search) {
             params.push(`%${search}%`);

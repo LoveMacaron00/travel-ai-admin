@@ -26,14 +26,19 @@ const upload = multer({
     storage,
     limits: { fileSize: 10 * 1024 * 1024 }, // จำกัดขนาดไฟล์ 10MB
     fileFilter: (req, file, cb) => {
-        const allowed = /jpeg|jpg|png|gif|webp/;
-        const extValid = allowed.test(path.extname(file.originalname).toLowerCase());
-        const mimeValid = allowed.test(file.mimetype.split('/')[1]);
+        const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+        const allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+
+        const ext = path.extname(file.originalname).toLowerCase();
+        const mime = file.mimetype.toLowerCase();
+
+        const extValid = allowedExts.includes(ext);
+        const mimeValid = allowedMimes.includes(mime);
 
         if (extValid && mimeValid) {
             cb(null, true);
         } else {
-            cb(new Error('อนุญาตเฉพาะไฟล์รูปภาพเท่านั้น'));
+            cb(new Error('อนุญาตเฉพาะไฟล์รูปภาพเท่านั้น (.jpg, .jpeg, .png, .gif, .webp)'));
         }
     }
 });

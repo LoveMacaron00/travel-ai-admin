@@ -1,6 +1,7 @@
 // จัดการ logic การเข้าสู่ระบบของแอดมิน
 
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const AdminModel = require('../models/adminModel');
 const { ADMIN_JWT_SECRET } = require('../middleware/adminAuth');
 
@@ -24,7 +25,7 @@ const login = async (req, res) => {
             return res.status(401).json({ message: 'Email หรือ Password ไม่ถูกต้อง' });
         }
 
-        const isPasswordValid = admin.password === password;
+        const isPasswordValid = await bcrypt.compare(password, admin.password);
 
         if (!isPasswordValid) {
             return res.status(401).json({ message: 'Email หรือ Password ไม่ถูกต้อง' });
@@ -43,7 +44,7 @@ const login = async (req, res) => {
         });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการเข้าสู่ระบบ:', err);
-        res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน authController - login" });
+        res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
     }
 };
 

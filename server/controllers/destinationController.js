@@ -31,6 +31,22 @@ const getRemovedImages = (currentImages, nextImages) => {
     return currentImages.filter((image) => image && !nextSet.has(image));
 };
 
+const validateCoordinates = (latitude, longitude) => {
+    if (latitude !== undefined && latitude !== '' && latitude !== null) {
+        const lat = parseFloat(latitude);
+        if (isNaN(lat) || lat < -90 || lat > 90) {
+            return { isValid: false, message: 'ค่าละติจูด (Latitude) ต้องอยู่ระหว่าง -90 ถึง 90' };
+        }
+    }
+    if (longitude !== undefined && longitude !== '' && longitude !== null) {
+        const lng = parseFloat(longitude);
+        if (isNaN(lng) || lng < -180 || lng > 180) {
+            return { isValid: false, message: 'ค่าลองจิจูด (Longitude) ต้องอยู่ระหว่าง -180 ถึง 180' };
+        }
+    }
+    return { isValid: true };
+};
+
 /**
  * ดึงรายการสถานที่ทั้งหมด (รองรับตัวกรอง)
  * GET /api/destinations
@@ -41,7 +57,7 @@ const getAllDestinations = async (req, res) => {
         res.json(destinations);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงรายการสถานที่:', err);
-        res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน destinationController - getAllDestinations" });
+        res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
     }
 };
 
@@ -61,7 +77,7 @@ const getDestinationById = async (req, res) => {
         res.json(destination);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงข้อมูลสถานที่:', err);
-        res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน destinationController - getDestinationById" });
+        res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
     }
 };
 
@@ -75,11 +91,16 @@ const createDestination = async (req, res) => {
             return res.status(400).json({ message: 'กรุณากรอกชื่อสถานที่' });
         }
 
+        const coordValidation = validateCoordinates(req.body.latitude, req.body.longitude);
+        if (!coordValidation.isValid) {
+            return res.status(400).json({ message: coordValidation.message });
+        }
+
         const destId = await DestinationModel.create(req.body, req.body.images);
         res.status(201).json({ id: destId, message: 'เพิ่มสถานที่สำเร็จ' });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการเพิ่มสถานที่:', err);
-        res.status(400).json({ message: "เกิดข้อผิดพลาดภายใน destinationController - createDestination" });
+        res.status(400).json({ message: "ไม่สามารถเพิ่มสถานที่ได้" });
     }
 };
 
@@ -91,6 +112,11 @@ const updateDestination = async (req, res) => {
     try {
         const destId = parseInt(req.params.id, 10);
         const nextImages = normalizeImageUrls(req.body.images);
+
+        const coordValidation = validateCoordinates(req.body.latitude, req.body.longitude);
+        if (!coordValidation.isValid) {
+            return res.status(400).json({ message: coordValidation.message });
+        }
 
         const result = await DestinationModel.update(destId, req.body, nextImages);
 
@@ -110,7 +136,7 @@ const updateDestination = async (req, res) => {
         res.json({ message: 'อัปเดตสถานที่สำเร็จ' });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการอัปเดตสถานที่:', err);
-        res.status(400).json({ message: "เกิดข้อผิดพลาดภายใน destinationController - updateDestination" });
+        res.status(400).json({ message: "ไม่สามารถอัปเดตสถานที่ได้" });
     }
 };
 
@@ -132,7 +158,7 @@ const deleteDestination = async (req, res) => {
         res.json({ message: 'ลบสถานที่สำเร็จ' });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการลบสถานที่:', err);
-        res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน destinationController - deleteDestination" });
+        res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
     }
 };
 
