@@ -1,8 +1,8 @@
-const { query } = require('../config/db');
+﻿const pool = require('../config/db');
 
 class FeedbackModel {
     static async getAll() {
-        const { rows } = await query(
+        const { rows } = await pool.query(
             `SELECT f.id, f.message, f.status, f.admin_reply, f.created_at,
                     u.username, u.email AS user_email
              FROM feedback f
@@ -13,7 +13,7 @@ class FeedbackModel {
     }
 
     static async update(id, status, admin_reply) {
-        const { rows } = await query(
+        const { rows } = await pool.query(
             `UPDATE feedback
              SET status = $1, admin_reply = $2
              WHERE id = $3

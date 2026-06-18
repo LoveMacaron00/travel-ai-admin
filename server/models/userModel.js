@@ -1,18 +1,18 @@
-const { query } = require('../config/db');
+﻿const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 
 const PUBLIC_COLUMNS = 'id, email, username, profile_image_url, interests, is_private_location, is_banned, created_at';
 
 class UserModel {
     static async getAll() {
-        const { rows } = await query(
+        const { rows } = await pool.query(
             `SELECT ${PUBLIC_COLUMNS} FROM users ORDER BY created_at DESC`
         );
         return rows;
     }
 
     static async getById(id) {
-        const { rows } = await query(
+        const { rows } = await pool.query(
             `SELECT ${PUBLIC_COLUMNS} FROM users WHERE id = $1`,
             [id]
         );
@@ -21,7 +21,7 @@ class UserModel {
 
     static async getByEmail(email, includePassword = false) {
         const columns = includePassword ? `${PUBLIC_COLUMNS}, hash_password` : PUBLIC_COLUMNS;
-        const { rows } = await query(
+        const { rows } = await pool.query(
             `SELECT ${columns} FROM users WHERE email = $1`,
             [email]
         );
@@ -30,7 +30,7 @@ class UserModel {
 
     static async create(email, password) {
         const passwordHash = await bcrypt.hash(password, 10);
-        const { rows } = await query(
+        const { rows } = await pool.query(
             `INSERT INTO users (email, hash_password, username)
              VALUES ($1, $2, $3)
              RETURNING ${PUBLIC_COLUMNS}`,
@@ -40,7 +40,7 @@ class UserModel {
     }
 
     static async toggleBanStatus(id) {
-        const { rows: userRows } = await query(
+        const { rows: userRows } = await pool.query(
             'SELECT is_banned FROM users WHERE id = $1',
             [id]
         );
@@ -50,7 +50,7 @@ class UserModel {
         }
 
         const newBanStatus = !userRows[0].is_banned;
-        const { rows } = await query(
+        const { rows } = await pool.query(
             `UPDATE users SET is_banned = $1 WHERE id = $2
              RETURNING ${PUBLIC_COLUMNS}`,
             [newBanStatus, id]
@@ -85,7 +85,7 @@ class UserModel {
         }
 
         values.push(id);
-        const { rows } = await query(
+        const { rows } = await pool.query(
             `UPDATE users 
              SET ${updateStrings.join(', ')} 
              WHERE id = $${index} 
@@ -97,7 +97,7 @@ class UserModel {
     }
 
     static async updateProfileImage(id, imageUrl) {
-        const { rows } = await query(
+        const { rows } = await pool.query(
             `UPDATE users SET profile_image_url = $1 WHERE id = $2 RETURNING ${PUBLIC_COLUMNS}`,
             [imageUrl, id]
         );

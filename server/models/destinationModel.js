@@ -1,4 +1,4 @@
-const { pool, query } = require('../config/db');
+﻿const pool = require('../config/db');
 
 class DestinationModel {
     static async getAll({ province, status, search }) {
@@ -33,19 +33,19 @@ class DestinationModel {
 
         sql += ' ORDER BY created_at DESC';
 
-        const { rows } = await query(sql, params);
+        const { rows } = await pool.query(sql, params);
         return rows;
     }
 
     static async getById(id) {
-        const { rows: destRows } = await query(
+        const { rows: destRows } = await pool.query(
             'SELECT * FROM destinations WHERE id = $1',
             [id]
         );
         const destination = destRows[0] || null;
 
         if (destination) {
-            const { rows: imageRows } = await query(
+            const { rows: imageRows } = await pool.query(
                 'SELECT id, destination_id, image_url, created_at FROM destination_images WHERE destination_id = $1',
                 [id]
             );
@@ -177,7 +177,7 @@ class DestinationModel {
     }
 
     static async delete(id) {
-        const { rows: existingRows } = await query(
+        const { rows: existingRows } = await pool.query(
             'SELECT id FROM destinations WHERE id = $1 AND source = $2 LIMIT 1',
             [id, 'admin']
         );
@@ -186,11 +186,11 @@ class DestinationModel {
             return null;
         }
 
-        const { rows: destRows } = await query(
+        const { rows: destRows } = await pool.query(
             'SELECT image_url FROM destinations WHERE id = $1',
             [id]
         );
-        const { rows: imgRows } = await query(
+        const { rows: imgRows } = await pool.query(
             'SELECT image_url FROM destination_images WHERE destination_id = $1',
             [id]
         );
@@ -201,9 +201,10 @@ class DestinationModel {
             if (row.image_url) imagePaths.push(row.image_url);
         });
 
-        await query('DELETE FROM destinations WHERE id = $1', [id]);
+        await pool.query('DELETE FROM destinations WHERE id = $1', [id]);
         return imagePaths;
     }
 }
 
 module.exports = DestinationModel;
+
