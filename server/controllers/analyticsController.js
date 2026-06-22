@@ -1,5 +1,18 @@
 // Controller: Analytics (สถิติภาพรวม)
 const AnalyticsModel = require('../models/analyticsModel');
+const { getPopularDestinations } = require('../services/tatPopularService');
+
+const destinationColors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
+
+const withRankStats = (destinations) => {
+    const maxViewer = Math.max(...destinations.map((destination) => destination.viewer), 1);
+
+    return destinations.map((destination, index) => ({
+        ...destination,
+        percent: Math.max(1, Math.round((destination.viewer / maxViewer) * 100)),
+        color: destinationColors[index % destinationColors.length]
+    }));
+};
 
 /**
  * ดึงข้อมูลสถิติภาพรวมสำหรับแดชบอร์ด
@@ -8,18 +21,21 @@ const AnalyticsModel = require('../models/analyticsModel');
 const getOverview = async (req, res) => {
     try {
         const totalDestinations = await AnalyticsModel.getTotalDestinations();
+        let topDestinations = [];
+
+        try {
+            topDestinations = withRankStats(await getPopularDestinations({ limit: 5 }));
+        } catch (err) {
+            console.error('[analyticsController] top destinations error:', err.message);
+        }
+
         const overview = {
             totalDestinations: totalDestinations,
             monthlyActiveUsers: 12450,
             peakUsageTime: '14:00 - 16:00',
             visits: 245000,
             visitGrowth: 15.3,
-            topDestinations: [
-                { name: 'Grand Palace', percent: 92, color: '#10B981' },
-                { name: 'Phi Phi Islands', percent: 84, color: '#8B5CF6' },
-                { name: 'Old City', percent: 76, color: '#3B82F6' },
-                { name: 'Big Buddha', percent: 65, color: '#F59E0B' }
-            ],
+            topDestinations,
             trafficData: [
                 { date: 'Jan 01', value: 120 },
                 { date: 'Jan 05', value: 150 },

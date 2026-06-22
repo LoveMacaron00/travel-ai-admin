@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, Clock, Download, TrendingUp, Activity, BarChart3, ArrowUpRight } from 'lucide-react';
+import { Users, Clock, Download, TrendingUp, Activity, BarChart3, ArrowUpRight, Eye, MapPin } from 'lucide-react';
 import api from '../utils/api';
 
 const Dashboard = () => {
@@ -26,12 +26,7 @@ const Dashboard = () => {
                     visits: 158420,
                     visitGrowth: 18,
                     trafficData: generateTraffic(30),
-                    topDestinations: [
-                        { name: "Phuket Beach", percent: 85, color: "#10B981" },
-                        { name: "Chiang Mai Old Town", percent: 72, color: "#3B82F6" },
-                        { name: "Bangkok Night Market", percent: 64, color: "#F59E0B" },
-                        { name: "Krabi Island", percent: 48, color: "#EF4444" }
-                    ]
+                    topDestinations: []
                 });
             }
         };
@@ -243,43 +238,60 @@ const Dashboard = () => {
                         <p className="text-sm text-gray-500 mt-1">Most visited places</p>
                     </div>
                     
-                    <div className="p-6 space-y-6 flex-1">
-                        {stats.topDestinations.map((dest, i) => (
-                            <div key={i} className="flex items-center gap-4 group">
+                    <div className="p-5 space-y-4 flex-1">
+                        {stats.topDestinations.length > 0 ? (
+                            stats.topDestinations.map((dest, i) => (
                                 <div
-                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg transition-transform group-hover:scale-110"
-                                    style={{
-                                        background: `linear-gradient(135deg, ${dest.color}22, ${dest.color}44)`,
-                                        color: dest.color,
-                                        border: `1px solid ${dest.color}33`
-                                    }}
+                                    key={dest.id || i}
+                                    className="flex items-center gap-4 group rounded-2xl p-2 -mx-2 hover:bg-white/5 transition-all"
                                 >
-                                    #{i + 1}
-                                </div>
-
-                                <div className="flex-1">
-                                    <div className="flex justify-between items-end mb-1.5">
-                                        <p className="text-sm font-bold text-gray-200 group-hover:text-white transition-colors">
-                                            {dest.name}
-                                        </p>
-                                        <span className="text-sm font-bold text-white">
-                                            {dest.percent}%
+                                    <div className="relative w-20 h-16 rounded-2xl overflow-hidden bg-gray-800 shrink-0 border border-gray-800">
+                                        <img
+                                            src={dest.image}
+                                            alt={dest.name}
+                                            loading="lazy"
+                                            decoding="async"
+                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                                        <span className="absolute left-2 bottom-1.5 px-1.5 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-bold">
+                                            #{i + 1}
                                         </span>
                                     </div>
-                                    <div className="w-full h-2 rounded-full bg-gray-800 overflow-hidden shadow-inner">
-                                        <div
-                                            className="h-full rounded-full transition-all duration-1000 ease-out relative"
-                                            style={{
-                                                width: `${dest.percent}%`,
-                                                background: `linear-gradient(90deg, ${dest.color}dd, ${dest.color})`
-                                            }}
-                                        >
-                                            <div className="absolute inset-0 bg-white/20 w-1/2 skew-x-12 -translate-x-full animate-[shimmer_2s_infinite]" />
+
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-bold text-gray-100 truncate group-hover:text-yellow-400 transition-colors">
+                                            {dest.name}
+                                        </p>
+                                        <p className="mt-1 text-xs text-gray-500 flex items-center gap-1 min-w-0">
+                                            <MapPin size={12} className="shrink-0" />
+                                            <span className="truncate">{dest.location || dest.city || 'Thailand'}</span>
+                                        </p>
+                                        <div className="mt-2 flex items-center gap-2">
+                                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-300 bg-white/5 border border-white/5 px-2 py-1 rounded-lg">
+                                                <Eye size={12} className="text-gray-500" />
+                                                {Number(dest.viewer || 0).toLocaleString()}
+                                            </span>
+                                            <div className="h-1.5 flex-1 rounded-full bg-gray-800 overflow-hidden">
+                                                <div
+                                                    className="h-full rounded-full transition-all duration-1000"
+                                                    style={{
+                                                        width: `${dest.percent || 1}%`,
+                                                        background: dest.color || '#EAB308'
+                                                    }}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
+                            ))
+                        ) : (
+                            <div className="h-full min-h-64 flex flex-col items-center justify-center text-center px-6">
+                                <BarChart3 size={36} className="text-gray-700 mb-3" />
+                                <p className="text-sm font-semibold text-gray-400">No TAT ranking data</p>
+                                <p className="text-xs text-gray-600 mt-1">Check TATDATAAPI or try again later.</p>
                             </div>
-                        ))}
+                        )}
                     </div>
                 </div>
 
