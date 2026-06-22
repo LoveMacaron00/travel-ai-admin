@@ -272,15 +272,6 @@ const Dashboard = () => {
                                                 <Eye size={12} className="text-gray-500" />
                                                 {Number(dest.viewer || 0).toLocaleString()}
                                             </span>
-                                            <div className="h-1.5 flex-1 rounded-full bg-gray-800 overflow-hidden">
-                                                <div
-                                                    className="h-full rounded-full transition-all duration-1000"
-                                                    style={{
-                                                        width: `${dest.percent || 1}%`,
-                                                        background: dest.color || '#EAB308'
-                                                    }}
-                                                />
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
