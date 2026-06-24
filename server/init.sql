@@ -21,7 +21,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 2. ENUM types
 -- -------------------------------------------------------------
 DO $$ BEGIN
-    CREATE TYPE place_source AS ENUM ('tat', 'admin', 'user');
+    CREATE TYPE place_source AS ENUM ('tat', 'admin');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -112,10 +112,6 @@ CREATE TABLE IF NOT EXISTS destinations (
     review_count INT          NOT NULL DEFAULT 0,
 
     -- approval tracking
-    submitted_by INT REFERENCES users(id)  ON DELETE SET NULL,
-    approved_by  INT REFERENCES admins(id) ON DELETE SET NULL,
-    approved_at  TIMESTAMPTZ,
-
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
