@@ -30,12 +30,6 @@ const uploadsDir = path.join(__dirname, 'uploads');
 
 app.use('/uploads', secureUploads, express.static(uploadsDir));
 
-// error handler
-app.use((err, req, res, next) => {
-    if (err?.name === 'MulterError') return res.status(400).json({ message: err.message });
-    if (err) return res.status(400).json({ message: err.message || 'คำขอไม่ถูกต้อง' });
-    next();
-});
 
 // ตรวจ required keys ตอน startup warn ถ้าขาด
 const REQUIRED = ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'TATDATAAPI'];
@@ -69,6 +63,13 @@ app.use('/api/admin', adminEmbedRoutes);
 app.use('/api/mobile', mobileRoutes);
 
 app.get('/', (req, res) => res.send('Smart Travel API กำลังทำงาน'));
+
+// error handler
+app.use((err, req, res, next) => {
+    if (err?.name === 'MulterError') return res.status(400).json({ message: err.message });
+    if (err) return res.status(400).json({ message: err.message || 'คำขอไม่ถูกต้อง' });
+    next();
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
