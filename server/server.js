@@ -16,11 +16,12 @@ const app = express();
 // Middleware
 app.use(morgan('dev'));
 app.use(cors({
-    origin: process.env.ALLOWED_ORIGINS 
-        ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) 
-        : ['http://localhost:3000', 'http://localhost:5173'],
+    origin: process.env.ALLOWED_ORIGINS
+        .split(',')
+        .map(origin => origin.trim()),
     credentials: true
 }));
+
 app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 
