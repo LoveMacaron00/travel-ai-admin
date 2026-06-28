@@ -1,4 +1,5 @@
-const { query } = require('../config/db');
+const pool = require('../config/db');
+const query = pool.query.bind(pool);
 const { embedDestination } = require('./embedService');
 const TAT_API_KEY = process.env.TATDATAAPI;
 const TAT_API_BASE = 'https://tatdataapi.io/api/v2';
@@ -27,6 +28,16 @@ async function fetchTATPage(page, limit = 100, keyword = '', province = '') {
     return res.json();
 }
 
+async function fetchTATPlaceDetail(tatPlaceId) {
+    if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
+        throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
+    }
+    const res = await fetch(`${TAT_API_BASE}/places/${tatPlaceId}`, { headers: TAT_HEADERS });
+    if (!res.ok) throw new Error(`TAT API error: ${res.status}`);
+    const payload = await res.json();
+    return payload.data || payload.result || payload;
+}
+
 async function upsertTATPlace(place) {
     const images = [
         ...(place.desktopImageUrls || []).map(url => ({ url, is_cover: false })),
@@ -40,8 +51,8 @@ async function upsertTATPlace(place) {
             latitude, longitude, address,
             opening_time, closing_time, opening_hours,
             image_url, images, source, status,
-            tat_place_id, tat_raw, price_adult, price_child, approved_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'tat','approved',$14,$15,$16,$17,NOW())
+            tat_place_id, tat_raw, price_adult, price_child
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'tat','approved',$14,$15,$16,$17)
         ON CONFLICT (tat_place_id) DO UPDATE SET
             name          = EXCLUDED.name,
             province      = EXCLUDED.province,
@@ -51,6 +62,9 @@ async function upsertTATPlace(place) {
             tags          = EXCLUDED.tags,
             latitude      = EXCLUDED.latitude,
             longitude     = EXCLUDED.longitude,
+            address       = EXCLUDED.address,
+            opening_time  = EXCLUDED.opening_time,
+            closing_time  = EXCLUDED.closing_time,
             opening_hours = EXCLUDED.opening_hours,
             image_url     = EXCLUDED.image_url,
             images        = EXCLUDED.images,
@@ -68,12 +82,12 @@ async function upsertTATPlace(place) {
             parseFloat(place.latitude)  || null,
             parseFloat(place.longitude) || null,
             place.location?.address     || null,
-            place.openingHours?.[0]?.open  || '00:00',
-            place.openingHours?.[0]?.close || '00:00',
+            place.openingHours?.[0]?.open  || place.openingHours?.[0]?.openTime  || '00:00',
+            place.openingHours?.[0]?.close || place.openingHours?.[0]?.closeTime || '00:00',
             JSON.stringify(place.openingHours || []),
             place.thumbnailUrl || null,
             JSON.stringify(images),
-            String(place.placeId),
+            String(place.placeId || place.id),
             JSON.stringify(place),
             place.information?.fee?.thaiAdult || null,
             place.information?.fee?.thaiChild || null,
@@ -83,7 +97,7 @@ async function upsertTATPlace(place) {
 }
 
 async function syncAllTATPlaces(options = {}) {
-    const { province = '', keyword = '', maxPages = 50 } = options;
+    const { province = '', keyword = '', maxPages = 50, hydrateDetails = false } = options;
     let page = 1, totalUpserted = 0, totalEmbedded = 0, totalFailed = 0;
     console.log(`[tat-sync] เริ่ม sync — province:"${province}" keyword:"${keyword}"`);
 
@@ -98,7 +112,11 @@ async function syncAllTATPlaces(options = {}) {
 
         for (const place of places) {
             try {
-                const row = await upsertTATPlace(place);
+                const tatPlaceId = place.placeId || place.id;
+                const detailPlace = hydrateDetails && tatPlaceId
+                    ? { ...place, ...(await fetchTATPlaceDetail(tatPlaceId)), placeId: tatPlaceId }
+                    : place;
+                const row = await upsertTATPlace(detailPlace);
                 totalUpserted++;
                 await embedDestination(row.id);
                 totalEmbedded++;
@@ -118,15 +136,10 @@ async function syncAllTATPlaces(options = {}) {
 }
 
 async function syncOneTATPlace(tatPlaceId) {
-    if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
-        throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
-    }
-    const res = await fetch(`${TAT_API_BASE}/places/${tatPlaceId}`, { headers: TAT_HEADERS });
-    if (!res.ok) throw new Error(`TAT API error: ${res.status}`);
-    const place = await res.json();
+    const place = await fetchTATPlaceDetail(tatPlaceId);
     const row = await upsertTATPlace(place);
     await embedDestination(row.id);
     return row;
 }
 
-module.exports = { syncAllTATPlaces, syncOneTATPlace, upsertTATPlace };
+module.exports = { syncAllTATPlaces, syncOneTATPlace, upsertTATPlace, fetchTATPlaceDetail };

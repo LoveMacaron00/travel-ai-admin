@@ -32,7 +32,7 @@ app.use('/uploads', secureUploads, express.static(uploadsDir));
 
 
 // ตรวจ required keys ตอน startup warn ถ้าขาด
-const REQUIRED = ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'TATDATAAPI'];
+const REQUIRED = ['GEMINI_API_KEY', 'TATDATAAPI'];
 for (const key of REQUIRED) {
     if (!process.env[key]) console.warn(`[env] ${key} ไม่ได้ตั้งค่าใน .env`);
 }

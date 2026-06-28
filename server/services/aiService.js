@@ -6,19 +6,17 @@
 //   ragChat()          — ตอบคำถามด้วย RAG context stream SSE → Flutter
 // =============================================================
 
-const { query } = require('../config/db');
+const pool = require('../config/db');
+const query = pool.query.bind(pool);
 const { retrieveRelevantPlaces, formatPlacesContext } = require('./ragService');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // -------------------------------------------------------------
 // helper: เรียก Gemini API พร้อม stream
 // คืน async generator ที่ yield ทีละ text delta
 // -------------------------------------------------------------
 async function* streamGemini(systemPrompt, messages, maxTokens = 4096) {
-    if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
-        throw new Error('ไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ (.env)');
-    }
 
     const contents = messages.map(m => ({
         role: m.role === 'assistant' ? 'model' : m.role,
@@ -205,6 +203,7 @@ async function ragChat(sessionId, tripId, userMessage, chatHistory, res) {
 `คุณคือ AI ผู้ช่วยวางแผนการท่องเที่ยวในประเทศไทย ตอบเป็นภาษาไทย
 ตอบเฉพาะคำถามที่เกี่ยวกับการท่องเที่ยว สถานที่ และแผนเดินทาง
 ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูล
+หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ (เช่น พิพิธภัณฑ์/กิจกรรมในบริเวณหาด) ให้แจ้งข้อมูลนั้นโดยตรงทันที ไม่ต้องปฏิเสธก่อนว่าไม่มีข้อมูลของอีกส่วนหนึ่ง
 
 ข้อมูลสถานที่ที่เกี่ยวข้อง:
 ${placesContext}`;
@@ -244,4 +243,39 @@ ${placesContext}`;
     }
 }
 
-module.exports = { generateTripPlan, ragChat };
+async function mobileRagChat(userMessage, options = {}) {
+    const places = await retrieveRelevantPlaces(userMessage, {
+        province : options.province || null,
+        limit    : options.limit || 5,
+    });
+
+    const placesContext = formatPlacesContext(places);
+    const systemPrompt =
+`คุณคือ AI Chatbot ผู้ช่วยท่องเที่ยวในประเทศไทย ตอบเป็นภาษาไทย กระชับ และอ้างอิงข้อมูลจาก RAG context ก่อนเสมอ
+ใช้ข้อมูลเวลาเปิด-ปิด ค่าเข้าชม เบอร์ติดต่อ รายละเอียด และเกร็ดจาก TAT ถ้ามี
+ถ้าข้อมูลสำคัญไม่มีใน context ให้บอกตรงๆ ว่ายังไม่มีข้อมูลยืนยัน และแนะนำให้ตรวจสอบกับสถานที่ก่อนเดินทาง
+หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ (เช่น พิพิธภัณฑ์/กิจกรรมในบริเวณหาด) ให้แจ้งข้อมูลนั้นโดยตรงทันที ไม่ต้องปฏิเสธก่อนว่าไม่มีข้อมูลของอีกส่วนหนึ่ง
+
+ข้อมูลสถานที่ที่เกี่ยวข้อง:
+${placesContext}`;
+
+    const messages = [{ role: 'user', content: userMessage }];
+    let answer = '';
+
+    for await (const token of streamGemini(systemPrompt, messages, 1024)) {
+        answer += token;
+    }
+
+    return {
+        answer,
+        sources: places.map((place) => ({
+            id: place.id,
+            name: place.name,
+            province: place.province,
+            category: place.category,
+            image_url: place.image_url,
+        })),
+    };
+}
+
+module.exports = { generateTripPlan, ragChat, mobileRagChat };

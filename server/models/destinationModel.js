@@ -1,5 +1,11 @@
 ﻿const pool = require('../config/db');
 
+const PLACE_STATUSES = ['pending', 'approved', 'rejected'];
+const normalizePlaceStatus = (status) => {
+    const cleanStatus = String(status || 'approved').trim().toLowerCase();
+    return PLACE_STATUSES.includes(cleanStatus) ? cleanStatus : 'approved';
+};
+
 class DestinationModel {
     static async getAll({ province, status, search }) {
         let sql = 'SELECT id, name, province, image_url, status, source, created_at FROM destinations';
@@ -72,7 +78,7 @@ class DestinationModel {
                     data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
                     data.opening_time || '00:00 AM',
                     data.closing_time || '00:00 PM',
-                    data.status || 'published',
+                    normalizePlaceStatus(data.status),
                     data.image_url || null
                 ]
             );
@@ -134,7 +140,7 @@ class DestinationModel {
                     data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
                     data.opening_time,
                     data.closing_time,
-                    data.status,
+                    normalizePlaceStatus(data.status),
                     data.image_url || null,
                     id
                 ]

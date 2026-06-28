@@ -5,8 +5,10 @@
 //          คืน top-k destinations พร้อม chunk_text สำหรับ inject prompt
 // =============================================================
 
-const { query } = require('../config/db');
+const pool = require('../config/db');
+const query = pool.query.bind(pool);
 const { getEmbedding } = require('./embedService');
+const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
 // -------------------------------------------------------------
 // ค้นหา destinations ที่เกี่ยวข้องกับ query
@@ -20,7 +22,7 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
     } = options;
 
     // embed คำถาม
-    const queryVector = await getEmbedding(queryText);
+    const queryVector = await getEmbedding(queryText, 'RETRIEVAL_QUERY');
 
     // vector search + filter
     const { rows } = await query(
@@ -37,7 +39,10 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
             d.image_url,
             d.opening_time,
             d.closing_time,
+            d.opening_hours,
             d.price_adult,
+            d.price_child,
+            d.tat_raw,
             d.avg_rating,
             pe.chunk_text,
             pe.chunk_field,
@@ -77,14 +82,17 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
 function formatPlacesContext(places) {
     if (places.length === 0) return 'ไม่พบสถานที่ที่เกี่ยวข้องในฐานข้อมูล';
 
-    return places.map((p, i) =>
-        `[${i + 1}] ${p.name}
+    return places.map((p, i) => {
+        const facts = buildPlaceFacts(p);
+
+        return `[${i + 1}] ${p.name}
 จังหวัด: ${p.province || '-'} | หมวดหมู่: ${p.category} | คะแนน: ${p.avg_rating || '-'}
-${p.description ? p.description.replace(/<[^>]*>/g, '').slice(0, 300) : ''}
+${facts.detailText || (p.description ? stripHtml(p.description).slice(0, 300) : '')}
 แท็ก: ${(p.tags || []).join(', ') || '-'}
-${p.price_adult ? `ค่าเข้าชม: ผู้ใหญ่ ${p.price_adult} บาท` : ''}
-${p.opening_time && p.opening_time !== '00:00' ? `เวลาทำการ: ${p.opening_time} - ${p.closing_time}` : ''}`
-    ).join('\n\n---\n\n');
+${facts.openingHoursText ? `เวลาเปิด-ปิด: ${facts.openingHoursText}` : ''}
+${facts.feeText ? `ค่าเข้าชม: ${facts.feeText}` : ''}
+${facts.contactText ? `เบอร์ติดต่อ: ${facts.contactText}` : ''}`;
+    }).join('\n\n---\n\n');
 }
 
 module.exports = { retrieveRelevantPlaces, formatPlacesContext };

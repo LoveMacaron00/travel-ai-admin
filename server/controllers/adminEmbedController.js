@@ -34,7 +34,7 @@ const syncTAT = async (req, res) => {
     try {
         const { province, keyword } = req.body;
         res.json({ message: 'TAT sync เริ่มทำงาน (background)' });
-        syncAllTATPlaces({ province, keyword }).catch(err =>
+        syncAllTATPlaces({ province, keyword, hydrateDetails: true }).catch(err =>
             console.error('[adminEmbed] syncTAT error:', err.message)
         );
     } catch (err) {

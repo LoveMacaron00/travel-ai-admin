@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const DestinationModel = require('../models/destinationModel');
+const { embedDestination, clearDestinationEmbedding } = require('../services/embedService');
 
 // ลบไฟล์จริงจาก /uploads (เฉพาะไฟล์ที่อยู่ใน /uploads เท่านั้น)
 const deleteUploadedFiles = (imagePaths) => {
@@ -97,6 +98,11 @@ const createDestination = async (req, res) => {
         }
 
         const destId = await DestinationModel.create(req.body, req.body.images);
+        if ((req.body.status || 'approved') === 'approved') {
+            await embedDestination(destId);
+        } else {
+            await clearDestinationEmbedding(destId);
+        }
         res.status(201).json({ id: destId, message: 'เพิ่มสถานที่สำเร็จ' });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการเพิ่มสถานที่:', err);
@@ -132,6 +138,12 @@ const updateDestination = async (req, res) => {
         }
 
         deleteUploadedFiles(removedImagePaths);
+
+        if ((req.body.status || 'approved') === 'approved') {
+            await embedDestination(destId);
+        } else {
+            await clearDestinationEmbedding(destId);
+        }
 
         res.json({ message: 'อัปเดตสถานที่สำเร็จ' });
     } catch (err) {

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, MapPin, Eye, Tag, ChevronLeft, ChevronRight, Filter, Compass, LayoutGrid } from 'lucide-react';
+import { Search, Plus, MapPin, Eye, Tag, ChevronLeft, ChevronRight, Filter, Compass, LayoutGrid, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
 import { showConfirmAlert, showErrorAlert, showSuccessAlert } from '../utils/alerts';
 
@@ -17,6 +17,8 @@ const Destinations = () => {
     const [search, setSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [loading, setLoading] = useState(false);
+    const [syncingId, setSyncingId] = useState(null);
+    const [bulkSyncing, setBulkSyncing] = useState(false);
 
     const [filters, setFilters] = useState({
         source: 'tat',
@@ -199,6 +201,52 @@ const Destinations = () => {
         }
     };
 
+    const handleBulkSyncTAT = async () => {
+        const result = await showConfirmAlert({
+            title: 'Sync สถานที่จาก TAT API?',
+            text: `คุณต้องการเริ่ม Sync สถานที่ทั้งหมดที่ค้นหาด้วยคำว่า "${debouncedSearch || 'ทั้งหมด'}" เข้าสู่ระบบและคำนวณ Embedding ใช่หรือไม่? (ใช้เวลาสักครู่ใน Background)`,
+            confirmButtonText: 'เริ่ม Sync',
+            cancelButtonText: 'ยกเลิก'
+        });
+
+        if (!result.isConfirmed) return;
+
+        setBulkSyncing(true);
+        try {
+            const res = await api.post('/admin/sync/tat', {
+                keyword: debouncedSearch
+            });
+            await showSuccessAlert(res.data?.message || 'สั่ง Sync ข้อมูลทั้งหมดเรียบร้อยแล้ว (รันใน Background)');
+        } catch (err) {
+            console.error('เกิดข้อผิดพลาดในการ Bulk Sync:', err);
+            await showErrorAlert(err.response?.data?.message || 'สั่ง Sync ข้อมูลไม่สำเร็จ');
+        } finally {
+            setBulkSyncing(false);
+        }
+    };
+
+    const handleSingleSyncTAT = async (tatPlaceId, name) => {
+        const result = await showConfirmAlert({
+            title: 'Sync สถานที่นี้?',
+            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและทำ Embedding ใช่หรือไม่?`,
+            confirmButtonText: 'เริ่ม Sync',
+            cancelButtonText: 'ยกเลิก'
+        });
+
+        if (!result.isConfirmed) return;
+
+        setSyncingId(tatPlaceId);
+        try {
+            await api.post(`/admin/sync/tat/${tatPlaceId}`);
+            await showSuccessAlert(`Sync และทำ Embedding สำหรับ "${name}" สำเร็จแล้ว!`);
+        } catch (err) {
+            console.error('เกิดข้อผิดพลาดในการ Sync รายบุคคล:', err);
+            await showErrorAlert(err.response?.data?.message || 'Sync สถานที่ไม่สำเร็จ');
+        } finally {
+            setSyncingId(null);
+        }
+    };
+
     // -----------------------
     // Combine + Normalize Data
     // -----------------------
@@ -321,6 +369,17 @@ const Destinations = () => {
                             className="pl-10 pr-4 py-3 w-full sm:w-72 bg-black/40 border border-gray-700 focus:border-yellow-500/50 focus:ring-2 focus:ring-yellow-500/20 rounded-xl text-sm text-white transition-all shadow-inner outline-none"
                         />
                     </form>
+
+                    {filters.source === 'tat' && (
+                        <button
+                            onClick={handleBulkSyncTAT}
+                            disabled={bulkSyncing}
+                            className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] disabled:shadow-none transform hover:-translate-y-0.5 disabled:transform-none"
+                        >
+                            <RefreshCw size={18} className={bulkSyncing ? 'animate-spin' : ''} />
+                            {bulkSyncing ? 'Syncing...' : 'Sync TAT to DB'}
+                        </button>
+                    )}
 
                     <button
                         onClick={() => navigate('/destinations/add')}
@@ -539,13 +598,23 @@ const Destinations = () => {
 
                                         <div className="mt-auto pt-4 flex gap-3">
                                             {item.source === 'tat_api' ? (
-                                                <button
-                                                    onClick={() => navigate(`/destinations/read-tat/${item.id}`, { state: { introduction: item.introduction } })}
-                                                    className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold rounded-xl border border-gray-700 hover:border-gray-500 transition-all text-center flex items-center justify-center gap-2"
-                                                >
-                                                    <Eye size={16} />
-                                                    View Details
-                                                </button>
+                                                <>
+                                                    <button
+                                                        onClick={() => navigate(`/destinations/read-tat/${item.id}`, { state: { introduction: item.introduction } })}
+                                                        className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold rounded-xl border border-gray-700 hover:border-gray-500 transition-all text-center flex items-center justify-center gap-2"
+                                                    >
+                                                        <Eye size={16} />
+                                                        View
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleSingleSyncTAT(item.id, item.name)}
+                                                        disabled={syncingId === item.id}
+                                                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-500 text-white text-sm font-semibold rounded-xl transition-all text-center flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/30 disabled:shadow-none"
+                                                    >
+                                                        <RefreshCw size={16} className={syncingId === item.id ? 'animate-spin' : ''} />
+                                                        {syncingId === item.id ? 'Syncing' : 'Sync & Embed'}
+                                                    </button>
+                                                </>
                                             ) : (
                                                 <>
                                                     <button

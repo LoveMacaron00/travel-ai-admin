@@ -1,18 +1,42 @@
-const { query } = require('../config/db');
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const EMBED_MODEL = 'text-embedding-3-small';
+const pool = require('../config/db');
+const query = pool.query.bind(pool);
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const EMBED_MODEL = 'gemini-embedding-001';
+const EMBED_DIMENSIONS = 1536;
+const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
-async function getEmbedding(text) {
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
+async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
+    if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
+        throw new Error('ไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ (.env)');
+    }
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: EMBED_MODEL, input: text }),
+        headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+            taskType,
+            outputDimensionality: EMBED_DIMENSIONS,
+            content: {
+                parts: [{ text }],
+            },
+        }),
     });
-    if (!response.ok) throw new Error(`OpenAI error: ${response.status} — ${await response.text()}`);
-    return (await response.json()).data[0].embedding;
+    if (!response.ok) throw new Error(`Gemini embedding error: ${response.status} — ${await response.text()}`);
+
+    const data = await response.json();
+    const values = data.embedding?.values;
+    if (!Array.isArray(values) || values.length !== EMBED_DIMENSIONS) {
+        throw new Error(`Gemini embedding returned invalid vector size: ${values?.length || 0}`);
+    }
+    return values;
 }
 
 function buildChunks(dest) {
+    const facts = buildPlaceFacts(dest);
+
     return [
         {
             field: 'name_tags',
@@ -27,7 +51,7 @@ function buildChunks(dest) {
             field: 'description',
             text: [
                 dest.name,
-                dest.description ? dest.description.replace(/<[^>]*>/g, '').slice(0, 800) : '',
+                facts.detailText || (dest.description ? stripHtml(dest.description).slice(0, 800) : ''),
             ].filter(Boolean).join('\n'),
         },
         {
@@ -38,9 +62,9 @@ function buildChunks(dest) {
                 dest.province    ? `จังหวัด${dest.province}`                          : '',
                 (dest.latitude && dest.longitude) ? `พิกัด ${dest.latitude}, ${dest.longitude}` : '',
                 `หมวดหมู่: ${dest.category}`,
-                dest.price_adult ? `ค่าเข้าชมผู้ใหญ่ ${dest.price_adult} บาท`        : '',
-                (dest.opening_time && dest.opening_time !== '00:00')
-                    ? `เปิด ${dest.opening_time} - ${dest.closing_time}` : '',
+                facts.feeText ? `ค่าเข้าชม: ${facts.feeText}` : '',
+                facts.openingHoursText ? `เวลาทำการ: ${facts.openingHoursText}` : '',
+                facts.contactText ? `ติดต่อ: ${facts.contactText}` : '',
             ].filter(Boolean).join(' '),
         },
     ];
@@ -49,7 +73,8 @@ function buildChunks(dest) {
 async function embedDestination(destinationId) {
     const { rows } = await query(
         `SELECT id, name, province, description, category, tags,
-                latitude, longitude, address, opening_time, closing_time, price_adult
+                latitude, longitude, address, opening_time, closing_time,
+                opening_hours, price_adult, price_child, tat_raw
          FROM destinations WHERE id = $1 AND status = 'approved'`,
         [destinationId]
     );
@@ -64,7 +89,7 @@ async function embedDestination(destinationId) {
 
     for (const chunk of chunks) {
         if (!chunk.text.trim()) continue;
-        const vector = await getEmbedding(chunk.text);
+        const vector = await getEmbedding(chunk.text, 'RETRIEVAL_DOCUMENT');
         await query(
             `INSERT INTO place_embeddings (destination_id, chunk_text, chunk_field, embedding)
              VALUES ($1, $2, $3, $4::vector)`,
@@ -97,4 +122,8 @@ async function bulkEmbedMissing() {
     return { success, failed };
 }
 
-module.exports = { getEmbedding, embedDestination, bulkEmbedMissing, buildChunks };
+async function clearDestinationEmbedding(destinationId) {
+    await query('DELETE FROM place_embeddings WHERE destination_id = $1', [destinationId]);
+}
+
+module.exports = { getEmbedding, embedDestination, bulkEmbedMissing, clearDestinationEmbedding, buildChunks };
