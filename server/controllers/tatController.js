@@ -24,7 +24,7 @@ const checkEnvConfig = (res) => {
 const searchPlaces = async (req, res) => {
     if (!checkEnvConfig(res)) return;
     try {
-        const { keyword, province, page = 1, limit = 10 } = req.query;
+        const { keyword, province, place_category, page = 1, limit = 10 } = req.query;
 
         // สร้าง query parameters สำหรับ TAT API
         const params = new URLSearchParams();
@@ -32,6 +32,7 @@ const searchPlaces = async (req, res) => {
         params.set('page', page);
         if (keyword) params.set('keyword', keyword);
         if (province) params.set('provinceName', province);
+        if (place_category) params.set('place_category', place_category);
 
         const url = `${TAT_API_BASE}/places?${params}`;
         const response = await fetch(url, { headers: tatHeaders });

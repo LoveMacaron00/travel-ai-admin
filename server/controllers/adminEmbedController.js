@@ -32,9 +32,9 @@ const embedOne = async (req, res) => {
 // POST /api/admin/sync/tat
 const syncTAT = async (req, res) => {
     try {
-        const { province, keyword } = req.body;
+        const { province, keyword, placeCategory } = req.body;
         res.json({ message: 'TAT sync เริ่มทำงาน (background)' });
-        syncAllTATPlaces({ province, keyword, hydrateDetails: true }).catch(err =>
+        syncAllTATPlaces({ province, keyword, placeCategory, hydrateDetails: true }).catch(err =>
             console.error('[adminEmbed] syncTAT error:', err.message)
         );
     } catch (err) {

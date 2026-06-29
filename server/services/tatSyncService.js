@@ -16,13 +16,14 @@ const CATEGORY_MAP = {
 };
 const mapCategory = c => CATEGORY_MAP[c] ?? 'general';
 
-async function fetchTATPage(page, limit = 100, keyword = '', province = '') {
+async function fetchTATPage(page, limit = 100, keyword = '', province = '', placeCategory = '') {
     if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
         throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
     }
     const params = new URLSearchParams({ numberOfResult: limit, page,
-        ...(keyword  && { keyword }),
-        ...(province && { provinceName: province }) });
+        ...(keyword       && { keyword }),
+        ...(province      && { provinceName: province }),
+        ...(placeCategory && { place_category: placeCategory }) });
     const res = await fetch(`${TAT_API_BASE}/places?${params}`, { headers: TAT_HEADERS });
     if (!res.ok) throw new Error(`TAT API error: ${res.status}`);
     return res.json();
@@ -97,13 +98,13 @@ async function upsertTATPlace(place) {
 }
 
 async function syncAllTATPlaces(options = {}) {
-    const { province = '', keyword = '', maxPages = 50, hydrateDetails = false } = options;
+    const { province = '', keyword = '', placeCategory = '', maxPages = 50, hydrateDetails = false } = options;
     let page = 1, totalUpserted = 0, totalEmbedded = 0, totalFailed = 0;
-    console.log(`[tat-sync] เริ่ม sync — province:"${province}" keyword:"${keyword}"`);
+    console.log(`[tat-sync] เริ่ม sync — province:"${province}" keyword:"${keyword}" placeCategory:"${placeCategory}"`);
 
     while (page <= maxPages) {
         let data;
-        try { data = await fetchTATPage(page, 100, keyword, province); }
+        try { data = await fetchTATPage(page, 100, keyword, province, placeCategory); }
         catch (err) { console.error(`[tat-sync] page ${page} error:`, err.message); break; }
 
         const places = data.result || data.data || [];

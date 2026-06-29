@@ -7,6 +7,17 @@ import { showConfirmAlert, showErrorAlert, showSuccessAlert } from '../utils/ale
 const PAGE_SIZE = 10;
 const DEBOUNCE_MS = 500;
 
+// หมวดหมู่สถานที่ของ TAT API (ส่งค่า `id` เป็น query param `place_category`)
+// สำคัญ: TAT API รับเฉพาะ categoryCode ภาษาอังกฤษ — ถ้าส่งชื่อไทย API จะตอบ 500
+const PLACE_CATEGORIES = [
+    { id: 'all', label: 'ทุกหมวดหมู่' },
+    { id: 'attraction', label: 'สถานที่ท่องเที่ยว' },
+    { id: 'accommodation', label: 'ที่พัก' },
+    { id: 'restaurant', label: 'ร้านอาหาร' },
+    { id: 'shop', label: 'ร้านค้า' },
+    { id: 'other', label: 'อื่นๆ' }
+];
+
 const Destinations = () => {
     const navigate = useNavigate();
 
@@ -22,7 +33,8 @@ const Destinations = () => {
 
     const [filters, setFilters] = useState({
         source: 'tat',
-        status: 'all'
+        status: 'all',
+        placeCategory: 'all'
     });
 
     const abortRef = useRef(null);
@@ -63,7 +75,7 @@ const Destinations = () => {
     // -----------------------
     // Fetch All Data (parallel)
     // -----------------------
-    const fetchData = useCallback(async (keyword, pageNum, source) => {
+    const fetchData = useCallback(async (keyword, pageNum, source, placeCategory) => {
         requestIdRef.current += 1;
         const currentRequestId = requestIdRef.current;
 
@@ -93,6 +105,9 @@ const Destinations = () => {
             } else {
                 const tatParams = new URLSearchParams();
                 if (keyword) tatParams.set('keyword', keyword);
+                if (placeCategory && placeCategory !== 'all') {
+                    tatParams.set('place_category', placeCategory);
+                }
                 tatParams.set('limit', PAGE_SIZE);
                 tatParams.set('page', pageNum);
 
@@ -134,12 +149,12 @@ const Destinations = () => {
     // -----------------------
     useEffect(() => {
         setPage(1);
-        fetchData(debouncedSearch, 1, filters.source);
-    }, [debouncedSearch, filters.source, fetchData]);
+        fetchData(debouncedSearch, 1, filters.source, filters.placeCategory);
+    }, [debouncedSearch, filters.source, filters.placeCategory, fetchData]);
 
     useEffect(() => {
         setPage(1);
-    }, [filters.source]);
+    }, [filters.source, filters.placeCategory]);
 
     useEffect(() => {
         return () => {
@@ -162,7 +177,7 @@ const Destinations = () => {
     const handlePageChange = (newPage) => {
         if (newPage < 1 || newPage > totalPages) return;
         setPage(newPage);
-        fetchData(debouncedSearch, newPage, filters.source);
+        fetchData(debouncedSearch, newPage, filters.source, filters.placeCategory);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -194,7 +209,7 @@ const Destinations = () => {
         try {
             await api.delete(`/destinations/${id}`);
             await showSuccessAlert('ลบสถานที่เรียบร้อยแล้ว');
-            fetchData(debouncedSearch, page, filters.source);
+            fetchData(debouncedSearch, page, filters.source, filters.placeCategory);
         } catch (err) {
             console.error('เกิดข้อผิดพลาดในการลบ:', err);
             await showErrorAlert('ลบสถานที่ไม่สำเร็จ');
@@ -202,9 +217,12 @@ const Destinations = () => {
     };
 
     const handleBulkSyncTAT = async () => {
+        const activeCategory = filters.placeCategory && filters.placeCategory !== 'all'
+            ? PLACE_CATEGORIES.find((c) => c.id === filters.placeCategory)?.label || filters.placeCategory
+            : 'ทุกหมวดหมู่';
         const result = await showConfirmAlert({
             title: 'Sync สถานที่จาก TAT API?',
-            text: `คุณต้องการเริ่ม Sync สถานที่ทั้งหมดที่ค้นหาด้วยคำว่า "${debouncedSearch || 'ทั้งหมด'}" เข้าสู่ระบบและคำนวณ Embedding ใช่หรือไม่? (ใช้เวลาสักครู่ใน Background)`,
+            text: `คุณต้องการเริ่ม Sync สถานที่ทั้งหมด (หมวดหมู่: ${activeCategory}, คำค้น: "${debouncedSearch || 'ทั้งหมด'}") เข้าสู่ระบบและคำนวณ Embedding ใช่หรือไม่? (ใช้เวลาสักครู่ใน Background)`,
             confirmButtonText: 'เริ่ม Sync',
             cancelButtonText: 'ยกเลิก'
         });
@@ -214,7 +232,8 @@ const Destinations = () => {
         setBulkSyncing(true);
         try {
             const res = await api.post('/admin/sync/tat', {
-                keyword: debouncedSearch
+                keyword: debouncedSearch,
+                placeCategory: filters.placeCategory !== 'all' ? filters.placeCategory : undefined
             });
             await showSuccessAlert(res.data?.message || 'สั่ง Sync ข้อมูลทั้งหมดเรียบร้อยแล้ว (รันใน Background)');
         } catch (err) {
@@ -402,7 +421,7 @@ const Destinations = () => {
                             </h3>
                             <button
                                 onClick={() =>
-                                    setFilters({ source: 'tat', status: 'all' })
+                                    setFilters({ source: 'tat', status: 'all', placeCategory: 'all' })
                                 }
                                 className="text-xs font-semibold text-yellow-500/80 hover:text-yellow-400 transition-colors px-2 py-1 bg-yellow-500/10 rounded-lg"
                             >
@@ -442,6 +461,34 @@ const Destinations = () => {
                                 <span className={`text-sm font-medium ${filters.source === 'admin' ? 'text-blue-400' : 'text-gray-400'}`}>Admin Added</span>
                             </label>
                         </div>
+
+                        {/* Category Filter (TAT API only) */}
+                        {filters.source === 'tat' && (
+                            <div className="mt-8 pt-6 border-t border-gray-800 space-y-3">
+                                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">หมวดหมู่ (Category)</p>
+
+                                {PLACE_CATEGORIES.map((cat) => (
+                                    <label
+                                        key={cat.id}
+                                        className={`flex items-center p-2.5 rounded-xl transition-all cursor-pointer group ${filters.placeCategory === cat.id ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <input
+                                                type="radio"
+                                                name="category-filter"
+                                                className="hidden"
+                                                checked={filters.placeCategory === cat.id}
+                                                onChange={() => setFilters({ ...filters, placeCategory: cat.id })}
+                                            />
+                                            <div className="w-4 h-4 flex items-center justify-center">
+                                                <div className={`w-2.5 h-2.5 rounded-full ${filters.placeCategory === cat.id ? 'bg-yellow-500' : 'bg-gray-600 group-hover:bg-gray-500'} transition-colors`} />
+                                            </div>
+                                            <span className={`text-sm ${filters.placeCategory === cat.id ? 'text-yellow-400 font-medium' : 'text-gray-400'}`}>{cat.label}</span>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
 
                         {/* Status Filter */}
                         <div className="mt-8 pt-6 border-t border-gray-800 space-y-3">
