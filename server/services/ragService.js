@@ -1,19 +1,14 @@
-// =============================================================
 // ragService.js — vector search สำหรับ RAG
-// =============================================================
-// หน้าที่: รับ query text → embed → cosine search ใน pgvector
-//          คืน top-k destinations พร้อม chunk_text สำหรับ inject prompt
-// =============================================================
+// รับ query text → embed → cosine search ใน pgvector
+// คืน top-k destinations พร้อม chunk_text สำหรับ inject prompt
 
 const pool = require('../config/db');
 const query = pool.query.bind(pool);
 const { getEmbedding } = require('./embedService');
 const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
-// -------------------------------------------------------------
 // ค้นหา destinations ที่เกี่ยวข้องกับ query
 // options: { province, categories, limit }
-// -------------------------------------------------------------
 async function retrieveRelevantPlaces(queryText, options = {}) {
     const {
         province   = null,
@@ -76,9 +71,7 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
     return places;
 }
 
-// -------------------------------------------------------------
 // format places เป็น context string สำหรับ inject ใน Gemini prompt
-// -------------------------------------------------------------
 function formatPlacesContext(places) {
     if (places.length === 0) return 'ไม่พบสถานที่ที่เกี่ยวข้องในฐานข้อมูล';
 
@@ -86,12 +79,12 @@ function formatPlacesContext(places) {
         const facts = buildPlaceFacts(p);
 
         return `[${i + 1}] ${p.name}
-จังหวัด: ${p.province || '-'} | หมวดหมู่: ${p.category} | คะแนน: ${p.avg_rating || '-'}
-${facts.detailText || (p.description ? stripHtml(p.description).slice(0, 300) : '')}
-แท็ก: ${(p.tags || []).join(', ') || '-'}
-${facts.openingHoursText ? `เวลาเปิด-ปิด: ${facts.openingHoursText}` : ''}
-${facts.feeText ? `ค่าเข้าชม: ${facts.feeText}` : ''}
-${facts.contactText ? `เบอร์ติดต่อ: ${facts.contactText}` : ''}`;
+    จังหวัด: ${p.province || '-'} | หมวดหมู่: ${p.category} | คะแนน: ${p.avg_rating || '-'}
+    ${facts.detailText || (p.description ? stripHtml(p.description).slice(0, 300) : '')}
+    แท็ก: ${(p.tags || []).join(', ') || '-'}
+    ${facts.openingHoursText ? `เวลาเปิด-ปิด: ${facts.openingHoursText}` : ''}
+    ${facts.feeText ? `ค่าเข้าชม: ${facts.feeText}` : ''}
+    ${facts.contactText ? `เบอร์ติดต่อ: ${facts.contactText}` : ''}`;
     }).join('\n\n---\n\n');
 }
 

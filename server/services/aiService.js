@@ -1,10 +1,6 @@
-// =============================================================
-// aiService.js — Gemini API: plan generation + RAG chat
-// =============================================================
-// หน้าที่:
-//   generateTripPlan() — สร้างแผนเที่ยว stream SSE → Flutter
-//   ragChat()          — ตอบคำถามด้วย RAG context stream SSE → Flutter
-// =============================================================
+// aiService.js Gemini API plan generation + RAG chat
+//   generateTripPlan() สร้างแผนเที่ยว → Flutter
+//   ragChat() ตอบคำถามด้วย RAG context → Flutter
 
 const pool = require('../config/db');
 const query = pool.query.bind(pool);
@@ -12,10 +8,8 @@ const { retrieveRelevantPlaces, formatPlacesContext } = require('./ragService');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
-// -------------------------------------------------------------
-// helper: เรียก Gemini API พร้อม stream
+// streamGemini()
 // คืน async generator ที่ yield ทีละ text delta
-// -------------------------------------------------------------
 async function* streamGemini(systemPrompt, messages, maxTokens = 4096) {
 
     const contents = messages.map(m => ({
@@ -75,16 +69,14 @@ async function* streamGemini(systemPrompt, messages, maxTokens = 4096) {
                 if (text) {
                     yield text;
                 }
-            } catch { /* skip malformed */ }
+            } catch {}
         }
     }
 }
 
-// -------------------------------------------------------------
 // generateTripPlan()
-// สร้างแผนเที่ยว พร้อม stream SSE กลับไป Flutter
-// หลัง stream เสร็จ → save trip_plans + embed plan chunks
-// -------------------------------------------------------------
+// สร้างแผนเที่ยว พร้อม ส่งกลับไป Flutter
+// หลังส่งเสร็จ → save trip_plans + embed plan chunks
 async function generateTripPlan(tripId, tripInput, res) {
     // ดึง relevant places จาก RAG
     const ragQuery = [
@@ -94,50 +86,50 @@ async function generateTripPlan(tripId, tripInput, res) {
     ].join(' ');
 
     const places = await retrieveRelevantPlaces(ragQuery, {
-        province  : tripInput.province,
-        limit     : 15,
+        province : tripInput.province,
+        limit : 15,
     });
 
     const placesContext = formatPlacesContext(places);
 
-    const systemPrompt =
-`คุณคือผู้เชี่ยวชาญวางแผนการท่องเที่ยวในประเทศไทย
-ตอบเป็นภาษาไทยเสมอ และตอบในรูปแบบ JSON ที่กำหนดเท่านั้น ห้ามมีข้อความอื่นนอก JSON
+    const systemPrompt = 
+    `คุณคือผู้เชี่ยวชาญวางแผนการท่องเที่ยวในประเทศไทย
+    ตอบเป็นภาษาไทยเสมอ และตอบในรูปแบบ JSON ที่กำหนดเท่านั้น ห้ามมีข้อความอื่นนอก JSON
 
-ข้อมูลสถานที่จากฐานข้อมูล:
-${placesContext}`;
+    ข้อมูลสถานที่จากฐานข้อมูล:
+    ${placesContext}`;
 
-    const userPrompt =
-`สร้างแผนเที่ยว ${tripInput.days} วัน ที่ ${tripInput.destination}
+    const userPrompt = 
+    `สร้างแผนเที่ยว ${tripInput.days} วัน ที่ ${tripInput.destination}
 
-ข้อมูลผู้เดินทาง:
-- งบประมาณ: ${tripInput.budget} ${tripInput.currency || 'THB'}
-- สไตล์การท่องเที่ยว: ${tripInput.travel_style || 'ไม่ระบุ'}
-- ประเภทกลุ่ม: ${tripInput.group_type || 'ไม่ระบุ'}
-- ความสนใจ: ${(tripInput.interests || []).join(', ') || 'ไม่ระบุ'}
+    ข้อมูลผู้เดินทาง:
+    - งบประมาณ: ${tripInput.budget} ${tripInput.currency || 'THB'}
+    - สไตล์การท่องเที่ยว: ${tripInput.travel_style || 'ไม่ระบุ'}
+    - ประเภทกลุ่ม: ${tripInput.group_type || 'ไม่ระบุ'}
+    - ความสนใจ: ${(tripInput.interests || []).join(', ') || 'ไม่ระบุ'}
 
-ตอบในรูปแบบ JSON นี้เท่านั้น:
-{
-  "summary": "สรุปแผนเที่ยว 2-3 ประโยค",
-  "totalEstimatedCost": 0,
-  "budgetBreakdown": {
-    "accommodation": 0,
-    "food": 0,
-    "transport": 0,
-    "activities": 0
-  },
-  "days": [
+    ตอบในรูปแบบ JSON นี้เท่านั้น:
     {
-      "day": 1,
-      "theme": "ธีมของวัน",
-      "morning":   { "activity": "", "place": "", "cost": 0, "duration": "", "tip": "" },
-      "afternoon": { "activity": "", "place": "", "cost": 0, "duration": "", "tip": "" },
-      "evening":   { "activity": "", "place": "", "cost": 0, "duration": "", "tip": "" }
-    }
-  ],
-  "mustEat": ["อาหารที่ต้องลอง 1", "อาหารที่ต้องลอง 2"],
-  "tips": ["เคล็ดลับการเดินทาง 1", "เคล็ดลับ 2"]
-}`;
+    "summary": "สรุปแผนเที่ยว 2-3 ประโยค",
+    "totalEstimatedCost": 0,
+    "budgetBreakdown": {
+        "accommodation": 0,
+        "food": 0,
+        "transport": 0,
+        "activities": 0
+    },
+    "days": [
+        {
+        "day": 1,
+        "theme": "ธีมของวัน",
+        "morning":   { "activity": "", "place": "", "cost": 0, "duration": "", "tip": "" },
+        "afternoon": { "activity": "", "place": "", "cost": 0, "duration": "", "tip": "" },
+        "evening":   { "activity": "", "place": "", "cost": 0, "duration": "", "tip": "" }
+        }
+    ],
+    "mustEat": ["อาหารที่ต้องลอง 1", "อาหารที่ต้องลอง 2"],
+    "tips": ["เคล็ดลับการเดินทาง 1", "เคล็ดลับ 2"]
+    }`;
 
     // ตั้ง SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -177,11 +169,9 @@ ${placesContext}`;
     }
 }
 
-// -------------------------------------------------------------
 // ragChat()
 // ตอบคำถามเกี่ยวกับแผนเที่ยว ด้วย RAG + chat history
-// stream SSE กลับไป Flutter พร้อมบันทึก source_chunk_ids
-// -------------------------------------------------------------
+// ส่งกลับไป Flutter พร้อมบันทึก source_chunk_ids
 async function ragChat(sessionId, tripId, userMessage, chatHistory, res) {
     // ดึง trip context
     const { rows: tripRows } = await query(
@@ -200,13 +190,13 @@ async function ragChat(sessionId, tripId, userMessage, chatHistory, res) {
     const sourceChunkIds = places.map(p => p.id);
 
     const systemPrompt =
-`คุณคือ AI ผู้ช่วยวางแผนการท่องเที่ยวในประเทศไทย ตอบเป็นภาษาไทย
-ตอบเฉพาะคำถามที่เกี่ยวกับการท่องเที่ยว สถานที่ และแผนเดินทาง
-ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูล
-หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ (เช่น พิพิธภัณฑ์/กิจกรรมในบริเวณหาด) ให้แจ้งข้อมูลนั้นโดยตรงทันที ไม่ต้องปฏิเสธก่อนว่าไม่มีข้อมูลของอีกส่วนหนึ่ง
+    `คุณคือ AI ผู้ช่วยวางแผนการท่องเที่ยวในประเทศไทย ตอบเป็นภาษาไทย
+    ตอบเฉพาะคำถามที่เกี่ยวกับการท่องเที่ยว สถานที่ และแผนเดินทาง
+    ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูล
+    หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ (เช่น พิพิธภัณฑ์/กิจกรรมในบริเวณหาด) ให้แจ้งข้อมูลนั้นโดยตรงทันที ไม่ต้องปฏิเสธก่อนว่าไม่มีข้อมูลของอีกส่วนหนึ่ง
 
-ข้อมูลสถานที่ที่เกี่ยวข้อง:
-${placesContext}`;
+    ข้อมูลสถานที่ที่เกี่ยวข้อง:
+    ${placesContext}`;
 
     // ตั้ง SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -251,13 +241,13 @@ async function mobileRagChat(userMessage, options = {}) {
 
     const placesContext = formatPlacesContext(places);
     const systemPrompt =
-`คุณคือ AI Chatbot ผู้ช่วยท่องเที่ยวในประเทศไทย ตอบเป็นภาษาไทย กระชับ และอ้างอิงข้อมูลจาก RAG context ก่อนเสมอ
-ใช้ข้อมูลเวลาเปิด-ปิด ค่าเข้าชม เบอร์ติดต่อ รายละเอียด และเกร็ดจาก TAT ถ้ามี
-ถ้าข้อมูลสำคัญไม่มีใน context ให้บอกตรงๆ ว่ายังไม่มีข้อมูลยืนยัน และแนะนำให้ตรวจสอบกับสถานที่ก่อนเดินทาง
-หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ (เช่น พิพิธภัณฑ์/กิจกรรมในบริเวณหาด) ให้แจ้งข้อมูลนั้นโดยตรงทันที ไม่ต้องปฏิเสธก่อนว่าไม่มีข้อมูลของอีกส่วนหนึ่ง
+    `คุณคือ AI Chatbot ผู้ช่วยท่องเที่ยวในประเทศไทย ตอบเป็นภาษาไทย กระชับ และอ้างอิงข้อมูลจาก RAG context ก่อนเสมอ
+    ใช้ข้อมูลเวลาเปิด-ปิด ค่าเข้าชม เบอร์ติดต่อ รายละเอียด และเกร็ดจาก TAT ถ้ามี
+    ถ้าข้อมูลสำคัญไม่มีใน context ให้บอกตรงๆ ว่ายังไม่มีข้อมูลยืนยัน และแนะนำให้ตรวจสอบกับสถานที่ก่อนเดินทาง
+    หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ (เช่น พิพิธภัณฑ์/กิจกรรมในบริเวณหาด) ให้แจ้งข้อมูลนั้นโดยตรงทันที ไม่ต้องปฏิเสธก่อนว่าไม่มีข้อมูลของอีกส่วนหนึ่ง
 
-ข้อมูลสถานที่ที่เกี่ยวข้อง:
-${placesContext}`;
+    ข้อมูลสถานที่ที่เกี่ยวข้อง:
+    ${placesContext}`;
 
     const messages = [{ role: 'user', content: userMessage }];
     let answer = '';
