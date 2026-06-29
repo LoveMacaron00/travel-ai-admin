@@ -400,13 +400,15 @@ const Destinations = () => {
                         </button>
                     )}
 
-                    <button
-                        onClick={() => navigate('/destinations/add')}
-                        className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-black font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:shadow-[0_0_25px_rgba(234,179,8,0.5)] transform hover:-translate-y-0.5"
-                    >
-                        <Plus size={18} />
-                        Add New
-                    </button>
+                    {filters.source === 'admin' && (
+                        <button
+                            onClick={() => navigate('/destinations/add')}
+                            className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-black font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:shadow-[0_0_25px_rgba(234,179,8,0.5)] transform hover:-translate-y-0.5"
+                        >
+                            <Plus size={18} />
+                            Add New
+                        </button>
+                    )}
                 </div>
             </div>
 
