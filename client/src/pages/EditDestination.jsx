@@ -95,7 +95,7 @@ const EditDestination = () => {
                     longitude: data.longitude != null ? String(data.longitude) : '',
                     opening_time: data.opening_time || '09:00',
                     closing_time: data.closing_time || '17:00',
-                    status: data.status || 'published',
+                    status: data.status || 'approved',
                 });
                 setHasOpeningHours(!!data.opening_time);
                 // Collect existing images
@@ -445,8 +445,9 @@ const EditDestination = () => {
                             <div>
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Status</label>
                                 <select className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 appearance-none" value={form.status} onChange={e => handleChange('status', e.target.value)}>
-                                    <option value="published" className="bg-gray-900">Published (Public)</option>
-                                    <option value="draft" className="bg-gray-900">Draft (Hidden)</option>
+                                    <option value="approved" className="bg-gray-900">Approved (Public)</option>
+                                    <option value="pending" className="bg-gray-900">Pending (Waiting)</option>
+                                    <option value="rejected" className="bg-gray-900">Rejected (Hidden)</option>
                                 </select>
                             </div>
                         </div>

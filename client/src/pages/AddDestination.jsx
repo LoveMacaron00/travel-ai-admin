@@ -69,7 +69,7 @@ const AddDestination = () => {
         name: '', province: '', description: '',
         latitude: '', longitude: '',
         opening_time: '09:00', closing_time: '17:00',
-        status: 'published'
+        status: 'approved'
     });
     const [images, setImages] = useState([]);
     const [uploading, setUploading] = useState(false);
@@ -408,8 +408,9 @@ const AddDestination = () => {
                             <div>
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Status</label>
                                 <select className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none" value={form.status} onChange={e => handleChange('status', e.target.value)}>
-                                    <option value="published" className="bg-gray-900">Published (Public)</option>
-                                    <option value="draft" className="bg-gray-900">Draft (Hidden)</option>
+                                    <option value="approved" className="bg-gray-900">Approved (Public)</option>
+                                    <option value="pending" className="bg-gray-900">Pending (Waiting)</option>
+                                    <option value="rejected" className="bg-gray-900">Rejected (Hidden)</option>
                                 </select>
                             </div>
                         </div>

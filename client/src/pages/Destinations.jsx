@@ -337,8 +337,9 @@ const Destinations = () => {
         }
 
         return {
-            published: baseItems.filter((status) => status === 'published').length,
-            draft: baseItems.filter((status) => status === 'draft').length
+            pending: baseItems.filter((status) => status === 'pending').length,
+            approved: baseItems.filter((status) => status === 'approved').length,
+            rejected: baseItems.filter((status) => status === 'rejected').length
         };
     }, [tatDests, adminDests, filters.source]);
 
@@ -498,8 +499,9 @@ const Destinations = () => {
 
                             {[
                                 { id: 'all', label: 'All Status', count: null },
-                                { id: 'published', label: 'Published', count: statusCounts.published },
-                                { id: 'draft', label: 'Draft', count: statusCounts.draft }
+                                { id: 'approved', label: 'Approved', count: statusCounts.approved },
+                                { id: 'pending', label: 'Pending', count: statusCounts.pending },
+                                { id: 'rejected', label: 'Rejected', count: statusCounts.rejected }
                             ].map((status) => (
                                 <label key={status.id} className={`flex items-center justify-between p-2.5 rounded-xl transition-all cursor-pointer group ${filters.status === status.id ? 'bg-white/10' : 'hover:bg-white/5'}`}>
                                     <div className="flex items-center gap-3">
@@ -586,14 +588,19 @@ const Destinations = () => {
                                             >
                                                 {item.source === 'tat_api' ? 'TAT API' : 'ADMIN'}
                                             </span>
-                                            {item.status === 'published' && (
+                                            {item.status === 'approved' && (
                                                 <span className="px-2 py-1 bg-emerald-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-emerald-400/50">
-                                                    PUBLISHED
+                                                    APPROVED
                                                 </span>
                                             )}
-                                            {item.status === 'draft' && (
-                                                <span className="px-2 py-1 bg-gray-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-gray-400/50">
-                                                    DRAFT
+                                            {item.status === 'pending' && (
+                                                <span className="px-2 py-1 bg-amber-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-amber-400/50">
+                                                    PENDING
+                                                </span>
+                                            )}
+                                            {item.status === 'rejected' && (
+                                                <span className="px-2 py-1 bg-rose-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-rose-400/50">
+                                                    REJECTED
                                                 </span>
                                             )}
                                         </div>
