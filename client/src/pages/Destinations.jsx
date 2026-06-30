@@ -442,7 +442,7 @@ const Destinations = () => {
                                     name="source-filter"
                                     className="hidden"
                                     checked={filters.source === 'tat'}
-                                    onChange={() => setFilters({ ...filters, source: 'tat' })}
+                                    onChange={() => setFilters({ ...filters, source: 'tat', status: 'all' })}
                                 />
                                 <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${filters.source === 'tat' ? 'border-yellow-500' : 'border-gray-500'}`}>
                                     {filters.source === 'tat' && <div className="w-2 h-2 rounded-full bg-yellow-500" />}
@@ -493,7 +493,8 @@ const Destinations = () => {
                             </div>
                         )}
 
-                        {/* Status Filter */}
+                        {/* Status Filter (Admin Added only) */}
+                        {filters.source === 'admin' && (
                         <div className="mt-8 pt-6 border-t border-gray-800 space-y-3">
                             <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">Status</p>
 
@@ -523,6 +524,7 @@ const Destinations = () => {
                                 </label>
                             ))}
                         </div>
+                        )}
                     </div>
                 </div>
 
@@ -588,7 +590,7 @@ const Destinations = () => {
                                             >
                                                 {item.source === 'tat_api' ? 'TAT API' : 'ADMIN'}
                                             </span>
-                                            {item.status === 'approved' && (
+                                            {item.status === 'approved' && item.source === 'admin' && (
                                                 <span className="px-2 py-1 bg-emerald-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-emerald-400/50">
                                                     APPROVED
                                                 </span>
