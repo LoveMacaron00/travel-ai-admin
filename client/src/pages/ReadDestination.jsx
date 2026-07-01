@@ -61,36 +61,27 @@ const ReadDestination = () => {
     const locationParts = [subDistName, distName, provName].filter(Boolean);
     const province = locationParts.length > 0 ? locationParts.join(', ') : 'Unknown Location';
 
-    const desc = place.introduction || place.sha?.detail || place.place_information?.detail || place.detail || place.description || navIntroduction || '';
+    const rawDesc = place.information?.detail || place.detail || place.description || place.sha?.detail || place.place_information?.detail || place.introduction || navIntroduction || '';
+    const desc = rawDesc.replace(/<\/?p>/gi, '').replace(/<\/?strong>/gi, '');
     const lat = place.latitude || place.location?.latitude || '';
     const lng = place.longitude || place.location?.longitude || '';
 
-    // Fix: Handle opening_hours object or array
-    let hours = place.opening_hours;
-    let openTime = '';
-
-    if (hours) {
-        if (typeof hours === 'string') {
-            openTime = hours;
-        } else if (Array.isArray(hours)) {
-            // Example: [{day: 'Mon', open: '08:00', close: '17:00'}, ...]
-            openTime = hours.map(h => {
+    const hours = place.openingHours || place.opening_hours || [];
+    const fmt = (s) => (s || '').replace(/:00$/g, '');
+    const openTime = Array.isArray(hours)
+        ? (() => {
+            const items = hours.map(h => {
                 if (typeof h === 'string') return h;
                 const d = h.day || h.weekday || '';
-                const t = h.time || (h.open && h.close ? `${h.open} - ${h.close}` : '');
-                return d ? `${d}: ${t}` : t;
-            }).filter(Boolean).join(', ');
-        } else if (typeof hours === 'object') {
-            if (hours.day && Array.isArray(hours.day)) {
-                openTime = hours.day[0]?.time || 'N/A';
-            } else if (hours.open && hours.close) {
-                openTime = `${hours.open} - ${hours.close}`;
-            } else {
-                // Try to print keys if it's a simple object map
-                openTime = Object.entries(hours).map(([k, v]) => `${k}: ${v}`).join(', ');
-            }
-        }
-    }
+                const t = h.time || h.openTime || (h.open && h.close ? `${fmt(h.open)} - ${fmt(h.close)}` : '') || (h.openTime && h.closeTime ? `${fmt(h.openTime)} - ${fmt(h.closeTime)}` : '');
+                return d ? { day: d, time: t } : { day: '', time: t };
+            }).filter(Boolean);
+            const allSame = items.length > 0 && items.every(i => i.time === items[0].time);
+            if (allSame) return `ทุกวัน: ${items[0].time}`;
+            return items.map(i => `${i.day}: ${i.time}`).join('\n');
+          })()
+        : typeof hours === 'string' ? hours : '';
+
     const rawImages = place.sha?.detailPicture || place.thumbnailUrl || place.web_picture_urls || place.picture_urls || [];
     const images = Array.isArray(rawImages) ? rawImages : (typeof rawImages === 'string' ? [rawImages] : []);
 
@@ -200,10 +191,10 @@ const ReadDestination = () => {
                         </div>
                     </div>
                 </div>
-
+                
                 <div className="mt-8 pt-8 border-t border-gray-800 relative z-10">
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <Info size={14} /> Description & Details
+                        <Info size={14} /> Description
                     </label>
                     <div className="p-6 bg-black/40 border border-gray-800 rounded-2xl text-gray-300 leading-relaxed whitespace-pre-wrap">
                         {desc || 'ไม่มีข้อมูลรายละเอียด...'}
