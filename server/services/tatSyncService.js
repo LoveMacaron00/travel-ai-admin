@@ -40,11 +40,39 @@ async function fetchTATPlaceDetail(tatPlaceId) {
 }
 
 async function upsertTATPlace(place) {
+    let rawImages = place.sha?.detailPicture || place.web_picture_urls || place.picture_urls || place.multimedia?.map(m => m.url) || [];
+    rawImages = Array.isArray(rawImages) ? rawImages : (typeof rawImages === 'string' ? [rawImages] : []);
+    
+    const additionalImages = rawImages.map(url => ({ url, is_cover: false }));
+
     const images = [
         ...(place.desktopImageUrls || []).map(url => ({ url, is_cover: false })),
         ...(place.mobileImageUrls  || []).map(url => ({ url, is_cover: false })),
+        ...additionalImages
     ];
-    if (place.thumbnailUrl) images.unshift({ url: place.thumbnailUrl, is_cover: true });
+
+    let mainImageUrl = place.thumbnailUrl || (images.length > 0 ? images[0].url : null);
+    
+    if (mainImageUrl) {
+        images.unshift({ url: mainImageUrl, is_cover: true });
+    }
+
+    // Deduplicate images by url
+    const uniqueImages = [];
+    const seenUrls = new Set();
+    for (const img of images) {
+        if (!seenUrls.has(img.url)) {
+            seenUrls.add(img.url);
+            uniqueImages.push(img);
+        }
+    }
+
+    const provName = place.location?.province?.name || place.province_name || place.provinceName || place.province || '';
+    const distName = place.location?.district?.name || place.district_name || place.districtName || place.district || '';
+    const subDistName = place.location?.subDistrict?.name || place.sub_district || place.subDistrictName || place.subDistrict || '';
+
+    const locationParts = [subDistName, distName, provName].filter(Boolean);
+    const locationString = locationParts.length > 0 ? locationParts.join(', ') : null;
 
     const { rows } = await query(
         `INSERT INTO destinations (
@@ -76,7 +104,7 @@ async function upsertTATPlace(place) {
         RETURNING id`,
         [
             place.name,
-            place.location?.province?.name || null,
+            locationString,
             place.information?.detail      || null,
             mapCategory(place.category?.name),
             (place.tags || []).filter(Boolean),
@@ -86,8 +114,8 @@ async function upsertTATPlace(place) {
             place.openingHours?.[0]?.open  || place.openingHours?.[0]?.openTime  || '00:00',
             place.openingHours?.[0]?.close || place.openingHours?.[0]?.closeTime || '00:00',
             JSON.stringify(place.openingHours || []),
-            place.thumbnailUrl || null,
-            JSON.stringify(images),
+            mainImageUrl || null,
+            JSON.stringify(uniqueImages),
             String(place.placeId || place.id),
             JSON.stringify(place),
             place.information?.fee?.thaiAdult || null,

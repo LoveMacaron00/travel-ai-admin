@@ -8,7 +8,7 @@ const normalizePlaceStatus = (status) => {
 
 class DestinationModel {
     static async getAll({ province, status, search }) {
-        let sql = 'SELECT id, name, province, image_url, status, source, created_at FROM destinations';
+        let sql = 'SELECT id, name, province, category, image_url, status, source, created_at FROM destinations';
         const conditions = [];
         const params = [];
 
@@ -184,8 +184,8 @@ class DestinationModel {
 
     static async delete(id) {
         const { rows: existingRows } = await pool.query(
-            'SELECT id FROM destinations WHERE id = $1 AND source = $2 LIMIT 1',
-            [id, 'admin']
+            'SELECT id FROM destinations WHERE id = $1 LIMIT 1',
+            [id]
         );
 
         if (existingRows.length === 0) {

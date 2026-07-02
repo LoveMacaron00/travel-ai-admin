@@ -18,12 +18,6 @@ L.Icon.Default.mergeOptions({
     shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-const PROVINCES = [
-    'Bangkok', 'Chiang Mai', 'Chiang Rai', 'Phuket', 'Krabi', 'Ayutthaya',
-    'Kanchanaburi', 'Nakhon Ratchasima', 'Chonburi', 'Surat Thani',
-    'Nonthaburi', 'Udon Thani', 'Khon Kaen', 'Songkhla', 'Phang Nga',
-    'Sukhothai', 'Nan', 'Lampang', 'Mae Hong Son', 'Tak'
-];
 
 const QUILL_MODULES = {
     toolbar: [
@@ -356,11 +350,9 @@ const EditDestination = () => {
                             value={form.name} onChange={e => handleChange('name', e.target.value)} />
                     </div>
                     <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Province</label>
-                        <select className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all appearance-none" value={form.province} onChange={e => handleChange('province', e.target.value)}>
-                            <option value="" className="bg-gray-900 text-gray-400">Select Province</option>
-                            {PROVINCES.map(p => <option key={p} value={p} className="bg-gray-900">{p}</option>)}
-                        </select>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Province / Location</label>
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all" placeholder="e.g. Sub-district, District, Province"
+                            value={form.province} onChange={e => handleChange('province', e.target.value)} />
                     </div>
                 </div>
 

@@ -44,7 +44,7 @@ function buildChunks(dest) {
                 `ชื่อสถานที่: ${dest.name}`,
                 `หมวดหมู่: ${dest.category}`,
                 dest.tags?.length ? `แท็ก: ${dest.tags.join(', ')}` : '',
-                dest.province     ? `จังหวัด: ${dest.province}`       : '',
+                dest.province     ? `สถานที่ตั้ง: ${dest.province}`   : '',
             ].filter(Boolean).join('\n'),
         },
         {
@@ -59,7 +59,7 @@ function buildChunks(dest) {
             text: [
                 `${dest.name} ตั้งอยู่`,
                 dest.address     ? `ที่อยู่: ${dest.address}`                         : '',
-                dest.province    ? `จังหวัด${dest.province}`                          : '',
+                dest.province    ? `สถานที่ตั้ง: ${dest.province}`                    : '',
                 (dest.latitude && dest.longitude) ? `พิกัด ${dest.latitude}, ${dest.longitude}` : '',
                 `หมวดหมู่: ${dest.category}`,
                 facts.feeText ? `ค่าเข้าชม: ${facts.feeText}` : '',

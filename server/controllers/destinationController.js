@@ -163,10 +163,11 @@ const deleteDestination = async (req, res) => {
         const imagePaths = await DestinationModel.delete(destId);
 
         if (!imagePaths) {
-            return res.status(404).json({ message: 'ไม่พบสถานที่ หรือไม่ใช่ข้อมูลของ Admin' });
+            return res.status(404).json({ message: 'ไม่พบสถานที่' });
         }
 
         deleteUploadedFiles(imagePaths);
+        await clearDestinationEmbedding(destId);
         res.json({ message: 'ลบสถานที่สำเร็จ' });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการลบสถานที่:', err);

@@ -313,7 +313,8 @@ const Destinations = () => {
                     viewer: 0,
                     tags: [],
                     status: normalizeStatus(d.status),
-                    source: 'admin'
+                    source: d.source === 'tat' ? 'tat_synced' : 'admin',
+                    category: PLACE_CATEGORIES.find(c => c.id === d.category)?.label || d.category || ''
                 }))
             );
         }
@@ -580,17 +581,17 @@ const Destinations = () => {
                                         <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/20 to-transparent opacity-80" />
 
                                         {/* Badges */}
-                                        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
-                                            <span
-                                                className={`px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase rounded-lg backdrop-blur-md border ${
-                                                    item.source === 'tat_api'
-                                                        ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
-                                                        : 'bg-blue-500/20 text-blue-300 border-blue-500/30'
-                                                }`}
-                                            >
-                                                {item.source === 'tat_api' ? 'TAT API' : 'ADMIN'}
-                                            </span>
-                                            {item.status === 'approved' && item.source === 'admin' && (
+                                            <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
+                                                <span
+                                                    className={`px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase rounded-lg backdrop-blur-md border ${
+                                                        (item.source === 'tat_api' || item.source === 'tat_synced')
+                                                            ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
+                                                            : 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                                                    }`}
+                                                >
+                                                    {(item.source === 'tat_api' || item.source === 'tat_synced') ? 'TAT API' : 'ADMIN'}
+                                                </span>
+                                                {item.status === 'approved' && (item.source === 'admin' || item.source === 'tat_synced') && (
                                                 <span className="px-2 py-1 bg-emerald-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-emerald-400/50">
                                                     APPROVED
                                                 </span>

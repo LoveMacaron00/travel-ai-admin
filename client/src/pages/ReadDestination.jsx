@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, MapPin, Clock, Info, Image as ImageIcon, Map, Building } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Info, Image as ImageIcon, Map, Building, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
 import ImageLightbox from '../components/ImageLightbox';
+import { showErrorAlert, showSuccessAlert, showConfirmAlert } from '../utils/alerts';
 
 const ReadDestination = () => {
     const { id } = useParams();
@@ -12,6 +13,7 @@ const ReadDestination = () => {
     const [place, setPlace] = useState(null);
     const [loading, setLoading] = useState(true);
     const [lightboxIndex, setLightboxIndex] = useState(null);
+    const [syncing, setSyncing] = useState(false);
 
     useEffect(() => {
         const fetchPlace = async () => {
@@ -39,10 +41,33 @@ const ReadDestination = () => {
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [lightboxIndex, navigate]);
 
+    const name = place?.place_name || place?.placeName || place?.name || '';
+
+    const handleSync = async () => {
+        const result = await showConfirmAlert({
+            title: 'Sync สถานที่นี้?',
+            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและทำ Embedding ใช่หรือไม่?`,
+            confirmButtonText: 'เริ่ม Sync',
+            cancelButtonText: 'ยกเลิก'
+        });
+
+        if (!result.isConfirmed) return;
+
+        setSyncing(true);
+        try {
+            await api.post(`/admin/sync/tat/${id}`);
+            await showSuccessAlert(`Sync และทำ Embedding สำหรับ "${name}" สำเร็จแล้ว!`);
+            navigate('/destinations');
+        } catch (err) {
+            console.error('เกิดข้อผิดพลาดในการ Sync รายบุคคล:', err);
+            await showErrorAlert(err.response?.data?.message || 'Sync สถานที่ไม่สำเร็จ');
+        } finally {
+            setSyncing(false);
+        }
+    };
+
     if (loading) return <div className="p-6 text-gray-400">กำลังโหลดข้อมูล...</div>;
     if (!place) return <div className="p-6 text-gray-400">ไม่พบข้อมูลสถานที่</div>;
-
-    const name = place.place_name || place.placeName || place.name || '';
 
     // Helper to safely extract name
     const extractName = (val) => {
@@ -105,12 +130,22 @@ const ReadDestination = () => {
                     </div>
                 </div>
 
-                <button 
-                    onClick={() => navigate('/destinations')} 
-                    className="relative z-10 flex items-center justify-center gap-2 px-6 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all border border-gray-700 hover:border-gray-600"
-                >
-                    <ArrowLeft size={18} /> Back to List
-                </button>
+                <div className="relative z-10 flex items-center gap-4">
+                    <button 
+                        onClick={() => navigate('/destinations')} 
+                        className="flex items-center justify-center gap-2 px-6 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all border border-gray-700 hover:border-gray-600"
+                    >
+                        <ArrowLeft size={18} /> Back to List
+                    </button>
+                    <button
+                        onClick={handleSync}
+                        disabled={syncing}
+                        className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] disabled:shadow-none transform hover:-translate-y-0.5 disabled:transform-none"
+                    >
+                        <RefreshCw size={18} className={syncing ? 'animate-spin' : ''} />
+                        {syncing ? 'Syncing...' : 'Sync & Embed'}
+                    </button>
+                </div>
             </div>
 
             {/* Images Gallery */}
