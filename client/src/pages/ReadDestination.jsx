@@ -107,8 +107,34 @@ const ReadDestination = () => {
           })()
         : typeof hours === 'string' ? hours : '';
 
-    const rawImages = place.sha?.detailPicture || place.thumbnailUrl || place.web_picture_urls || place.picture_urls || [];
-    const images = Array.isArray(rawImages) ? rawImages : (typeof rawImages === 'string' ? [rawImages] : []);
+    // Combine all possible image URLs from TAT API or DB
+    let allImages = [];
+    
+    // If it's a DB synced item, it might have `images` array of objects {url: ...}
+    if (place.images && Array.isArray(place.images)) {
+        if (typeof place.images[0] === 'object') {
+            allImages.push(...place.images.map(img => img.image_url || img.url));
+        } else {
+            allImages.push(...place.images);
+        }
+    }
+
+    // Add fields commonly found in TAT API
+    if (place.thumbnailUrl) allImages.push(place.thumbnailUrl);
+    if (place.image_url) allImages.push(place.image_url);
+    if (place.desktopImageUrls) allImages.push(...place.desktopImageUrls);
+    if (place.mobileImageUrls) allImages.push(...place.mobileImageUrls);
+    if (place.picture_urls) allImages.push(...place.picture_urls);
+    if (place.web_picture_urls) allImages.push(...place.web_picture_urls);
+    if (place.multimedia) allImages.push(...place.multimedia.map(m => m.url));
+    
+    if (place.sha?.detailPicture) {
+        const shaImgs = Array.isArray(place.sha.detailPicture) ? place.sha.detailPicture : [place.sha.detailPicture];
+        allImages.push(...shaImgs);
+    }
+
+    // Clean and deduplicate
+    const images = [...new Set(allImages.filter(url => typeof url === 'string' && url.trim().length > 0))];
 
     return (
         <div className="p-6 max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -155,8 +181,8 @@ const ReadDestination = () => {
                         <ImageIcon size={20} className="text-yellow-500" />
                         Media Gallery
                     </h2>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                        {images.slice(0, 6).map((url, i) => (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                        {images.map((url, i) => (
                             <button
                                 key={i}
                                 type="button"
@@ -238,11 +264,11 @@ const ReadDestination = () => {
             </div>
 
             <ImageLightbox
-                images={images.slice(0, 6)}
+                images={images}
                 currentIndex={lightboxIndex}
                 onClose={() => setLightboxIndex(null)}
-                onPrevious={() => setLightboxIndex((prev) => (prev === 0 ? images.slice(0, 6).length - 1 : prev - 1))}
-                onNext={() => setLightboxIndex((prev) => (prev === images.slice(0, 6).length - 1 ? 0 : prev + 1))}
+                onPrevious={() => setLightboxIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1))}
+                onNext={() => setLightboxIndex((prev) => (prev === images.length - 1 ? 0 : prev + 1))}
             />
         </div>
     );

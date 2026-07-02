@@ -40,16 +40,27 @@ async function fetchTATPlaceDetail(tatPlaceId) {
 }
 
 async function upsertTATPlace(place) {
-    let rawImages = place.sha?.detailPicture || place.web_picture_urls || place.picture_urls || place.multimedia?.map(m => m.url) || [];
-    rawImages = Array.isArray(rawImages) ? rawImages : (typeof rawImages === 'string' ? [rawImages] : []);
-    
-    const additionalImages = rawImages.map(url => ({ url, is_cover: false }));
-
-    const images = [
-        ...(place.desktopImageUrls || []).map(url => ({ url, is_cover: false })),
-        ...(place.mobileImageUrls  || []).map(url => ({ url, is_cover: false })),
-        ...additionalImages
+    // รวบรวมรูปภาพจากทุก field ที่เป็นไปได้
+    let allImageUrls = [
+        ...(place.desktopImageUrls || []),
+        ...(place.mobileImageUrls || []),
+        ...(place.picture_urls || []),
+        ...(place.web_picture_urls || []),
     ];
+
+    if (place.sha?.detailPicture) {
+        const shaImgs = Array.isArray(place.sha.detailPicture) ? place.sha.detailPicture : [place.sha.detailPicture];
+        allImageUrls.push(...shaImgs);
+    }
+
+    if (place.multimedia && Array.isArray(place.multimedia)) {
+        allImageUrls.push(...place.multimedia.map(m => m.url));
+    }
+
+    // ล้างค่าว่าง และค่าที่ไม่ใช่ string
+    allImageUrls = allImageUrls.filter(url => typeof url === 'string' && url.trim().length > 0);
+
+    const images = allImageUrls.map(url => ({ url, is_cover: false }));
 
     let mainImageUrl = place.thumbnailUrl || (images.length > 0 ? images[0].url : null);
     
