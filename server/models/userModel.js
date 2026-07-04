@@ -1,7 +1,7 @@
-﻿const pool = require('../config/db');
+const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 
-const PUBLIC_COLUMNS = 'id, email, username, profile_image_url, interests, is_private_location, is_banned, created_at';
+const PUBLIC_COLUMNS = 'id, email, username, profile_image_url, interests, is_banned, created_at';
 
 class UserModel {
     static async getAll() {
@@ -70,10 +70,6 @@ class UserModel {
         if (updates.interests !== undefined) {
             updateStrings.push(`interests = $${index++}`);
             values.push(JSON.stringify(Array.isArray(updates.interests) ? updates.interests : []));
-        }
-        if (updates.is_private_location !== undefined) {
-            updateStrings.push(`is_private_location = $${index++}`);
-            values.push(updates.is_private_location === true);
         }
         if (updates.profile_image_url !== undefined) {
             updateStrings.push(`profile_image_url = $${index++}`);

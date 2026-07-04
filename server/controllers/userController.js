@@ -198,7 +198,6 @@ const updateUserProfile = async (req, res) => {
         const updatedUser = await UserModel.updateProfile(userId, {
             username: req.body.username,
             interests: req.body.interests,
-            is_private_location: req.body.is_private_location,
             profile_image_url: req.body.profile_image_url
         });
 
