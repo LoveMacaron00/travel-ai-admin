@@ -1,23 +1,53 @@
-const tatPopularService = require('../services/tatPopularService');
 const { mobileRagChat } = require('../services/aiService');
+const pool = require('../config/db');
 
 /**
- * ดึงสถานที่ยอดนิยมจาก TAT API สำหรับ mobile app
+ * ดึงสถานที่จากฐานข้อมูล destinations สำหรับ mobile app
  * GET /api/mobile/popular-destinations
  */
 const getPopularDestinations = async (req, res) => {
     try {
-        const data = await tatPopularService.getPopularDestinations({
-            limit: req.query.limit || 3
-        });
+        const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+
+        let sql = `
+            SELECT 
+                id,
+                name,
+                province,
+                description,
+                latitude,
+                longitude,
+                image_url AS image,
+                category
+            FROM destinations
+            WHERE status = 'approved'
+              AND latitude IS NOT NULL
+              AND longitude IS NOT NULL
+            ORDER BY created_at DESC
+        `;
+
+        if (limit && limit > 0) {
+            sql += ` LIMIT ${limit}`;
+        }
+
+        const { rows } = await pool.query(sql);
+
+        const data = rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            city: row.province || 'Thailand',
+            location: row.province || 'Thailand',
+            description: row.description || '',
+            latitude: row.latitude,
+            longitude: row.longitude,
+            image: row.image || '',
+            category: row.category || 'Temple',
+        }));
+
         res.json({ data });
     } catch (err) {
         console.error('[mobileController] popular-destinations error:', err);
-        res.status(err.statusCode || 500).json({
-            message: err.statusCode === 503
-                ? err.message
-                : 'เกิดข้อผิดพลาดในการดึงข้อมูลสถานที่ยอดนิยม'
-        });
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูลสถานที่' });
     }
 };
 
