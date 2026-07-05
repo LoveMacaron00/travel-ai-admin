@@ -678,7 +678,7 @@ const Destinations = () => {
                                                 <>
                                                     <button
                                                         onClick={() => navigate(`/destinations/edit/${item.id}`)}
-                                                        className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl text-center shadow-lg shadow-blue-500/20"
+                                                        className="flex-1 py-2.5 bg-yellow-500 text-white text-sm font-semibold rounded-xl text-center shadow-lg shadow-yellow-500/20"
                                                     >
                                                         Edit
                                                     </button>
