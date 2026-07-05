@@ -137,9 +137,9 @@ const ReadDestination = () => {
     const images = [...new Set(allImages.filter(url => typeof url === 'string' && url.trim().length > 0))];
 
     return (
-        <div className="p-6 max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+        <div className="p-3 md:p-4 w-full space-y-4">
             {/* Header Section */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 bg-gradient-to-r from-gray-900 to-gray-800 p-8 rounded-3xl border border-gray-800 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
                 <div className="absolute bottom-0 left-10 w-40 h-40 bg-blue-500/5 rounded-full blur-2xl -mb-10 pointer-events-none" />
 
@@ -147,7 +147,7 @@ const ReadDestination = () => {
                     <div className="flex items-center gap-2 mb-3">
                         <span className="px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs font-bold tracking-widest uppercase border border-blue-500/20">Destination Details</span>
                     </div>
-                    <h1 className="text-3xl font-extrabold text-white tracking-tight">
+                    <h1 className="text-2xl font-bold text-white tracking-tight">
                         {name || 'Loading...'}
                     </h1>
                     <div className="flex items-center gap-2 text-gray-400 mt-2 text-sm font-medium">
@@ -159,14 +159,14 @@ const ReadDestination = () => {
                 <div className="relative z-10 flex items-center gap-4">
                     <button 
                         onClick={() => navigate('/destinations')} 
-                        className="flex items-center justify-center gap-2 px-6 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all border border-gray-700 hover:border-gray-600"
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-white/5 text-white font-bold rounded-xl border border-gray-700"
                     >
                         <ArrowLeft size={18} /> Back to List
                     </button>
                     <button
                         onClick={handleSync}
                         disabled={syncing}
-                        className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] disabled:shadow-none transform hover:-translate-y-0.5 disabled:transform-none"
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none"
                     >
                         <RefreshCw size={18} className={syncing ? 'animate-spin' : ''} />
                         {syncing ? 'Syncing...' : 'Sync & Embed'}
@@ -176,7 +176,7 @@ const ReadDestination = () => {
 
             {/* Images Gallery */}
             {images.length > 0 && (
-                <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-xl">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl">
                     <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-6">
                         <ImageIcon size={20} className="text-yellow-500" />
                         Media Gallery
@@ -187,18 +187,13 @@ const ReadDestination = () => {
                                 key={i}
                                 type="button"
                                 onClick={() => setLightboxIndex(i)}
-                                className="group relative aspect-square rounded-2xl overflow-hidden shadow-md border border-gray-800 hover:border-yellow-500/50 transition-all cursor-zoom-in"
+                                className="relative aspect-square rounded-xl overflow-hidden shadow-md border border-gray-800 cursor-zoom-in"
                             >
                                 <img 
                                     src={url} 
                                     alt={`${name} ${i + 1}`} 
-                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                                    className="w-full h-full object-cover" 
                                 />
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                                    <div className="opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all">
-                                        <ImageIcon size={24} className="text-white drop-shadow-md" />
-                                    </div>
-                                </div>
                             </button>
                         ))}
                     </div>
@@ -206,19 +201,19 @@ const ReadDestination = () => {
             )}
 
             {/* Main Info Card */}
-            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 shadow-xl relative overflow-hidden">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-8 opacity-[0.02] pointer-events-none">
                     <Map size={120} className="text-white" />
                 </div>
                 
-                <h2 className="text-xl font-bold text-white flex items-center gap-3 mb-8 border-b border-gray-800 pb-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-3 mb-4 border-b border-gray-800 pb-3">
                     <Info size={24} className="text-blue-500" />
                     Information Data
                     <span className="px-2.5 py-1 rounded-lg bg-yellow-500/10 text-yellow-500 text-xs font-bold border border-yellow-500/20 tracking-wider">READ ONLY</span>
                 </h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8 relative z-10">
-                    <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 relative z-10">
+                    <div className="space-y-4">
                         <div>
                             <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
                                 <Building size={14} /> Destination Name
@@ -233,8 +228,8 @@ const ReadDestination = () => {
                         </div>
                     </div>
 
-                    <div className="space-y-6">
-                        <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Latitude</label>
                                 <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lat || 'N/A'}</div>
@@ -253,7 +248,7 @@ const ReadDestination = () => {
                     </div>
                 </div>
                 
-                <div className="mt-8 pt-8 border-t border-gray-800 relative z-10">
+                <div className="mt-4 pt-4 border-t border-gray-800 relative z-10">
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                         <Info size={14} /> Description
                     </label>

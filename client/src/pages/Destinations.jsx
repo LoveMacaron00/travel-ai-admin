@@ -348,9 +348,9 @@ const Destinations = () => {
     // UI
     // -----------------------
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
+        <div className="p-3 md:p-4 w-full space-y-3 md:space-y-4">
             {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 bg-gradient-to-r from-gray-900 to-gray-800 p-8 rounded-3xl border border-gray-800 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
                 <div className="absolute bottom-0 left-10 w-40 h-40 bg-blue-500/5 rounded-full blur-2xl -mb-10 pointer-events-none" />
 
@@ -358,7 +358,7 @@ const Destinations = () => {
                     <div className="flex items-center gap-2 mb-3">
                         <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">Explore</span>
                     </div>
-                    <h1 className="text-4xl font-extrabold text-white tracking-tight">
+                    <h1 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
                         Destinations
                     </h1>
                     <p className="text-gray-400 mt-2 text-base max-w-xl leading-relaxed">
@@ -380,14 +380,14 @@ const Destinations = () => {
                     <form onSubmit={handleSearch} className="relative group">
                         <Search
                             size={18}
-                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-yellow-500 transition-colors"
+                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500"
                         />
                         <input
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="Search places..."
-                            className="pl-10 pr-4 py-3 w-full sm:w-72 bg-black/40 border border-gray-700 focus:border-yellow-500/50 focus:ring-2 focus:ring-yellow-500/20 rounded-xl text-sm text-white transition-all shadow-inner outline-none"
+                            className="pl-10 pr-4 py-3 w-full sm:w-72 bg-black/40 border border-gray-700 focus:border-yellow-500/50 focus:ring-2 focus:ring-yellow-500/20 rounded-xl text-sm text-white shadow-inner outline-none"
                         />
                     </form>
 
@@ -395,7 +395,7 @@ const Destinations = () => {
                         <button
                             onClick={handleBulkSyncTAT}
                             disabled={bulkSyncing}
-                            className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] disabled:shadow-none transform hover:-translate-y-0.5 disabled:transform-none"
+                            className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none disabled:transform-none"
                         >
                             <RefreshCw size={18} className={bulkSyncing ? 'animate-spin' : ''} />
                             {bulkSyncing ? 'Syncing...' : 'Sync TAT to DB'}
@@ -405,7 +405,7 @@ const Destinations = () => {
                     {filters.source === 'admin' && (
                         <button
                             onClick={() => navigate('/destinations/add')}
-                            className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-black font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:shadow-[0_0_25px_rgba(234,179,8,0.5)] transform hover:-translate-y-0.5"
+                            className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.3)]"
                         >
                             <Plus size={18} />
                             Add New
@@ -414,10 +414,10 @@ const Destinations = () => {
                 </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row gap-8">
+            <div className="flex flex-col lg:flex-row gap-3 md:gap-4">
                 {/* Filters Sidebar */}
-                <div className="lg:w-64 shrink-0 space-y-6">
-                    <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-xl sticky top-6">
+                <div className="lg:w-56 shrink-0 space-y-3 md:space-y-4">
+                    <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl sticky top-4">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="font-bold text-white flex items-center gap-2">
                                 <Filter size={18} className="text-yellow-500" />
@@ -427,7 +427,7 @@ const Destinations = () => {
                                 onClick={() =>
                                     setFilters({ source: 'tat', status: 'all', placeCategory: 'all' })
                                 }
-                                className="text-xs font-semibold text-yellow-500/80 hover:text-yellow-400 transition-colors px-2 py-1 bg-yellow-500/10 rounded-lg"
+                                className="text-xs font-semibold text-yellow-500/80 px-2 py-1 bg-yellow-500/10 rounded-lg"
                             >
                                 Reset
                             </button>
@@ -437,7 +437,7 @@ const Destinations = () => {
                         <div className="space-y-3">
                             <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">Data Source</p>
                             
-                            <label className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${filters.source === 'tat' ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-black/20 border-transparent hover:bg-white/5'}`}>
+                            <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer ${filters.source === 'tat' ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-black/20 border-transparent'}`}>
                                 <input
                                     type="radio"
                                     name="source-filter"
@@ -451,7 +451,7 @@ const Destinations = () => {
                                 <span className={`text-sm font-medium ${filters.source === 'tat' ? 'text-yellow-400' : 'text-gray-400'}`}>TAT API</span>
                             </label>
 
-                            <label className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${filters.source === 'admin' ? 'bg-blue-500/10 border-blue-500/30' : 'bg-black/20 border-transparent hover:bg-white/5'}`}>
+                            <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer ${filters.source === 'admin' ? 'bg-blue-500/10 border-blue-500/30' : 'bg-black/20 border-transparent'}`}>
                                 <input
                                     type="radio"
                                     name="source-filter"
@@ -474,7 +474,7 @@ const Destinations = () => {
                                 {PLACE_CATEGORIES.map((cat) => (
                                     <label
                                         key={cat.id}
-                                        className={`flex items-center p-2.5 rounded-xl transition-all cursor-pointer group ${filters.placeCategory === cat.id ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                                        className={`flex items-center p-2.5 rounded-xl cursor-pointer group ${filters.placeCategory === cat.id ? 'bg-white/10' : 'hover:bg-white/5'}`}
                                     >
                                         <div className="flex items-center gap-3">
                                             <input
@@ -485,7 +485,7 @@ const Destinations = () => {
                                                 onChange={() => setFilters({ ...filters, placeCategory: cat.id })}
                                             />
                                             <div className="w-4 h-4 flex items-center justify-center">
-                                                <div className={`w-2.5 h-2.5 rounded-full ${filters.placeCategory === cat.id ? 'bg-yellow-500' : 'bg-gray-600 group-hover:bg-gray-500'} transition-colors`} />
+                                                <div className={`w-2.5 h-2.5 rounded-full ${filters.placeCategory === cat.id ? 'bg-yellow-500' : 'bg-gray-600'}`} />
                                             </div>
                                             <span className={`text-sm ${filters.placeCategory === cat.id ? 'text-yellow-400 font-medium' : 'text-gray-400'}`}>{cat.label}</span>
                                         </div>
@@ -505,7 +505,7 @@ const Destinations = () => {
                                 { id: 'pending', label: 'Pending', count: statusCounts.pending },
                                 { id: 'rejected', label: 'Rejected', count: statusCounts.rejected }
                             ].map((status) => (
-                                <label key={status.id} className={`flex items-center justify-between p-2.5 rounded-xl transition-all cursor-pointer group ${filters.status === status.id ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                                <label key={status.id} className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer group ${filters.status === status.id ? 'bg-white/10' : 'hover:bg-white/5'}`}>
                                     <div className="flex items-center gap-3">
                                         <input
                                             type="radio"
@@ -515,7 +515,7 @@ const Destinations = () => {
                                             onChange={() => setFilters({ ...filters, status: status.id })}
                                         />
                                         <div className={`w-4 h-4 flex items-center justify-center`}>
-                                            <div className={`w-2.5 h-2.5 rounded-full ${filters.status === status.id ? 'bg-white' : 'bg-gray-600 group-hover:bg-gray-500'} transition-colors`} />
+                                            <div className={`w-2.5 h-2.5 rounded-full ${filters.status === status.id ? 'bg-white' : 'bg-gray-600'}`} />
                                         </div>
                                         <span className={`text-sm ${filters.status === status.id ? 'text-white font-medium' : 'text-gray-400'}`}>{status.label}</span>
                                     </div>
@@ -539,11 +539,11 @@ const Destinations = () => {
                     </div>
 
                     {loading ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
                             {Array.from({ length: 6 }).map((_, i) => (
-                                <div key={i} className="bg-gray-900 border border-gray-800 rounded-3xl overflow-hidden animate-pulse">
-                                    <div className="h-48 bg-gray-800" />
-                                    <div className="p-5 space-y-4">
+                                <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                                    <div className="h-40 bg-gray-800" />
+                                    <div className="p-3 space-y-2">
                                         <div className="h-5 bg-gray-800 rounded-md w-3/4" />
                                         <div className="flex gap-2">
                                             <div className="h-4 bg-gray-800 rounded-md w-1/4" />
@@ -555,20 +555,20 @@ const Destinations = () => {
                             ))}
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
                             {allItems.map((item, i) => (
                                 <div
                                     key={`${item.source}-${item.id}-${i}`}
-                                    className="bg-gray-900 border border-gray-800 rounded-3xl overflow-hidden group hover:border-gray-600 hover:shadow-2xl transition-all duration-300 flex flex-col"
+                                    className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden group flex flex-col"
                                 >
-                                    <div className="h-48 bg-gray-800 relative overflow-hidden">
+                                    <div className="h-40 bg-gray-800 relative overflow-hidden">
                                         {item.image ? (
                                             <img
                                                 src={item.image}
                                                 alt={item.name}
                                                 loading="lazy"
                                                 decoding="async"
-                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-in-out"
+                                                className="w-full h-full object-cover duration-700 ease-in-out"
                                             />
                                         ) : (
                                             <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
@@ -578,7 +578,7 @@ const Destinations = () => {
                                         )}
                                         
                                         {/* Overlay Gradient */}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/20 to-transparent opacity-80" />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/20 to-transparent" />
 
                                         {/* Badges */}
                                             <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
@@ -609,13 +609,13 @@ const Destinations = () => {
                                         </div>
 
                                         <div className="absolute bottom-4 left-4 right-4">
-                                            <h3 className="font-bold text-lg text-white truncate text-shadow-sm group-hover:text-yellow-400 transition-colors">
+                                            <h3 className="font-bold text-lg text-white truncate text-shadow-sm">
                                                 {item.name}
                                             </h3>
                                         </div>
                                     </div>
 
-                                    <div className="p-5 flex-1 flex flex-col">
+                                    <div className="p-3 flex-1 flex flex-col">
                                         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
                                             <p className="text-xs text-gray-400 flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/5">
                                                 <MapPin size={12} className="text-gray-500" />
@@ -660,7 +660,7 @@ const Destinations = () => {
                                                 <>
                                                     <button
                                                         onClick={() => navigate(`/destinations/read-tat/${item.id}`, { state: { introduction: item.introduction } })}
-                                                        className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold rounded-xl border border-gray-700 hover:border-gray-500 transition-all text-center flex items-center justify-center gap-2"
+                                                        className="flex-1 py-2.5 bg-white/5 text-white text-sm font-semibold rounded-xl border border-gray-700 text-center flex items-center justify-center gap-2"
                                                     >
                                                         <Eye size={16} />
                                                         View
@@ -668,7 +668,7 @@ const Destinations = () => {
                                                     <button
                                                         onClick={() => handleSingleSyncTAT(item.id, item.name)}
                                                         disabled={syncingId === item.id}
-                                                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-500 text-white text-sm font-semibold rounded-xl transition-all text-center flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/30 disabled:shadow-none"
+                                                        className="flex-1 py-2.5 bg-emerald-600 disabled:bg-gray-800 disabled:text-gray-500 text-white text-sm font-semibold rounded-xl text-center flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 disabled:shadow-none"
                                                     >
                                                         <RefreshCw size={16} className={syncingId === item.id ? 'animate-spin' : ''} />
                                                         {syncingId === item.id ? 'Syncing' : 'Sync & Embed'}
@@ -678,13 +678,13 @@ const Destinations = () => {
                                                 <>
                                                     <button
                                                         onClick={() => navigate(`/destinations/edit/${item.id}`)}
-                                                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl transition-all text-center shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40"
+                                                        className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl text-center shadow-lg shadow-blue-500/20"
                                                     >
                                                         Edit
                                                     </button>
                                                     <button
                                                         onClick={() => handleDelete(item.id)}
-                                                        className="flex-1 py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white text-sm font-semibold rounded-xl transition-all text-center border border-red-500/20 hover:border-transparent"
+                                                        className="flex-1 py-2.5 bg-red-500/10 text-red-500 text-sm font-semibold rounded-xl text-center border border-red-500/20"
                                                     >
                                                         Delete
                                                     </button>
@@ -698,7 +698,7 @@ const Destinations = () => {
                     )}
 
                     {allItems.length === 0 && !loading && (
-                        <div className="bg-gray-900 border border-gray-800 rounded-3xl p-12 flex flex-col items-center justify-center text-center">
+                        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 flex flex-col items-center justify-center text-center">
                             <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mb-4">
                                 <Search size={32} className="text-gray-500" />
                             </div>
@@ -720,7 +720,7 @@ const Destinations = () => {
                                 <button
                                     onClick={() => handlePageChange(page - 1)}
                                     disabled={page <= 1}
-                                    className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+                                    className="p-2 rounded-lg text-gray-400 disabled:opacity-30"
                                 >
                                     <ChevronLeft size={18} />
                                 </button>
@@ -729,7 +729,7 @@ const Destinations = () => {
                                     <>
                                         <button
                                             onClick={() => handlePageChange(1)}
-                                            className="w-10 h-10 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all"
+                                            className="w-10 h-10 rounded-lg text-sm font-medium text-gray-400"
                                         >
                                             1
                                         </button>
@@ -743,10 +743,10 @@ const Destinations = () => {
                                     <button
                                         key={p}
                                         onClick={() => handlePageChange(p)}
-                                        className={`w-10 h-10 rounded-lg text-sm font-medium transition-all ${
+                                        className={`w-10 h-10 rounded-lg text-sm font-medium ${
                                             p === page
                                                 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20'
-                                                : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                                                : 'text-gray-400'
                                         }`}
                                     >
                                         {p}
@@ -760,7 +760,7 @@ const Destinations = () => {
                                         )}
                                         <button
                                             onClick={() => handlePageChange(totalPages)}
-                                            className="w-10 h-10 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all"
+                                            className="w-10 h-10 rounded-lg text-sm font-medium text-gray-400"
                                         >
                                             {totalPages}
                                         </button>
@@ -770,7 +770,7 @@ const Destinations = () => {
                                 <button
                                     onClick={() => handlePageChange(page + 1)}
                                     disabled={page >= totalPages}
-                                    className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+                                    className="p-2 rounded-lg text-gray-400 disabled:opacity-30"
                                 >
                                     <ChevronRight size={18} />
                                 </button>

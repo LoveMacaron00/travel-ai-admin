@@ -225,9 +225,9 @@ const EditDestination = () => {
     if (!form) return <div className="p-6 text-gray-400">กำลังโหลดข้อมูล...</div>;
 
     return (
-        <div className="p-6 max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+        <div className="p-3 md:p-4 w-full space-y-4">
             {/* Header Section */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 bg-gradient-to-r from-gray-900 to-gray-800 p-8 rounded-3xl border border-gray-800 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
                 <div className="absolute bottom-0 left-10 w-40 h-40 bg-blue-500/5 rounded-full blur-2xl -mb-10 pointer-events-none" />
 
@@ -235,7 +235,7 @@ const EditDestination = () => {
                     <div className="flex items-center gap-2 mb-3">
                         <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase border border-yellow-500/20">Edit Mode</span>
                     </div>
-                    <h1 className="text-3xl font-extrabold text-white tracking-tight">
+                    <h1 className="text-2xl font-bold text-white tracking-tight">
                         Edit Destination
                     </h1>
                     <p className="text-gray-400 mt-2 text-sm">
@@ -246,14 +246,14 @@ const EditDestination = () => {
                 <div className="relative z-10 flex items-center gap-4">
                     <button 
                         onClick={() => navigate('/destinations')} 
-                        className="px-6 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all border border-gray-700 hover:border-gray-600"
+                        className="px-4 py-2 bg-white/5 text-white font-bold rounded-xl border border-gray-700"
                     >
                         Cancel
                     </button>
                     <button 
                         onClick={handleSubmit} 
                         disabled={saving} 
-                        className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-black font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:shadow-[0_0_25px_rgba(234,179,8,0.5)] transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                     >
                         {saving ? 'กำลังบันทึก...' : 'Save Changes'}
                     </button>
@@ -261,15 +261,15 @@ const EditDestination = () => {
             </div>
 
             {/* Media Gallery — Multi-image Upload */}
-            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 shadow-xl">
-                <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-3">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl">
+                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                     <ImagePlus size={24} className="text-yellow-500" />
                     Media Gallery
                 </h2>
 
                 {/* Drag & Drop Zone */}
                 <div
-                    className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300 ${dragOver ? 'border-yellow-500 bg-yellow-500/5 scale-[1.02]' : 'border-gray-700 hover:border-gray-500 hover:bg-white/[0.02]'}`}
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer ${dragOver ? 'border-yellow-500 bg-yellow-500/5' : 'border-gray-700'}`}
                     onClick={() => fileInputRef.current?.click()}
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                     onDragLeave={() => setDragOver(false)}
@@ -290,7 +290,7 @@ const EditDestination = () => {
                         </div>
                     ) : (
                         <div className="flex flex-col items-center gap-2">
-                            <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                            <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mb-2">
                                 <Upload size={28} className="text-gray-400" />
                             </div>
                             <p className="text-gray-300 font-semibold text-lg">Drag & Drop or Click to upload images</p>
@@ -303,13 +303,13 @@ const EditDestination = () => {
                 {images.length > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-8">
                         {images.map((url, i) => (
-                            <div key={i} className="relative group aspect-square rounded-2xl overflow-hidden shadow-md border border-gray-800">
+                            <div key={i} className="relative aspect-square rounded-xl overflow-hidden shadow-md border border-gray-800">
                                 <button
                                     type="button"
                                     onClick={() => setLightboxIndex(i)}
                                     className="w-full h-full cursor-zoom-in block"
                                 >
-                                    <img src={url} alt={`upload-${i}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                    <img src={url} alt={`upload-${i}`} className="w-full h-full object-cover" />
                                 </button>
                                 {i === 0 && (
                                     <span className="absolute top-2 left-2 text-[10px] bg-yellow-500 text-black px-2 py-1 rounded-lg font-bold shadow-sm">
@@ -319,7 +319,7 @@ const EditDestination = () => {
                                 <button
                                     type="button"
                                     onClick={() => removeImage(i)}
-                                    className="absolute top-2 right-2 bg-red-500/90 hover:bg-red-600 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all transform hover:scale-110 shadow-lg"
+                                    className="absolute top-2 right-2 bg-red-500/90 text-white p-1.5 rounded-full shadow-lg"
                                 >
                                     <X size={14} />
                                 </button>
@@ -327,21 +327,21 @@ const EditDestination = () => {
                         ))}
                         {/* Add more button */}
                         <div
-                            className="aspect-square rounded-2xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center text-gray-500 cursor-pointer hover:border-gray-500 hover:bg-white/[0.02] transition-all group"
+                            className="aspect-square rounded-xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center text-gray-500 cursor-pointer"
                             onClick={() => fileInputRef.current?.click()}
                         >
-                            <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center mb-2 group-hover:bg-gray-700 transition-colors">
-                                <ImagePlus size={20} className="text-gray-400 group-hover:text-white transition-colors" />
+                            <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center mb-2">
+                                <ImagePlus size={20} className="text-gray-400" />
                             </div>
-                            <span className="text-sm font-medium group-hover:text-gray-300 transition-colors">Add more</span>
+                            <span className="text-sm font-medium">Add more</span>
                         </div>
                     </div>
                 )}
             </div>
 
             {/* Form */}
-            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 shadow-xl">
-                <h2 className="text-xl font-bold text-white mb-6 border-b border-gray-800 pb-4">Destination Information</h2>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl">
+                <h2 className="text-lg font-bold text-white mb-4 border-b border-gray-800 pb-3">Destination Information</h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <div>
@@ -421,7 +421,7 @@ const EditDestination = () => {
                                 <button 
                                     onClick={searchLocation}
                                     disabled={isSearching}
-                                    className="px-5 py-3 bg-gray-800 hover:bg-gray-700 text-yellow-500 font-bold rounded-xl transition-all border border-gray-700 disabled:opacity-50 whitespace-nowrap"
+                                    className="px-5 py-3 bg-gray-800 text-yellow-500 font-bold rounded-xl border border-gray-700 disabled:opacity-50 whitespace-nowrap"
                                 >
                                     {isSearching ? 'Searching...' : 'Search'}
                                 </button>
@@ -433,7 +433,7 @@ const EditDestination = () => {
                                     {searchResults.map((res, i) => (
                                         <button
                                             key={i}
-                                            className="w-full text-left px-4 py-3 hover:bg-gray-800 border-b border-gray-800 last:border-0 text-sm text-gray-300 transition-colors flex items-start gap-3"
+                                            className="w-full text-left px-4 py-3 border-b border-gray-800 last:border-0 text-sm text-gray-300 flex items-start gap-3"
                                             onClick={() => handleSearchResultSelect(res)}
                                         >
                                             <MapPin size={16} className="text-yellow-500 mt-0.5 shrink-0" />
@@ -451,7 +451,7 @@ const EditDestination = () => {
                             {mapExpanded && (
                                 <div className="flex justify-between items-center mb-4 text-white">
                                     <h3 className="text-xl font-bold flex items-center gap-2"><MapPin className="text-yellow-500" /> Select Location</h3>
-                                    <button onClick={() => setMapExpanded(false)} className="bg-gray-800 hover:bg-gray-700 p-2 rounded-xl transition-colors">
+                                    <button onClick={() => setMapExpanded(false)} className="bg-gray-800 p-2 rounded-xl">
                                         <X size={24} />
                                     </button>
                                 </div>
@@ -460,7 +460,7 @@ const EditDestination = () => {
                                 <button
                                     type="button"
                                     onClick={() => setMapExpanded(true)}
-                                    className="absolute top-3 right-3 z-[1000] bg-gray-900/90 text-white p-2 rounded-xl hover:bg-gray-800 transition-all shadow-lg border border-gray-700"
+                                    className="absolute top-3 right-3 z-[1000] bg-gray-900/90 text-white p-2 rounded-xl shadow-lg border border-gray-700"
                                     title="Expand Map"
                                 >
                                     <Maximize2 size={18} />
