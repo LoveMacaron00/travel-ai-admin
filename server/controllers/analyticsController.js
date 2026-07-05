@@ -1,83 +1,6 @@
 // Controller: Analytics (สถิติภาพรวม)
 const pool = require('../config/db');
 
-const TAT_API_BASE = 'https://tatdataapi.io/api/v2';
-
-const getFirstImage = (value) => {
-    if (!value) return '';
-    if (typeof value === 'string') return value;
-    if (Array.isArray(value)) return value.find(Boolean) || '';
-    return '';
-};
-
-const toNumber = (value) => {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : 0;
-};
-
-const normalizePlace = (place) => {
-    const province = place.location?.province?.name || '';
-    const district = place.location?.district?.name || '';
-    const image =
-        getFirstImage(place.thumbnailUrl) ||
-        place.sha?.detailThumbnail ||
-        place.sha?.thumbnailUrl ||
-        '';
-
-    return {
-        id: place.placeId || place.id || '',
-        name: place.name || 'Unknown',
-        city: province || district || 'Thailand',
-        location: [district, province].filter(Boolean).join(', ') || place.category?.name || 'Thailand',
-        image,
-        viewer: toNumber(place.viewer),
-        category: place.category?.name || '',
-        introduction: place.introduction || place.sha?.detail || ''
-    };
-};
-
-const getTatApiKey = () => {
-    const apiKey = process.env.TATDATAAPI;
-    if (!apiKey || apiKey === 'your_tat_api_key_here') {
-        const err = new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
-        err.statusCode = 503;
-        throw err;
-    }
-    return apiKey;
-};
-
-const getDestinations = async ({ limit = 5 } = {}) => {
-    const apiKey = getTatApiKey();
-
-    const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 20);
-    const params = new URLSearchParams({
-        numberOfResult: '30',
-        page: '1'
-    });
-
-    const response = await fetch(`${TAT_API_BASE}/places?${params}`, {
-        headers: {
-            'x-api-key': apiKey,
-            'Accept-Language': 'th'
-        }
-    });
-
-    if (!response.ok) {
-        const err = new Error(`TAT API request failed with status ${response.status}`);
-        err.statusCode = response.status;
-        throw err;
-    }
-
-    const payload = await response.json();
-    const places = Array.isArray(payload?.data) ? payload.data : [];
-
-    return places
-        .map(normalizePlace)
-        .filter((place) => place.id && place.image)
-        .sort((a, b) => b.viewer - a.viewer)
-        .slice(0, safeLimit);
-};
-
 const destinationColors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 const withRankStats = (destinations) => {
@@ -101,7 +24,24 @@ const getOverview = async (req, res) => {
         let topDestinations = [];
 
         try {
-            topDestinations = withRankStats(await getDestinations({ limit: 5 }));
+            const { rows: dests } = await pool.query(`
+                SELECT id, name, province, category, image_url, review_count 
+                FROM destinations 
+                WHERE status = 'approved' 
+                ORDER BY review_count DESC, created_at DESC 
+                LIMIT 5
+            `);
+            
+            const formattedDests = dests.map((d) => ({
+                id: d.id,
+                name: d.name,
+                location: d.province || 'Thailand',
+                image: d.image_url,
+                viewer: d.review_count || 0,
+                category: d.category
+            }));
+
+            topDestinations = withRankStats(formattedDests);
         } catch (err) {
             console.error('[analyticsController] top destinations error:', err.message);
         }

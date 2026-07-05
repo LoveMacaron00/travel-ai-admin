@@ -279,8 +279,8 @@ const Dashboard = () => {
                         ) : (
                             <div className="h-full min-h-64 flex flex-col items-center justify-center text-center px-6">
                                 <BarChart3 size={36} className="text-gray-700 mb-3" />
-                                <p className="text-sm font-semibold text-gray-400">No TAT ranking data</p>
-                                <p className="text-xs text-gray-600 mt-1">Check TATDATAAPI or try again later.</p>
+                                <p className="text-sm font-semibold text-gray-400">No Destinations found</p>
+                                <p className="text-xs text-gray-600 mt-1">Please add destinations to see rankings.</p>
                             </div>
                         )}
                     </div>
