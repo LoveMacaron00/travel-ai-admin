@@ -1,11 +1,11 @@
-const { mobileRagChat } = require('../services/aiService');
+const { mobileRagChat } = require('./helpers/aiHelper');
 const pool = require('../config/db');
 
 /**
  * ดึงสถานที่จากฐานข้อมูล destinations สำหรับ mobile app
- * GET /api/mobile/popular-destinations
+ * GET /api/mobile/destinations
  */
-const getPopularDestinations = async (req, res) => {
+const getDestinations = async (req, res) => {
     try {
         const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
 
@@ -46,7 +46,7 @@ const getPopularDestinations = async (req, res) => {
 
         res.json({ data });
     } catch (err) {
-        console.error('[mobileController] popular-destinations error:', err);
+        console.error('[mobileController] -destinations error:', err);
         res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูลสถานที่' });
     }
 };
@@ -73,6 +73,6 @@ const chatWithAssistant = async (req, res) => {
 };
 
 module.exports = {
-    getPopularDestinations,
+    getDestinations,
     chatWithAssistant
 };

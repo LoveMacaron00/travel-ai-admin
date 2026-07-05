@@ -3,8 +3,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const DestinationModel = require('../models/destinationModel');
-const { embedDestination, clearDestinationEmbedding } = require('../services/embedService');
+const pool = require('../config/db');
+const { embedDestination, clearDestinationEmbedding } = require('./helpers/embedHelper');
+
+const PLACE_STATUSES = ['pending', 'approved', 'rejected'];
+const normalizePlaceStatus = (status) => {
+    const cleanStatus = String(status || 'approved').trim().toLowerCase();
+    return PLACE_STATUSES.includes(cleanStatus) ? cleanStatus : 'approved';
+};
 
 // ลบไฟล์จริงจาก /uploads (เฉพาะไฟล์ที่อยู่ใน /uploads เท่านั้น)
 const deleteUploadedFiles = (imagePaths) => {
@@ -54,8 +60,40 @@ const validateCoordinates = (latitude, longitude) => {
  */
 const getAllDestinations = async (req, res) => {
     try {
-        const destinations = await DestinationModel.getAll(req.query);
-        res.json(destinations);
+        const { province, status, search } = req.query;
+        let sql = 'SELECT id, name, province, category, image_url, status, source, created_at FROM destinations';
+        const conditions = [];
+        const params = [];
+
+        const allowedStatuses = ['pending', 'approved', 'rejected'];
+
+        if (province && typeof province === 'string' && province.trim()) {
+            const cleanProvince = province.trim();
+            if (/^[a-zA-Z0-9ก-๙\s\.-]+$/.test(cleanProvince)) {
+                params.push(cleanProvince);
+                conditions.push(`province = $${params.length}`);
+            }
+        }
+        if (status && typeof status === 'string') {
+            const cleanStatus = status.trim().toLowerCase();
+            if (allowedStatuses.includes(cleanStatus)) {
+                params.push(cleanStatus);
+                conditions.push(`status = $${params.length}`);
+            }
+        }
+        if (search) {
+            params.push(`%${search}%`);
+            conditions.push(`name ILIKE $${params.length}`);
+        }
+
+        if (conditions.length > 0) {
+            sql += ' WHERE ' + conditions.join(' AND ');
+        }
+
+        sql += ' ORDER BY created_at DESC';
+
+        const { rows } = await pool.query(sql, params);
+        res.json(rows);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงรายการสถานที่:', err);
         res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
@@ -69,11 +107,21 @@ const getAllDestinations = async (req, res) => {
 const getDestinationById = async (req, res) => {
     try {
         const destId = parseInt(req.params.id, 10);
-        const destination = await DestinationModel.getById(destId);
+        const { rows: destRows } = await pool.query(
+            'SELECT * FROM destinations WHERE id = $1',
+            [destId]
+        );
+        const destination = destRows[0] || null;
 
         if (!destination) {
             return res.status(404).json({ message: 'ไม่พบสถานที่' });
         }
+
+        const { rows: imageRows } = await pool.query(
+            'SELECT id, destination_id, image_url, created_at FROM destination_images WHERE destination_id = $1',
+            [destId]
+        );
+        destination.images = imageRows;
 
         res.json(destination);
     } catch (err) {
@@ -97,13 +145,62 @@ const createDestination = async (req, res) => {
             return res.status(400).json({ message: coordValidation.message });
         }
 
-        const destId = await DestinationModel.create(req.body, req.body.images);
-        if ((req.body.status || 'approved') === 'approved') {
-            await embedDestination(destId);
-        } else {
-            await clearDestinationEmbedding(destId);
+        const data = req.body;
+        const images = req.body.images;
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            
+            const { rows } = await client.query(
+                `INSERT INTO destinations (name, province, description, latitude, longitude, opening_time, closing_time, status, source, image_url)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'admin', $9)
+                 RETURNING id`,
+                [
+                    data.name.trim(),
+                    data.province || null,
+                    data.description || null,
+                    data.latitude !== '' && data.latitude != null ? parseFloat(data.latitude) : null,
+                    data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
+                    data.opening_time || '00:00 AM',
+                    data.closing_time || '00:00 PM',
+                    normalizePlaceStatus(data.status),
+                    data.image_url || null
+                ]
+            );
+            
+            const destId = rows[0].id;
+            
+            if (Array.isArray(images) && images.length > 0) {
+                const validUrls = images.filter(Boolean);
+                if (validUrls.length > 0) {
+                    const values = [];
+                    const placeholders = [];
+                    validUrls.forEach((url, i) => {
+                        const offset = i * 2;
+                        placeholders.push(`($${offset + 1}, $${offset + 2})`);
+                        values.push(destId, url);
+                    });
+                    await client.query(
+                        `INSERT INTO destination_images (destination_id, image_url) VALUES ${placeholders.join(', ')}`,
+                        values
+                    );
+                }
+            }
+
+            await client.query('COMMIT');
+
+            if ((data.status || 'approved') === 'approved') {
+                await embedDestination(destId);
+            } else {
+                await clearDestinationEmbedding(destId);
+            }
+            res.status(201).json({ id: destId, message: 'เพิ่มสถานที่สำเร็จ' });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
         }
-        res.status(201).json({ id: destId, message: 'เพิ่มสถานที่สำเร็จ' });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการเพิ่มสถานที่:', err);
         res.status(400).json({ message: "ไม่สามารถเพิ่มสถานที่ได้" });
@@ -124,10 +221,74 @@ const updateDestination = async (req, res) => {
             return res.status(400).json({ message: coordValidation.message });
         }
 
-        const result = await DestinationModel.update(destId, req.body, nextImages);
+        const data = req.body;
+        const client = await pool.connect();
+        let result;
+        try {
+            await client.query('BEGIN');
 
-        if (!result) {
-            return res.status(404).json({ message: 'ไม่พบสถานที่ หรือไม่ใช่ข้อมูลของ Admin' });
+            const { rows: existingRows } = await client.query(
+                'SELECT id, image_url FROM destinations WHERE id = $1 AND source = $2 LIMIT 1',
+                [destId, 'admin']
+            );
+
+            if (existingRows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ message: 'ไม่พบสถานที่ หรือไม่ใช่ข้อมูลของ Admin' });
+            }
+
+            await client.query(
+                `UPDATE destinations
+                 SET name = $1, province = $2, description = $3, latitude = $4, longitude = $5,
+                      opening_time = $6, closing_time = $7, status = $8, image_url = $9, updated_at = NOW()
+                 WHERE id = $10`,
+                [
+                    data.name,
+                    data.province || null,
+                    data.description || null,
+                    data.latitude !== '' && data.latitude != null ? parseFloat(data.latitude) : null,
+                    data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
+                    data.opening_time,
+                    data.closing_time,
+                    normalizePlaceStatus(data.status),
+                    data.image_url || null,
+                    destId
+                ]
+            );
+
+            const { rows: oldImgs } = await client.query(
+                'SELECT image_url FROM destination_images WHERE destination_id = $1',
+                [destId]
+            );
+            const currentGalleryImages = oldImgs.map((row) => row.image_url).filter(Boolean);
+
+            await client.query('DELETE FROM destination_images WHERE destination_id = $1', [destId]);
+
+            if (nextImages && nextImages.length > 0) {
+                const values = [];
+                const placeholders = [];
+                nextImages.forEach((url, i) => {
+                    const offset = i * 2;
+                    placeholders.push(`($${offset + 1}, $${offset + 2})`);
+                    values.push(destId, url);
+                });
+                await client.query(
+                    `INSERT INTO destination_images (destination_id, image_url) VALUES ${placeholders.join(', ')}`,
+                    values
+                );
+            }
+
+            await client.query('COMMIT');
+
+            result = {
+                previousMainImage: existingRows[0].image_url,
+                currentGalleryImages
+            };
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
         }
 
         const removedImagePaths = getRemovedImages(result.currentGalleryImages, nextImages);
@@ -160,11 +321,31 @@ const deleteDestination = async (req, res) => {
     try {
         const destId = parseInt(req.params.id, 10);
         
-        const imagePaths = await DestinationModel.delete(destId);
+        const { rows: existingRows } = await pool.query(
+            'SELECT id FROM destinations WHERE id = $1 LIMIT 1',
+            [destId]
+        );
 
-        if (!imagePaths) {
+        if (existingRows.length === 0) {
             return res.status(404).json({ message: 'ไม่พบสถานที่' });
         }
+
+        const { rows: destRows } = await pool.query(
+            'SELECT image_url FROM destinations WHERE id = $1',
+            [destId]
+        );
+        const { rows: imgRows } = await pool.query(
+            'SELECT image_url FROM destination_images WHERE destination_id = $1',
+            [destId]
+        );
+
+        const imagePaths = [];
+        if (destRows.length > 0 && destRows[0].image_url) imagePaths.push(destRows[0].image_url);
+        imgRows.forEach((row) => {
+            if (row.image_url) imagePaths.push(row.image_url);
+        });
+
+        await pool.query('DELETE FROM destinations WHERE id = $1', [destId]);
 
         deleteUploadedFiles(imagePaths);
         await clearDestinationEmbedding(destId);

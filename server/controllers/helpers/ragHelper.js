@@ -1,10 +1,10 @@
-// ragService.js — vector search สำหรับ RAG
+// ragHelper.js — vector search สำหรับ RAG
 // รับ query text → embed → cosine search ใน pgvector
 // คืน top-k destinations พร้อม chunk_text สำหรับ inject prompt
 
-const pool = require('../config/db');
+const pool = require('../../config/db');
 const query = pool.query.bind(pool);
-const { getEmbedding } = require('./embedService');
+const { getEmbedding } = require('./embedHelper');
 const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
 // ค้นหา destinations ที่เกี่ยวข้องกับ query

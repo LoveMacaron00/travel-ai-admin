@@ -1,4 +1,4 @@
-const pool = require('../config/db');
+const pool = require('../../config/db');
 const query = pool.query.bind(pool);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const EMBED_MODEL = 'gemini-embedding-001';

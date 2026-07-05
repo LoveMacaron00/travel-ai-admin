@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { ADMIN_JWT_SECRET } = require('./adminAuth');
 const { USER_JWT_SECRET } = require('./userAuth');
-const UserModel = require('../models/userModel');
+const pool = require('../config/db');
 
 const secureUploads = async (req, res, next) => {
     let token = req.query.token;
@@ -30,7 +30,9 @@ const secureUploads = async (req, res, next) => {
         // 2. ตรวจสอบสิทธิ์ของผู้ใช้ทั่วไป
         const userDecoded = jwt.verify(token, USER_JWT_SECRET);
         if (userDecoded && userDecoded.id) {
-            const user = await UserModel.getById(userDecoded.id);
+            const { rows } = await pool.query('SELECT id, is_banned FROM users WHERE id = $1', [userDecoded.id]);
+            const user = rows[0] || null;
+            
             if (!user) {
                 return res.status(401).json({ message: 'ไม่พบข้อมูลผู้ใช้ในระบบ' });
             }

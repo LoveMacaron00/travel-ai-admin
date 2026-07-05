@@ -1,10 +1,10 @@
-// aiService.js Gemini API plan generation + RAG chat
+// aiHelper.js — Gemini API plan generation + RAG chat
 //   generateTripPlan() สร้างแผนเที่ยว → Flutter
 //   ragChat() ตอบคำถามด้วย RAG context → Flutter
 
-const pool = require('../config/db');
+const pool = require('../../config/db');
 const query = pool.query.bind(pool);
-const { retrieveRelevantPlaces, formatPlacesContext } = require('./ragService');
+const { retrieveRelevantPlaces, formatPlacesContext } = require('./ragHelper');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
