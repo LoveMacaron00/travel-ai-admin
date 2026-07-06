@@ -57,7 +57,6 @@ CREATE TABLE IF NOT EXISTS users (
     username            VARCHAR(255),
     profile_image_url   TEXT,
     interests           JSONB,                          -- ['beach','food','history']
-    is_private_location BOOLEAN     NOT NULL DEFAULT FALSE,
     is_banned           BOOLEAN     NOT NULL DEFAULT FALSE,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
