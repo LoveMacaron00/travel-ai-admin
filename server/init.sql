@@ -102,10 +102,6 @@ CREATE TABLE IF NOT EXISTS destinations (
     override_name        VARCHAR(255),
     override_description TEXT,
 
-    -- ค่าเข้าชม
-    price_adult  NUMERIC(10,2),
-    price_child  NUMERIC(10,2),
-
     -- สถิติ
     avg_rating   NUMERIC(3,2) DEFAULT 0,
     review_count INT          NOT NULL DEFAULT 0,

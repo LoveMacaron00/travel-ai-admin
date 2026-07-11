@@ -74,7 +74,7 @@ async function embedDestination(destinationId) {
     const { rows } = await query(
         `SELECT id, name, province, description, category, tags,
                 latitude, longitude, address, opening_time, closing_time,
-                opening_hours, price_adult, price_child, tat_raw
+                opening_hours, tat_raw
          FROM destinations WHERE id = $1 AND status = 'approved'`,
         [destinationId]
     );

@@ -2,7 +2,7 @@
 const express = require('express');
 const router  = express.Router();
 const {
-    createSession, sendMessage, getMessages, getSessionByTrip
+    createSession, sendMessage, getMessages, getLatestSession, getSessionByTrip
 } = require('../controllers/chatController');
 const { requireUserAuth } = require('../middleware/userAuth');
 
@@ -12,6 +12,7 @@ const { requireUserAuth } = require('../middleware/userAuth');
 // GET  /api/chat/trips/:tripId/session              — ดึง session ล่าสุดของ trip
 
 router.post('/sessions',                          requireUserAuth, createSession);
+router.get('/sessions/latest',                    requireUserAuth, getLatestSession);
 router.post('/sessions/:sessionId/messages',      requireUserAuth, sendMessage);
 router.get('/sessions/:sessionId/messages',       requireUserAuth, getMessages);
 router.get('/trips/:tripId/session',              requireUserAuth, getSessionByTrip);

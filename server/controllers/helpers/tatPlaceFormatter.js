@@ -11,6 +11,32 @@ const firstText = (...values) => {
 
 const getRaw = (place = {}) => place.tat_raw || place;
 
+const extractFeeFromDescription = (place = {}) => {
+    const raw = getRaw(place);
+    const text = firstText(
+        raw.information?.detail,
+        raw.detail,
+        place.description,
+    );
+    if (!text) return '';
+
+    const freeMatch = text.match(/(?:เข้าชมฟรี|ไม่เสียค่า(?:เข้า|เข้าชม)|ค่าเข้าชมฟรี|free\s+(?:entry|admission))/i);
+    if (freeMatch) return 'เข้าชมฟรี';
+
+    const matches = [];
+    const patterns = [
+        /(?:ผู้ใหญ่|adult(?:s)?)\s*(?:ราคา|คนละ|ท่านละ|[:：-])?\s*(?:ประมาณ)?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท|baht|thb)/i,
+        /(?:เด็ก|child(?:ren)?)\s*(?:ราคา|คนละ|ท่านละ|[:：-])?\s*(?:ประมาณ)?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท|baht|thb)/i,
+        /(?:ค่าเข้าชม|ค่าเข้า|entrance\s*fee|admission(?:\s*fee)?)\s*(?:ราคา|คนละ|ท่านละ|[:：-])?\s*(?:ประมาณ)?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท|baht|thb)/i,
+    ];
+    const labels = ['ผู้ใหญ่', 'เด็ก', 'ค่าเข้าชม'];
+    for (let index = 0; index < patterns.length; index++) {
+        const match = text.match(patterns[index]);
+        if (match) matches.push(`${labels[index]} ${match[1].replace(/,/g, '')} บาท`);
+    }
+    return matches.join(', ');
+};
+
 const formatMoney = (value) => {
     if (value === null || value === undefined || value === '') return '';
     const number = Number(value);
@@ -48,8 +74,8 @@ const formatOpeningHours = (openingHours, fallbackOpen, fallbackClose) => {
 const buildFeeText = (place = {}) => {
     const raw = getRaw(place);
     const fee = raw.information?.fee || raw.fee || {};
-    const adult = formatMoney(place.price_adult ?? fee.thaiAdult);
-    const child = formatMoney(place.price_child ?? fee.thaiChild);
+    const adult = formatMoney(fee.thaiAdult);
+    const child = formatMoney(fee.thaiChild);
     const details = firstText(fee.detail);
 
     const parts = [];
@@ -57,7 +83,7 @@ const buildFeeText = (place = {}) => {
     if (child) parts.push(`เด็ก ${child} บาท`);
     if (details) parts.push(details);
 
-    return parts.join(', ');
+    return parts.join(', ') || extractFeeFromDescription(place);
 };
 
 const buildContactText = (place = {}) => {
@@ -96,6 +122,7 @@ module.exports = {
     stripHtml,
     formatOpeningHours,
     buildFeeText,
+    extractFeeFromDescription,
     buildContactText,
     buildDetailText,
     buildOpeningHoursText,

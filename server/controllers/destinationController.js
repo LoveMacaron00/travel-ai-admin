@@ -33,6 +33,19 @@ const normalizeImageUrls = (images) => {
     return [...new Set(images.filter((image) => typeof image === 'string' && image.trim()).map((image) => image.trim()))];
 };
 
+const normalizeStoredImages = (images) => {
+    if (!Array.isArray(images)) return [];
+    return images
+        .map((image) => {
+            if (typeof image === 'string') return image.trim();
+            if (image && typeof image === 'object') {
+                return String(image.image_url || image.url || '').trim();
+            }
+            return '';
+        })
+        .filter(Boolean);
+};
+
 const getRemovedImages = (currentImages, nextImages) => {
     const nextSet = new Set(nextImages);
     return currentImages.filter((image) => image && !nextSet.has(image));
@@ -121,7 +134,22 @@ const getDestinationById = async (req, res) => {
             'SELECT id, destination_id, image_url, created_at FROM destination_images WHERE destination_id = $1',
             [destId]
         );
-        destination.images = imageRows;
+        const jsonImages = normalizeStoredImages(destination.images);
+        const tableImages = imageRows.map((image) => image.image_url).filter(Boolean);
+        const combinedUrls = [...new Set([
+            destination.image_url,
+            ...jsonImages,
+            ...tableImages,
+        ].filter(Boolean))];
+        destination.images = combinedUrls.map((imageUrl) => {
+            const tableRow = imageRows.find((image) => image.image_url === imageUrl);
+            return tableRow || {
+                id: null,
+                destination_id: destId,
+                image_url: imageUrl,
+                created_at: null,
+            };
+        });
 
         res.json(destination);
     } catch (err) {

@@ -95,8 +95,8 @@ async function upsertTATPlace(place) {
             latitude, longitude, address,
             opening_time, closing_time, opening_hours,
             image_url, images, source, status,
-            tat_place_id, tat_raw, price_adult, price_child
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'tat','approved',$14,$15,$16,$17)
+            tat_place_id, tat_raw
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'tat','approved',$14,$15)
         ON CONFLICT (tat_place_id) DO UPDATE SET
             name          = EXCLUDED.name,
             province      = EXCLUDED.province,
@@ -113,8 +113,6 @@ async function upsertTATPlace(place) {
             image_url     = EXCLUDED.image_url,
             images        = EXCLUDED.images,
             tat_raw       = EXCLUDED.tat_raw,
-            price_adult   = EXCLUDED.price_adult,
-            price_child   = EXCLUDED.price_child,
             updated_at    = NOW()
         RETURNING id`,
         [
@@ -133,10 +131,23 @@ async function upsertTATPlace(place) {
             JSON.stringify(uniqueImages),
             String(place.placeId || place.id),
             JSON.stringify(place),
-            place.information?.fee?.thaiAdult || null,
-            place.information?.fee?.thaiChild || null,
         ]
     );
+
+    const destinationId = rows[0].id;
+    await query('DELETE FROM destination_images WHERE destination_id = $1', [destinationId]);
+    if (uniqueImages.length > 0) {
+        const values = [];
+        const placeholders = uniqueImages.map((image, index) => {
+            values.push(destinationId, image.url);
+            return `($${index * 2 + 1}, $${index * 2 + 2})`;
+        });
+        await query(
+            `INSERT INTO destination_images (destination_id, image_url)
+             VALUES ${placeholders.join(', ')}`,
+            values,
+        );
+    }
     return rows[0];
 }
 

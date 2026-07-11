@@ -5,11 +5,12 @@ const { generateTripPlan } = require('./helpers/aiHelper');
 
 // POST /api/trips — สร้าง trip ใหม่แล้ว stream แผน
 const createTrip = async (req, res) => {
+    let tripId;
     try {
         const { destination } = req.body;
 
-        if (!destination) {
-            return res.status(400).json({ message: 'กรุณาระบุจุดหมายปลายทาง' });
+        if (!destination && (!req.body.start_latitude || !req.body.start_longitude)) {
+            return res.status(400).json({ message: 'กรุณาระบุจุดหมายหรืออนุญาตตำแหน่งปัจจุบัน' });
         }
 
         const userId = req.user?.id || null;
@@ -22,7 +23,7 @@ const createTrip = async (req, res) => {
              RETURNING id`,
             [
                 userId,
-                req.body.destination,
+                req.body.destination || 'Near current location',
                 req.body.province || null,
                 req.body.days || 3,
                 req.body.budget || null,
@@ -32,13 +33,16 @@ const createTrip = async (req, res) => {
                 JSON.stringify(req.body.interests || []),
             ]
         );
-        const tripId = rows[0].id;
+        tripId = rows[0].id;
 
         // stream แผนเที่ยวกลับไปเลย
         await generateTripPlan(tripId, req.body, res);
 
     } catch (err) {
         console.error('[tripController] createTrip:', err.message);
+        if (tripId != null) {
+            await pool.query(`UPDATE trips SET status = 'failed' WHERE id = $1`, [tripId]).catch(() => {});
+        }
         if (!res.headersSent) {
             res.status(500).json({ message: 'เกิดข้อผิดพลาดในการสร้างแผนเที่ยว' });
         }
@@ -74,8 +78,8 @@ const getTripById = async (req, res) => {
             `SELECT t.*, tp.plan_data, tp.markdown_cache, tp.generated_at
              FROM trips t
              LEFT JOIN trip_plans tp ON tp.trip_id = t.id
-             WHERE t.id = $1`,
-            [req.params.id]
+             WHERE t.id = $1 AND t.user_id = $2`,
+            [req.params.id, req.user?.id]
         );
         const trip = rows[0] || null;
         if (!trip) return res.status(404).json({ message: 'ไม่พบแผนเที่ยว' });

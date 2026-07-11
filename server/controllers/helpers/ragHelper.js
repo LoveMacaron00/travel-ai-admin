@@ -35,8 +35,6 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
             d.opening_time,
             d.closing_time,
             d.opening_hours,
-            d.price_adult,
-            d.price_child,
             d.tat_raw,
             d.avg_rating,
             pe.chunk_text,
@@ -71,6 +69,35 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
     return places;
 }
 
+// Location-first retrieval for the mobile planner. Uses a Haversine distance
+// so plan creation does not depend on the embedding API when GPS is available.
+async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+
+    const { rows } = await query(
+        `SELECT
+            d.id, d.name, d.province, d.description, d.category, d.tags,
+            d.latitude, d.longitude, d.address, d.image_url,
+            d.opening_time, d.closing_time, d.opening_hours,
+            d.tat_raw, d.avg_rating,
+            (6371 * acos(LEAST(1, GREATEST(-1,
+                cos(radians($1)) * cos(radians(d.latitude))
+                * cos(radians(d.longitude) - radians($2))
+                + sin(radians($1)) * sin(radians(d.latitude))
+            )))) AS distance_km
+         FROM destinations d
+         WHERE d.status = 'approved'
+           AND d.latitude IS NOT NULL
+           AND d.longitude IS NOT NULL
+         ORDER BY distance_km ASC, d.avg_rating DESC NULLS LAST
+         LIMIT $3`,
+        [lat, lng, limit],
+    );
+    return rows;
+}
+
 // format places เป็น context string สำหรับ inject ใน Gemini prompt
 function formatPlacesContext(places) {
     if (places.length === 0) return 'ไม่พบสถานที่ที่เกี่ยวข้องในฐานข้อมูล';
@@ -84,8 +111,10 @@ function formatPlacesContext(places) {
     แท็ก: ${(p.tags || []).join(', ') || '-'}
     ${facts.openingHoursText ? `เวลาเปิด-ปิด: ${facts.openingHoursText}` : ''}
     ${facts.feeText ? `ค่าเข้าชม: ${facts.feeText}` : ''}
+    พิกัด: ${p.latitude || '-'}, ${p.longitude || '-'}
+    รูปภาพ: ${p.image_url || '-'}
     ${facts.contactText ? `เบอร์ติดต่อ: ${facts.contactText}` : ''}`;
     }).join('\n\n---\n\n');
 }
 
-module.exports = { retrieveRelevantPlaces, formatPlacesContext };
+module.exports = { retrieveRelevantPlaces, retrieveNearbyPlaces, formatPlacesContext };
