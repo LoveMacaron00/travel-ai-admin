@@ -51,6 +51,50 @@ const getDestinations = async (req, res) => {
     }
 };
 
+// GET /api/mobile/destinations/:id — รายละเอียดสถานที่สำหรับ mobile app
+const getDestinationDetail = async (req, res) => {
+    try {
+        const destinationId = Number.parseInt(req.params.id, 10);
+        if (!Number.isInteger(destinationId)) {
+            return res.status(400).json({ message: 'รหัสสถานที่ไม่ถูกต้อง' });
+        }
+
+        const { rows } = await pool.query(
+            `SELECT id, name, province, description, category, image_url, images,
+                    opening_time, closing_time, opening_hours, admission_fee
+             FROM destinations
+             WHERE id = $1 AND status = 'approved'`,
+            [destinationId],
+        );
+        const destination = rows[0];
+        if (!destination) return res.status(404).json({ message: 'ไม่พบสถานที่' });
+
+        const { rows: imageRows } = await pool.query(
+            `SELECT image_url FROM destination_images
+             WHERE destination_id = $1 ORDER BY id ASC`,
+            [destinationId],
+        );
+        const jsonImages = Array.isArray(destination.images)
+            ? destination.images.map((image) =>
+                typeof image === 'string' ? image : image?.image_url || image?.url,
+            )
+            : [];
+        const imageUrls = [...new Set([
+            destination.image_url,
+            ...jsonImages,
+            ...imageRows.map((image) => image.image_url),
+        ].filter(Boolean))];
+
+        res.json({
+            ...destination,
+            images: imageUrls.map((image_url) => ({ image_url })),
+        });
+    } catch (err) {
+        console.error('[mobileController] destination detail error:', err);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงรายละเอียดสถานที่' });
+    }
+};
+
 const chatWithAssistant = async (req, res) => {
     try {
         const { message, province } = req.body;
@@ -74,5 +118,6 @@ const chatWithAssistant = async (req, res) => {
 
 module.exports = {
     getDestinations,
+    getDestinationDetail,
     chatWithAssistant
 };

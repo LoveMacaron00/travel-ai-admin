@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, MapPin, Clock, Info, Image as ImageIcon, Map, Building, RefreshCw } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Info, Image as ImageIcon, Map, Building, RefreshCw, Ticket } from 'lucide-react';
 import api from '../utils/api';
 import ImageLightbox from '../components/ImageLightbox';
 import { showErrorAlert, showSuccessAlert, showConfirmAlert } from '../utils/alerts';
@@ -106,6 +106,15 @@ const ReadDestination = () => {
             return items.map(i => `${i.day}: ${i.time}`).join('\n');
           })()
         : typeof hours === 'string' ? hours : '';
+
+    const fee = place.information?.fee || place.fee || {};
+    const feeRows = [
+        fee.thaiAdult != null && { label: 'Thai adult', value: `${fee.thaiAdult} THB` },
+        fee.thaiChild != null && { label: 'Thai child', value: `${fee.thaiChild} THB` },
+        fee.foreignerAdult != null && { label: 'Foreigner adult', value: `${fee.foreignerAdult} THB` },
+        fee.foreignerChild != null && { label: 'Foreigner child', value: `${fee.foreignerChild} THB` },
+    ].filter(Boolean);
+    const feeDetail = fee.detail || '';
 
     // Combine all possible image URLs from TAT API or DB
     let allImages = [];
@@ -256,6 +265,27 @@ const ReadDestination = () => {
                         {desc || 'ไม่มีข้อมูลรายละเอียด...'}
                     </div>
                 </div>
+
+                {(feeRows.length > 0 || feeDetail) && (
+                    <div className="mt-4 pt-4 border-t border-gray-800 relative z-10">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <Ticket size={14} /> Admission fee from TAT
+                        </label>
+                        <div className="p-5 bg-black/40 border border-gray-800 rounded-2xl">
+                            {feeRows.length > 0 && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {feeRows.map((row) => (
+                                        <div key={row.label} className="flex justify-between gap-3 text-sm bg-black/30 border border-gray-800 rounded-xl px-4 py-3">
+                                            <span className="text-gray-400">{row.label}</span>
+                                            <span className="text-gray-300 font-bold">{row.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {feeDetail && <p className="text-gray-300 text-sm leading-relaxed mt-3 whitespace-pre-wrap">{feeDetail}</p>}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <ImageLightbox

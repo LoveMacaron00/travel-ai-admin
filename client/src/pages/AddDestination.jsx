@@ -61,7 +61,9 @@ const AddDestination = () => {
     const [form, setForm] = useState({
         name: '', province: '', description: '',
         latitude: '', longitude: '',
-        status: 'approved'
+        status: 'approved',
+        admission_adult: '', admission_child: '',
+        admission_foreigner_adult: '', admission_foreigner_child: ''
     });
     const [images, setImages] = useState([]);
     const [uploading, setUploading] = useState(false);
@@ -176,7 +178,13 @@ const AddDestination = () => {
             const payload = {
                 ...form,
                 image_url: images[0] || '',
-                images: images
+                images: images,
+                admission_fee: {
+                    thaiAdult: form.admission_adult,
+                    thaiChild: form.admission_child,
+                    foreignerAdult: form.admission_foreigner_adult,
+                    foreignerChild: form.admission_foreigner_child,
+                },
             };
             await api.post('/destinations', payload);
             await showSuccessAlert('เพิ่มสถานที่เรียบร้อยแล้ว');
@@ -349,6 +357,32 @@ const AddDestination = () => {
                                     <label className="text-xs text-gray-500 mb-1.5 block font-medium">Longitude</label>
                                     <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 font-mono text-sm" type="number" step="any" placeholder="100.5018"
                                         value={form.longitude} onChange={e => handleChange('longitude', e.target.value)} />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-5 bg-gray-800/50 rounded-2xl border border-gray-700/50">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 block">Admission fee</label>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1.5 block font-medium">Adult (THB)</label>
+                                    <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" placeholder="e.g. 100"
+                                        value={form.admission_adult} onChange={e => handleChange('admission_adult', e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1.5 block font-medium">Child (THB)</label>
+                                    <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" placeholder="e.g. 50"
+                                        value={form.admission_child} onChange={e => handleChange('admission_child', e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1.5 block font-medium">Foreigner adult (THB)</label>
+                                    <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" placeholder="e.g. 300"
+                                        value={form.admission_foreigner_adult} onChange={e => handleChange('admission_foreigner_adult', e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1.5 block font-medium">Foreigner child (THB)</label>
+                                    <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" placeholder="e.g. 150"
+                                        value={form.admission_foreigner_child} onChange={e => handleChange('admission_foreigner_child', e.target.value)} />
                                 </div>
                             </div>
                         </div>

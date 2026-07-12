@@ -95,8 +95,8 @@ async function upsertTATPlace(place) {
             latitude, longitude, address,
             opening_time, closing_time, opening_hours,
             image_url, images, source, status,
-            tat_place_id, tat_raw
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'tat','approved',$14,$15)
+            tat_place_id, tat_raw, admission_fee
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'tat','approved',$14,$15,$16)
         ON CONFLICT (tat_place_id) DO UPDATE SET
             name          = EXCLUDED.name,
             province      = EXCLUDED.province,
@@ -113,6 +113,7 @@ async function upsertTATPlace(place) {
             image_url     = EXCLUDED.image_url,
             images        = EXCLUDED.images,
             tat_raw       = EXCLUDED.tat_raw,
+            admission_fee = EXCLUDED.admission_fee,
             updated_at    = NOW()
         RETURNING id`,
         [
@@ -131,6 +132,7 @@ async function upsertTATPlace(place) {
             JSON.stringify(uniqueImages),
             String(place.placeId || place.id),
             JSON.stringify(place),
+            JSON.stringify(place.information?.fee || place.fee || {}),
         ]
     );
 

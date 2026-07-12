@@ -46,6 +46,19 @@ const normalizeStoredImages = (images) => {
         .filter(Boolean);
 };
 
+const normalizeAdmissionFee = (fee) => {
+    if (!fee || typeof fee !== 'object' || Array.isArray(fee)) return {};
+    const result = {};
+    for (const key of ['thaiAdult', 'thaiChild', 'foreignerAdult', 'foreignerChild']) {
+        const value = fee[key];
+        if (value !== null && value !== undefined && String(value).trim() !== '') {
+            result[key] = String(value).trim();
+        }
+    }
+    if (fee.detail && String(fee.detail).trim()) result.detail = String(fee.detail).trim();
+    return result;
+};
+
 const getRemovedImages = (currentImages, nextImages) => {
     const nextSet = new Set(nextImages);
     return currentImages.filter((image) => image && !nextSet.has(image));
@@ -180,8 +193,8 @@ const createDestination = async (req, res) => {
             await client.query('BEGIN');
             
             const { rows } = await client.query(
-                `INSERT INTO destinations (name, province, description, latitude, longitude, opening_time, closing_time, status, source, image_url)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'admin', $9)
+                `INSERT INTO destinations (name, province, description, latitude, longitude, opening_time, closing_time, status, source, image_url, admission_fee)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'admin', $9, $10)
                  RETURNING id`,
                 [
                     data.name.trim(),
@@ -192,7 +205,8 @@ const createDestination = async (req, res) => {
                     data.opening_time || '00:00 AM',
                     data.closing_time || '00:00 PM',
                     normalizePlaceStatus(data.status),
-                    data.image_url || null
+                    data.image_url || null,
+                    JSON.stringify(normalizeAdmissionFee(data.admission_fee)),
                 ]
             );
             
@@ -256,7 +270,7 @@ const updateDestination = async (req, res) => {
             await client.query('BEGIN');
 
             const { rows: existingRows } = await client.query(
-                'SELECT id, image_url FROM destinations WHERE id = $1 AND source = $2 LIMIT 1',
+                'SELECT id, image_url, admission_fee FROM destinations WHERE id = $1 AND source = $2 LIMIT 1',
                 [destId, 'admin']
             );
 
@@ -268,8 +282,9 @@ const updateDestination = async (req, res) => {
             await client.query(
                 `UPDATE destinations
                  SET name = $1, province = $2, description = $3, latitude = $4, longitude = $5,
-                      opening_time = $6, closing_time = $7, status = $8, image_url = $9, updated_at = NOW()
-                 WHERE id = $10`,
+                      opening_time = $6, closing_time = $7, status = $8, image_url = $9,
+                      admission_fee = $10, updated_at = NOW()
+                 WHERE id = $11`,
                 [
                     data.name,
                     data.province || null,
@@ -280,6 +295,10 @@ const updateDestination = async (req, res) => {
                     data.closing_time,
                     normalizePlaceStatus(data.status),
                     data.image_url || null,
+                    JSON.stringify({
+                        ...normalizeAdmissionFee(existingRows[0].admission_fee),
+                        ...normalizeAdmissionFee(data.admission_fee),
+                    }),
                     destId
                 ]
             );

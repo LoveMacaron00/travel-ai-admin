@@ -45,7 +45,6 @@ CREATE TABLE IF NOT EXISTS admins (
     id         SERIAL PRIMARY KEY,
     email      VARCHAR(255) UNIQUE NOT NULL,
     password   VARCHAR(255)        NOT NULL,
-    role       VARCHAR(50)         NOT NULL DEFAULT 'admin', -- 'superadmin' | 'admin'
     created_at TIMESTAMPTZ         NOT NULL DEFAULT NOW()
 );
 
@@ -97,6 +96,7 @@ CREATE TABLE IF NOT EXISTS destinations (
     -- TAT integration
     tat_place_id VARCHAR(100) UNIQUE,                  -- TAT placeId ป้องกัน sync ซ้ำ
     tat_raw      JSONB,                                -- raw response จาก TAT เก็บไว้เต็ม
+    admission_fee JSONB       NOT NULL DEFAULT '{}',   -- ค่าเข้าชมที่ใช้งานง่าย
 
     -- Admin override (ป้องกัน TAT sync ทับงาน admin)
     override_name        VARCHAR(255),
