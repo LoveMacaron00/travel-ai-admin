@@ -4,10 +4,12 @@ const pool = require('../../config/db');
 const query = pool.query.bind(pool);
 const { jsonrepair } = require('jsonrepair');
 const { retrieveRelevantPlaces, retrieveNearbyPlaces, formatPlacesContext } = require('./ragHelper');
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const GEMINI_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_MAX_RETRIES || 3));
-const GEMINI_PLAN_THINKING_BUDGET = Math.max(0, Number(process.env.GEMINI_PLAN_THINKING_BUDGET || 0));
+const { config } = require('../../config/env');
+const GEMINI_API_KEY = config.gemini.apiKey;
+const GEMINI_API_BASE = config.gemini.apiBaseUrl;
+const GEMINI_MODEL = config.gemini.model;
+const GEMINI_MAX_RETRIES = config.gemini.maxRetries;
+const GEMINI_PLAN_THINKING_BUDGET = config.gemini.planThinkingBudget;
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -107,7 +109,7 @@ async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode 
         };
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
+    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
 
     let response;
     for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
@@ -164,7 +166,7 @@ async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode 
 // Structured plans are requested as one complete response. This avoids
 // assembling partial SSE chunks into malformed JSON.
 async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     const body = {
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
@@ -431,39 +433,4 @@ async function ragChat(sessionId, tripId, userMessage, chatHistory, res) {
     }
 }
 
-async function mobileRagChat(userMessage, options = {}) {
-    const places = await retrieveRelevantPlaces(userMessage, {
-        province : options.province || null,
-        limit    : options.limit || 5,
-    });
-
-    const placesContext = formatPlacesContext(places);
-    const systemPrompt =
-    `คุณคือ AI Chatbot ผู้ช่วยท่องเที่ยวในประเทศไทย ตอบเป็นภาษาไทย กระชับ และอ้างอิงข้อมูลจาก RAG context ก่อนเสมอ
-    ใช้ข้อมูลเวลาเปิด-ปิด ค่าเข้าชม เบอร์ติดต่อ รายละเอียด และเกร็ดจาก TAT ถ้ามี
-    ถ้าข้อมูลสำคัญไม่มีใน context ให้บอกตรงๆ ว่ายังไม่มีข้อมูลยืนยัน และแนะนำให้ตรวจสอบกับสถานที่ก่อนเดินทาง
-    หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ (เช่น พิพิธภัณฑ์/กิจกรรมในบริเวณหาด) ให้แจ้งข้อมูลนั้นโดยตรงทันที ไม่ต้องปฏิเสธก่อนว่าไม่มีข้อมูลของอีกส่วนหนึ่ง
-
-    ข้อมูลสถานที่ที่เกี่ยวข้อง:
-    ${placesContext}`;
-
-    const messages = [{ role: 'user', content: userMessage }];
-    let answer = '';
-
-    for await (const token of streamGemini(systemPrompt, messages, 1024)) {
-        answer += token;
-    }
-
-    return {
-        answer,
-        sources: places.map((place) => ({
-            id: place.id,
-            name: place.name,
-            province: place.province,
-            category: place.category,
-            image_url: place.image_url,
-        })),
-    };
-}
-
-module.exports = { generateTripPlan, ragChat, mobileRagChat };
+module.exports = { generateTripPlan, ragChat };

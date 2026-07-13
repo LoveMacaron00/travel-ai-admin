@@ -1,12 +1,13 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Upload, X, Maximize2, Minimize2, ImagePlus, Search, MapPin } from 'lucide-react';
+import { Upload, X, Maximize2, ImagePlus, Search, MapPin } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import 'leaflet/dist/leaflet.css';
 import api from '../utils/api';
+import { appConfig } from '../config';
 import { showErrorAlert, showSuccessAlert, showWarningAlert } from '../utils/alerts';
 import ImageLightbox from '../components/ImageLightbox';
 
@@ -149,7 +150,7 @@ const EditDestination = () => {
         if (!searchQuery.trim()) return;
         setIsSearching(true);
         try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
+            const res = await fetch(`${appConfig.nominatimBaseUrl}/search?format=json&q=${encodeURIComponent(searchQuery)}`);
             const data = await res.json();
             setSearchResults(data);
         } catch (error) {
@@ -515,7 +516,7 @@ const EditDestination = () => {
                                 >
                                     <TileLayer
                                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                        url={appConfig.mapTileUrl}
                                     />
                                     <MapClickHandler onLocationSelect={handleLocationSelect} />
                                     <MapResizeTrigger expanded={mapExpanded} />

@@ -1,0 +1,63 @@
+const path = require('path');
+const dotenv = require('dotenv');
+
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+const asNumber = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const withoutTrailingSlash = (value) => value.replace(/\/+$/, '');
+
+const config = {
+    nodeEnv: process.env.NODE_ENV || 'development',
+    port: asNumber(process.env.PORT, 5000),
+    allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173')
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean),
+    database: {
+        host: process.env.DB_HOST || 'localhost',
+        port: asNumber(process.env.DB_PORT, 5432),
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASS,
+        name: process.env.DB_NAME || 'smarttravel',
+    },
+    jwt: {
+        adminSecret: process.env.ADMIN_JWT_SECRET,
+        userSecret: process.env.USER_JWT_SECRET,
+    },
+    gemini: {
+        apiKey: process.env.GEMINI_API_KEY,
+        apiBaseUrl: withoutTrailingSlash(
+            process.env.GEMINI_API_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+        ),
+        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+        embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
+        maxRetries: Math.max(0, asNumber(process.env.GEMINI_MAX_RETRIES, 3)),
+        planThinkingBudget: Math.max(0, asNumber(process.env.GEMINI_PLAN_THINKING_BUDGET, 0)),
+    },
+    tat: {
+        apiKey: process.env.TATDATAAPI,
+        apiBaseUrl: withoutTrailingSlash(
+            process.env.TAT_API_BASE_URL || 'https://tatdataapi.io/api/v2',
+        ),
+    },
+};
+
+const requiredEnvironmentVariables = [
+    ['DB_PASS', config.database.password],
+    ['ADMIN_JWT_SECRET', config.jwt.adminSecret],
+    ['USER_JWT_SECRET', config.jwt.userSecret],
+    ['GEMINI_API_KEY', config.gemini.apiKey],
+    ['TATDATAAPI', config.tat.apiKey],
+];
+
+const warnAboutMissingEnvironment = () => {
+    for (const [name, value] of requiredEnvironmentVariables) {
+        if (!value) console.warn(`[env] ${name} ไม่ได้ตั้งค่าใน .env`);
+    }
+};
+
+module.exports = { config, warnAboutMissingEnvironment };

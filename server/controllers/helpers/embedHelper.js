@@ -2,8 +2,10 @@
 
 const pool = require('../../config/db');
 const query = pool.query.bind(pool);
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const EMBED_MODEL = 'gemini-embedding-001';
+const { config } = require('../../config/env');
+const GEMINI_API_KEY = config.gemini.apiKey;
+const GEMINI_API_BASE = config.gemini.apiBaseUrl;
+const EMBED_MODEL = config.gemini.embeddingModel;
 const EMBED_DIMENSIONS = 1536;
 const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
@@ -12,7 +14,7 @@ async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
         throw new Error('ไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ (.env)');
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent`, {
+    const response = await fetch(`${GEMINI_API_BASE}/models/${EMBED_MODEL}:embedContent`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

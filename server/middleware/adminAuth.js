@@ -1,8 +1,9 @@
 // server/middleware/adminAuth.js
 
 const jwt = require('jsonwebtoken');
-const NODE_ENV = process.env.NODE_ENV;
-let ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET;
+const { config } = require('../config/env');
+const NODE_ENV = config.nodeEnv;
+let ADMIN_JWT_SECRET = config.jwt.adminSecret;
 
 const WEAK_SECRETS = [
     'dev-admin-secret',

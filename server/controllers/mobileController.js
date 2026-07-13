@@ -1,6 +1,5 @@
 // server/controllers/mobileController.js
 
-const { mobileRagChat } = require('./helpers/aiHelper');
 const pool = require('../config/db');
 
 const getDestinations = async (req, res) => {
@@ -93,29 +92,7 @@ const getDestinationDetail = async (req, res) => {
     }
 };
 
-const chatWithAssistant = async (req, res) => {
-    try {
-        const { message, province } = req.body;
-        if (!message?.trim()) {
-            return res.status(400).json({ message: 'กรุณาระบุข้อความ' });
-        }
-
-        const data = await mobileRagChat(message.trim(), {
-            province: province || null,
-            limit: 5,
-        });
-
-        res.json(data);
-    } catch (err) {
-        console.error('[mobileController] chat error:', err);
-        res.status(500).json({
-            message: 'เกิดข้อผิดพลาดในการตอบคำถามท่องเที่ยว'
-        });
-    }
-};
-
 module.exports = {
     getDestinations,
     getDestinationDetail,
-    chatWithAssistant
 };

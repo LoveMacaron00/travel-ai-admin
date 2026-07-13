@@ -1,7 +1,7 @@
 // server/server.js
 
 const path = require('path');
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+const { config, warnAboutMissingEnvironment } = require('./config/env');
 
 const express = require('express');
 const cors = require('cors');
@@ -16,9 +16,7 @@ const app = express();
 // Middleware
 app.use(morgan('dev'));
 app.use(cors({
-    origin: process.env.ALLOWED_ORIGINS
-        .split(',')
-        .map(origin => origin.trim()),
+    origin: config.allowedOrigins,
     credentials: true
 }));
 
@@ -31,11 +29,7 @@ const uploadsDir = path.join(__dirname, 'uploads');
 app.use('/uploads', secureUploads, express.static(uploadsDir));
 
 
-// ตรวจ required keys ตอน startup warn ถ้าขาด
-const REQUIRED = ['GEMINI_API_KEY', 'TATDATAAPI'];
-for (const key of REQUIRED) {
-    if (!process.env[key]) console.warn(`[env] ${key} ไม่ได้ตั้งค่าใน .env`);
-}
+warnAboutMissingEnvironment();
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -71,7 +65,6 @@ app.use((err, req, res, next) => {
     next();
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`เซิร์ฟเวอร์กำลังทำงานบนพอร์ต ${PORT}`);
+app.listen(config.port, () => {
+    console.log(`เซิร์ฟเวอร์กำลังทำงานบนพอร์ต ${config.port}`);
 });

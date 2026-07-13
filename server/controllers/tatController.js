@@ -1,7 +1,8 @@
 // server/controllers/tatController.js
 
-const TAT_API_KEY = process.env.TATDATAAPI;
-const TAT_API_BASE = 'https://tatdataapi.io/api/v2';
+const { config } = require('../config/env');
+const TAT_API_KEY = config.tat.apiKey;
+const TAT_API_BASE = config.tat.apiBaseUrl;
 
 // Headers สำหรับเรียก TAT API
 const tatHeaders = {
@@ -60,40 +61,7 @@ const getPlaceById = async (req, res) => {
     }
 };
 
-// ดึงข้อมูล events จาก TAT API
-// GET /api/v2/events
-const getEvents = async (req, res) => {
-    if (!checkEnvConfig(res)) return;
-    try {
-        const url = `${TAT_API_BASE}/events`;
-        const response = await fetch(url, { headers: tatHeaders });
-        const data = await response.json();
-        res.json(data);
-    } catch (err) {
-        console.error('เกิดข้อผิดพลาดในการดึงข้อมูล TAT API (Events):', err);
-        res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน tatController - getEvents" });
-    }
-}
-
-// ดูรายละเอียด event จาก TAT API ตาม ID
-// GET /api/v2/events/:id
-const getEventById = async (req, res) => {
-    if (!checkEnvConfig(res)) return;
-    try {
-        const url = `${TAT_API_BASE}/events/${req.params.id}`;
-        const response = await fetch(url, { headers: tatHeaders });
-        const data = await response.json();
-        res.json(data);
-    } catch (err) {
-        console.error('เกิดข้อผิดพลาดในการดึงข้อมูล TAT API (รายละเอียด Event):', err);
-        res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน tatController - getEventById" });       
-    }
-}
-
-
 module.exports = {
     searchPlaces,
     getPlaceById,
-    getEvents,
-    getEventById
 };

@@ -3,7 +3,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
-const USER_JWT_SECRET = process.env.USER_JWT_SECRET;
+const { USER_JWT_SECRET } = require('../middleware/userAuth');
 
 const PUBLIC_COLUMNS = 'id, email, username, profile_image_url, interests, is_banned, created_at';
 
@@ -16,26 +16,6 @@ const getAllUsers = async (req, res) => {
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงข้อมูล users:', err);
         res.status(500).json({ message: 'เกิดข้อผิดพลาดภายใน userController - getAllUsers' });
-    }
-};
-
-const getUserById = async (req, res) => {
-    try {
-        const userId = parseInt(req.params.id, 10);
-        const { rows } = await pool.query(
-            `SELECT ${PUBLIC_COLUMNS} FROM users WHERE id = $1`,
-            [userId]
-        );
-        const user = rows[0] || null;
-
-        if (!user) {
-            return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
-        }
-
-        res.status(200).json(user);
-    } catch (err) {
-        console.error('เกิดข้อผิดพลาดในการดึงข้อมูล user:', err);
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดภายใน userController - getUserById' });
     }
 };
 
@@ -154,46 +134,6 @@ const loginUser = async (req, res) => {
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการเข้าสู่ระบบผู้ใช้:', err);
         res.status(500).json({ message: 'เกิดข้อผิดพลาดภายใน userController - loginUser' });
-    }
-};
-
-const checkBanStatus = async (req, res) => {
-    try {
-        const email = req.query.email?.trim().toLowerCase();
-
-        if (!email) {
-            return res.status(400).json({
-                message: 'จำเป็นต้องมี email'
-            });
-        }
-
-        const { rows } = await pool.query(
-            `SELECT ${PUBLIC_COLUMNS} FROM users WHERE email = $1`,
-            [email]
-        );
-        const user = rows[0] || null;
-
-        if (!user) {
-            return res.status(404).json({
-                message: 'ไม่พบผู้ใช้ในฐานข้อมูล',
-                is_banned: false,
-                is_registered: false
-            });
-        }
-
-        res.status(200).json({
-            is_registered: true,
-            is_banned: user.is_banned,
-            user: {
-                id: user.id,
-                email: user.email,
-                username: user.username,
-                interests: user.interests
-            }
-        });
-    } catch (err) {
-        console.error('เกิดข้อผิดพลาดในการ check ban status user:', err);
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดภายใน userController - checkBanStatus' });
     }
 };
 
@@ -323,10 +263,8 @@ const uploadProfileImage = async (req, res) => {
 
 module.exports = {
     getAllUsers,
-    getUserById,
     registerUser,
     loginUser,
-    checkBanStatus,
     toggleBanUser,
     updateUserProfile,
     uploadProfileImage

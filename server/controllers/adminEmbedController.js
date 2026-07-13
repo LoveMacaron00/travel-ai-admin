@@ -3,9 +3,10 @@
 const pool = require('../config/db');
 const query = pool.query.bind(pool);
 const { embedDestination, bulkEmbedMissing } = require('./helpers/embedHelper');
+const { config } = require('../config/env');
 
-const TAT_API_KEY = process.env.TATDATAAPI;
-const TAT_API_BASE = 'https://tatdataapi.io/api/v2';
+const TAT_API_KEY = config.tat.apiKey;
+const TAT_API_BASE = config.tat.apiBaseUrl;
 const TAT_HEADERS  = { 'x-api-key': TAT_API_KEY, 'Accept-Language': 'th' };
 
 const CATEGORY_MAP = {

@@ -1,8 +1,9 @@
 // server/middleware/userAuth.js
 
 const jwt = require('jsonwebtoken');
-const NODE_ENV = process.env.NODE_ENV;
-let USER_JWT_SECRET = process.env.USER_JWT_SECRET;
+const { config } = require('../config/env');
+const NODE_ENV = config.nodeEnv;
+let USER_JWT_SECRET = config.jwt.userSecret;
 
 const WEAK_SECRETS = [
     'dev-user-secret',

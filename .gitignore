@@ -10,6 +10,8 @@ server/.env
 client/.env
 client/.env.*
 server/.env.*
+!client/.env.example
+!server/.env.example
 
 # Logs
 *.log
