@@ -1,5 +1,4 @@
-// Routes: Destination (เส้นทางสถานที่ท่องเที่ยว)
-// กำหนดเส้นทาง API สำหรับ CRUD สถานที่
+// server/routes/destinationRoutes.js
 
 const express = require('express');
 const router = express.Router();

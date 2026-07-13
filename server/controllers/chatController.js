@@ -1,4 +1,4 @@
-// chatController.js — RAG chat session + messages
+// server/controllers/chatController.js
 
 const pool = require('../config/db');
 const { ragChat } = require('./helpers/aiHelper');

@@ -1,5 +1,4 @@
-// Routes: Auth (เส้นทางการยืนยันตัวตน)
-// กำหนดเส้นทาง API สำหรับการเข้าสู่ระบบ
+// server/routes/auth.js
 
 const express = require('express');
 const router = express.Router();

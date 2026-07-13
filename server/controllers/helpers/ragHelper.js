@@ -1,6 +1,4 @@
-// ragHelper.js — vector search สำหรับ RAG
-// รับ query text → embed → cosine search ใน pgvector
-// คืน top-k destinations พร้อม chunk_text สำหรับ inject prompt
+// server/controllers/helpers/ragHelper.js
 
 const pool = require('../../config/db');
 const query = pool.query.bind(pool);

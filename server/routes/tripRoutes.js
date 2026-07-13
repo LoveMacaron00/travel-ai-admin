@@ -1,4 +1,5 @@
-// routes/tripRoutes.js
+// server/routes/tripRoutes.js
+
 const express = require('express');
 const router  = express.Router();
 const { createTrip, getUserTrips, getTripById } = require('../controllers/tripController');

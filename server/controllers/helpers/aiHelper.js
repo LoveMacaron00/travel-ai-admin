@@ -1,6 +1,4 @@
-// aiHelper.js — Gemini API plan generation + RAG chat
-//   generateTripPlan() สร้างแผนเที่ยว → Flutter
-//   ragChat() ตอบคำถามด้วย RAG context → Flutter
+// server/controllers/helpers/aiHelper.js
 
 const pool = require('../../config/db');
 const query = pool.query.bind(pool);

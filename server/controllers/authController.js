@@ -1,4 +1,4 @@
-// จัดการ logic การเข้าสู่ระบบของแอดมิน
+// server/controllers/authController.js
 
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');

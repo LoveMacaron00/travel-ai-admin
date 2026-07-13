@@ -1,5 +1,4 @@
-// Controller: TAT (Tourism Authority of Thailand)
-// จัดการ logic การเชื่อมต่อกับ TAT API ภายนอก
+// server/controllers/tatController.js
 
 const TAT_API_KEY = process.env.TATDATAAPI;
 const TAT_API_BASE = 'https://tatdataapi.io/api/v2';

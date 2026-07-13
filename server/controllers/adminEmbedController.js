@@ -1,6 +1,4 @@
-// POST /api/admin/embed/bulk       — embed ทุก approved ที่ยังไม่มี vector
-// POST /api/admin/embed/:id        — re-embed destination เดียว
-// POST /api/admin/sync/tat         — trigger TAT sync
+// server/controllers/adminEmbedController.js
 
 const pool = require('../config/db');
 const query = pool.query.bind(pool);

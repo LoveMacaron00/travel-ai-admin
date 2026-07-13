@@ -1,4 +1,4 @@
-// tripController.js — CRUD trips + plan generation
+// server/controllers/tripController.js
 
 const pool = require('../config/db');
 const { generateTripPlan } = require('./helpers/aiHelper');

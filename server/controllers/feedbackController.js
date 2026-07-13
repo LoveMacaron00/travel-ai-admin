@@ -1,3 +1,5 @@
+// server/controllers/feedbackController.js
+
 const pool = require('../config/db');
 
 const getAllFeedback = async (req, res) => {

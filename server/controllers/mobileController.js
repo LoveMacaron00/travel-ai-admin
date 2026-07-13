@@ -1,10 +1,8 @@
+// server/controllers/mobileController.js
+
 const { mobileRagChat } = require('./helpers/aiHelper');
 const pool = require('../config/db');
 
-/**
- * ดึงสถานที่จากฐานข้อมูล destinations สำหรับ mobile app
- * GET /api/mobile/destinations
- */
 const getDestinations = async (req, res) => {
     try {
         const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;

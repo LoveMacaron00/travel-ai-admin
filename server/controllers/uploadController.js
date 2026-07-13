@@ -1,8 +1,5 @@
-// Controller: Upload (อัปโหลดรูปภาพ)
-// จัดการ logic การอัปโหลดไฟล์รูปภาพ
+// server/controllers/uploadController.js
 
- // อัปโหลดรูปภาพหลายรูป (สูงสุด 10 รูป)
- // POST /api/upload
 const uploadImages = (req, res) => {
     // ตรวจสอบว่ามีไฟล์ที่อัปโหลดหรือไม่
     if (!req.files || req.files.length === 0) {

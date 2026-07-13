@@ -1,3 +1,5 @@
+// server/middleware/secureUploads.js
+
 const jwt = require('jsonwebtoken');
 const { ADMIN_JWT_SECRET } = require('./adminAuth');
 const { USER_JWT_SECRET } = require('./userAuth');

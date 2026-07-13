@@ -1,6 +1,6 @@
-// Controller: Analytics (สถิติภาพรวม)
-const pool = require('../config/db');
+// server/controllers/analyticsController.js
 
+const pool = require('../config/db');
 const destinationColors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 const withRankStats = (destinations) => {

@@ -1,3 +1,5 @@
+// server/controllers/helpers/tatPlaceFormatter.js
+
 const stripHtml = (value = '') => String(value).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 
 const firstText = (...values) => {

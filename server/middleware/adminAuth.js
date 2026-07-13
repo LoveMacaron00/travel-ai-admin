@@ -1,3 +1,5 @@
+// server/middleware/adminAuth.js
+
 const jwt = require('jsonwebtoken');
 const NODE_ENV = process.env.NODE_ENV;
 let ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET;

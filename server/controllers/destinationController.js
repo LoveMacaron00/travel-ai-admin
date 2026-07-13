@@ -1,5 +1,4 @@
-// Controller: Destination (สถานที่ท่องเที่ยว)
-// จัดการ HTTP Request และ Response สำหรับสถานที่ท่องเที่ยว
+// server/controllers/destinationController.js
 
 const fs = require('fs');
 const path = require('path');

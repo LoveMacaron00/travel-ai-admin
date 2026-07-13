@@ -1,3 +1,5 @@
+// server/controllers/helpers/embedHelper.js
+
 const pool = require('../../config/db');
 const query = pool.query.bind(pool);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;

@@ -1,4 +1,4 @@
-// การตั้งค่า Multer สำหรับอัปโหลดไฟล์รูปภาพ
+// server/config/multer.js
 
 const multer = require('multer');
 const path = require('path');
