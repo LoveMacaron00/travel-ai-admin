@@ -10,8 +10,36 @@ const GEMINI_API_BASE = config.gemini.apiBaseUrl;
 const GEMINI_MODEL = config.gemini.model;
 const GEMINI_MAX_RETRIES = config.gemini.maxRetries;
 const GEMINI_PLAN_THINKING_BUDGET = config.gemini.planThinkingBudget;
+const SUPPORTED_TRANSPORT_MODES = new Set(['car', 'walking']);
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const getAllowedTransportModes = (modes) => {
+    const allowed = Array.isArray(modes)
+        ? modes
+            .map((mode) => String(mode).trim().toLowerCase())
+            .filter((mode) => SUPPORTED_TRANSPORT_MODES.has(mode))
+        : [];
+    return allowed.length > 0 ? [...new Set(allowed)] : ['car'];
+};
+
+const normalizePlanTransportModes = (planData, allowedModes) => {
+    for (const day of planData.days || []) {
+        for (const stop of day.stops || []) {
+            const mode = String(stop.transportMode || '').toLowerCase();
+            stop.transportMode = allowedModes.includes(mode) ? mode : allowedModes[0];
+
+            if (Array.isArray(stop.segments)) {
+                for (const segment of stop.segments) {
+                    const segmentMode = String(segment.mode || '').toLowerCase();
+                    segment.mode = allowedModes.includes(segmentMode)
+                        ? segmentMode
+                        : stop.transportMode;
+                }
+            }
+        }
+    }
+};
 
 const PLAN_RESPONSE_SCHEMA = {
     type: 'object',
@@ -219,6 +247,8 @@ async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
 // สร้างแผนเที่ยว พร้อม ส่งกลับไป Flutter
 // หลังส่งเสร็จ → save trip_plans + embed plan chunks
 async function generateTripPlan(tripId, tripInput, res) {
+    const allowedTransportModes = getAllowedTransportModes(tripInput.transport_modes);
+
     // ดึง relevant places จาก RAG
     const ragQuery = [
         tripInput.destination || 'สถานที่ท่องเที่ยวใกล้ฉัน',
@@ -258,7 +288,7 @@ async function generateTripPlan(tripId, tripInput, res) {
     - ประเภทกลุ่ม: ${tripInput.group_type || 'ไม่ระบุ'}
     - ความสนใจ: ${(tripInput.interests || []).join(', ') || 'ไม่ระบุ'}
     - พื้นที่/จังหวัด (ถ้ามี): ${tripInput.destination || 'ให้เลือกจากตำแหน่ง GPS'}
-    - วิธีเดินทางที่ยอมรับ: ${(tripInput.transport_modes || ['car']).join(', ')}
+    - วิธีเดินทางที่ยอมรับ: ${allowedTransportModes.join(', ')}
     - สถานที่ที่ผู้ใช้บังคับเลือก: ${(tripInput.must_visit || []).map(p => p.name || p).join(', ') || 'ไม่มี'}
     - สถานที่ที่ผู้ใช้ลบและห้ามเสนอซ้ำ: ${(tripInput.excluded_places || []).join(', ') || 'ไม่มี'}
 
@@ -326,6 +356,7 @@ async function generateTripPlan(tripId, tripInput, res) {
                         `Gemini plan JSON is missing days (keys=${Object.keys(planData).join(',')})`,
                     );
                 }
+                normalizePlanTransportModes(planData, allowedTransportModes);
                 break;
             } catch (parseError) {
                 console.warn(
