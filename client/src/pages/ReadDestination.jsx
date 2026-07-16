@@ -119,7 +119,7 @@ const ReadDestination = () => {
 
     // Combine all possible image URLs from TAT API or DB
     let allImages = [];
-    
+
     // If it's a DB synced item, it might have `images` array of objects {url: ...}
     if (place.images && Array.isArray(place.images)) {
         if (typeof place.images[0] === 'object') {
@@ -137,7 +137,7 @@ const ReadDestination = () => {
     if (place.picture_urls) allImages.push(...place.picture_urls);
     if (place.web_picture_urls) allImages.push(...place.web_picture_urls);
     if (place.multimedia) allImages.push(...place.multimedia.map(m => m.url));
-    
+
     if (place.sha?.detailPicture) {
         const shaImgs = Array.isArray(place.sha.detailPicture) ? place.sha.detailPicture : [place.sha.detailPicture];
         allImages.push(...shaImgs);
@@ -167,8 +167,8 @@ const ReadDestination = () => {
                 </div>
 
                 <div className="relative z-10 flex items-center gap-4">
-                    <button 
-                        onClick={() => navigate('/destinations')} 
+                    <button
+                        onClick={() => navigate('/destinations')}
                         className="flex items-center justify-center gap-2 px-4 py-2 bg-white/5 text-white font-bold rounded-xl border border-gray-700"
                     >
                         <ArrowLeft size={18} /> Back to List
@@ -200,9 +200,9 @@ const ReadDestination = () => {
                                 className="relative aspect-square rounded-xl overflow-hidden shadow-md border border-gray-800 cursor-zoom-in"
                             >
                                 <AuthenticatedImage
-                                    src={url} 
-                                    alt={`${name} ${i + 1}`} 
-                                    className="w-full h-full object-cover" 
+                                    src={url}
+                                    alt={`${name} ${i + 1}`}
+                                    className="w-full h-full object-cover"
                                 />
                             </button>
                         ))}
@@ -215,7 +215,7 @@ const ReadDestination = () => {
                 <div className="absolute top-0 right-0 p-8 opacity-[0.02] pointer-events-none">
                     <Map size={120} className="text-white" />
                 </div>
-                
+
                 <h2 className="text-xl font-bold text-white flex items-center gap-3 mb-4 border-b border-gray-800 pb-3">
                     <Info size={24} className="text-blue-500" />
                     Information Data
@@ -257,7 +257,7 @@ const ReadDestination = () => {
                         </div>
                     </div>
                 </div>
-                
+
                 <div className="mt-4 pt-4 border-t border-gray-800 relative z-10">
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                         <Info size={14} /> Description

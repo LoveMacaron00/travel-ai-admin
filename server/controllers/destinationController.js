@@ -16,7 +16,7 @@ const deleteUploadedFiles = (imagePaths) => {
     for (const imgPath of imagePaths) {
         if (!imgPath) continue;
         if (!imgPath.startsWith('/uploads/')) continue;
-        
+
         const filename = path.basename(imgPath);
         const fullPath = path.join(__dirname, '..', 'uploads', filename);
         fs.unlink(fullPath, (err) => {
@@ -190,7 +190,7 @@ const createDestination = async (req, res) => {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-            
+
             const { rows } = await client.query(
                 `INSERT INTO destinations (name, province, description, latitude, longitude, opening_time, closing_time, status, source, image_url, admission_fee)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'admin', $9, $10)
@@ -208,9 +208,9 @@ const createDestination = async (req, res) => {
                     JSON.stringify(normalizeAdmissionFee(data.admission_fee)),
                 ]
             );
-            
+
             const destId = rows[0].id;
-            
+
             if (Array.isArray(images) && images.length > 0) {
                 const validUrls = images.filter(Boolean);
                 if (validUrls.length > 0) {
@@ -366,7 +366,7 @@ const updateDestination = async (req, res) => {
 const deleteDestination = async (req, res) => {
     try {
         const destId = parseInt(req.params.id, 10);
-        
+
         const { rows: existingRows } = await pool.query(
             'SELECT id FROM destinations WHERE id = $1 LIMIT 1',
             [destId]

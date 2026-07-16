@@ -69,12 +69,12 @@ const UserManager = () => {
 
     return (
         <div className="p-3 md:p-4 w-full space-y-3 md:space-y-4">
-            
+
             {/* HEADER */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
                 {/* Decorative background element */}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
-                
+
                 <div className="relative z-10">
                     <div className="flex items-center gap-2 mb-3">
                         <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">Homiie Admin</span>
@@ -86,8 +86,8 @@ const UserManager = () => {
                         Monitor user activity, manage access permissions, and engage with community feedback from a centralized dashboard.
                     </p>
                 </div>
-                
-                <button 
+
+                <button
                     onClick={fetchData}
                     disabled={isLoading}
                     className="relative z-10 flex items-center gap-2 px-5 py-2.5 bg-white/5 border border-gray-700 rounded-xl text-sm font-medium text-gray-300 disabled:opacity-50"
@@ -160,9 +160,9 @@ const UserManager = () => {
                         </div>
                         <div className="relative">
                             <Search className="absolute left-3.5 top-1/2 text-gray-500" size={16} />
-                            <input 
-                                type="text" 
-                                placeholder="Search users..." 
+                            <input
+                                type="text"
+                                placeholder="Search users..."
                                 className="pl-10 pr-4 py-2.5 bg-black/40 border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/50 w-64 shadow-inner"
                             />
                         </div>
@@ -278,11 +278,11 @@ const UserManager = () => {
                                         {fb.status === 'replied' ? 'Replied' : 'Pending'}
                                     </span>
                                 </div>
-                                
+
                                 <div className="text-gray-300 text-sm mb-4 leading-relaxed bg-white/[0.03] p-4 rounded-xl border border-white/[0.02]">
                                     {fb.message}
                                 </div>
-                                
+
                                 {fb.admin_reply && (
                                     <div className="pl-4 border-l-2 border-blue-500/40 mt-4 relative">
                                         <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
@@ -290,7 +290,7 @@ const UserManager = () => {
                                         <p className="text-gray-400 text-sm bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">{fb.admin_reply}</p>
                                     </div>
                                 )}
-                                
+
                                 {replyingTo === fb.id ? (
                                     <div className="mt-5">
                                         <textarea

@@ -177,17 +177,17 @@ const AddDestination = () => {
                         Create a new destination by filling in the information, location, and images
                     </p>
                 </div>
-                
+
                 <div className="relative z-10 flex items-center gap-4">
-                    <button 
-                        onClick={() => navigate('/destinations')} 
+                    <button
+                        onClick={() => navigate('/destinations')}
                         className="px-4 py-2 bg-white/5 text-white font-bold rounded-xl border border-gray-700"
                     >
                         Cancel
                     </button>
-                    <button 
-                        onClick={handleSubmit} 
-                        disabled={saving} 
+                    <button
+                        onClick={handleSubmit}
+                        disabled={saving}
                         className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                     >
                         {saving ? 'กำลังบันทึก...' : 'Add Destination'}
@@ -369,9 +369,9 @@ const AddDestination = () => {
                         <div className="relative z-[1001]">
                             <div className="flex gap-2">
                                 <div className="relative flex-1">
-                                    <input 
-                                        type="text" 
-                                        placeholder="Search location (Free service)..." 
+                                    <input
+                                        type="text"
+                                        placeholder="Search location (Free service)..."
                                         className="w-full bg-black/60 border border-gray-700 rounded-xl pl-10 pr-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -379,7 +379,7 @@ const AddDestination = () => {
                                     />
                                     <Search size={18} className="absolute left-3.5 top-3.5 text-gray-500" />
                                 </div>
-                                <button 
+                                <button
                                     onClick={searchLocation}
                                     disabled={isSearching}
                                     className="px-5 py-3 bg-gray-800 text-yellow-500 font-bold rounded-xl border border-gray-700 disabled:opacity-50 whitespace-nowrap"
@@ -387,7 +387,7 @@ const AddDestination = () => {
                                     {isSearching ? 'Searching...' : 'Search'}
                                 </button>
                             </div>
-                            
+
                             {/* Search Results Dropdown */}
                             {searchResults.length > 0 && (
                                 <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-y-auto max-h-60">
@@ -407,7 +407,7 @@ const AddDestination = () => {
 
                         {/* Placeholder when map is fixed */}
                         {mapExpanded && <div className="h-full min-h-[250px] rounded-2xl border-2 border-dashed border-gray-700/50 bg-gray-800/20" />}
-                        
+
                         <div className={mapExpanded ? "fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm p-4 md:p-12 flex flex-col" : "relative group h-full min-h-[250px]"}>
                             {mapExpanded && (
                                 <div className="flex justify-between items-center mb-4 text-white">

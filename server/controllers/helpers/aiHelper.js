@@ -168,9 +168,9 @@ async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode 
         await wait(exponentialDelay + jitter);
     }
 
-    const reader  = response.body.getReader();
+    const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let buffer    = '';
+    let buffer = '';
 
     while (true) {
         const { done, value } = await reader.read();
@@ -269,22 +269,22 @@ async function generateTripPlan(tripId, tripInput, res) {
         );
     } else {
         places = await retrieveRelevantPlaces(ragQuery, {
-            province : tripInput.province || null,
-            limit : 15,
+            province: tripInput.province || null,
+            limit: 15,
         });
     }
 
     const placesContext = formatPlacesContext(places);
 
-    const systemPrompt = 
-    `คุณคือผู้เชี่ยวชาญวางแผนการท่องเที่ยวในประเทศไทย
+    const systemPrompt =
+        `คุณคือผู้เชี่ยวชาญวางแผนการท่องเที่ยวในประเทศไทย
     ตอบเป็นภาษาไทยเสมอ และตอบในรูปแบบ JSON ที่กำหนดเท่านั้น ห้ามมีข้อความอื่นนอก JSON
 
     ข้อมูลสถานที่จากฐานข้อมูล:
     ${placesContext}`;
 
-    const userPrompt = 
-    `สร้างแผนเที่ยว ${tripInput.days} วัน โดยเริ่มจาก GPS ${tripInput.start_latitude}, ${tripInput.start_longitude}
+    const userPrompt =
+        `สร้างแผนเที่ยว ${tripInput.days} วัน โดยเริ่มจาก GPS ${tripInput.start_latitude}, ${tripInput.start_longitude}
 
     ข้อมูลผู้เดินทาง:
     - งบประมาณ: ${tripInput.budget} ${tripInput.currency || 'THB'}
@@ -410,11 +410,11 @@ async function ragChat(sessionId, tripId, userMessage, chatHistory, res) {
 
     // RAG: embed คำถาม → ดึง relevant places
     const places = await retrieveRelevantPlaces(userMessage, {
-        province : trip?.province,
-        limit    : 5,
+        province: trip?.province,
+        limit: 5,
     });
 
-    const placesContext  = formatPlacesContext(places);
+    const placesContext = formatPlacesContext(places);
     const sourceChunkIds = places.map(p => p.id);
 
     const systemPrompt =

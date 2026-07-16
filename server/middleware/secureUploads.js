@@ -31,7 +31,7 @@ const secureUploads = async (req, res, next) => {
         if (userDecoded && userDecoded.id) {
             const { rows } = await pool.query('SELECT id, is_banned FROM users WHERE id = $1', [userDecoded.id]);
             const user = rows[0] || null;
-            
+
             if (!user) {
                 return res.status(401).json({ message: 'ไม่พบข้อมูลผู้ใช้ในระบบ' });
             }

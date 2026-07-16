@@ -4,10 +4,10 @@ const express = require('express');
 const router = express.Router();
 const destinationController = require('../controllers/destinationController');
 
-// GET    /api/destinations     - ดึงรายการสถานที่ทั้งหมด (รองรับตัวกรอง)
-// GET    /api/destinations/:id - ดึงข้อมูลสถานที่ตาม ID
-// POST   /api/destinations     - สร้างสถานที่ใหม่
-// PUT    /api/destinations/:id - อัปเดตข้อมูลสถานที่
+// GET /api/destinations - ดึงรายการสถานที่ทั้งหมด (รองรับตัวกรอง)
+// GET /api/destinations/:id - ดึงข้อมูลสถานที่ตาม ID
+// POST /api/destinations - สร้างสถานที่ใหม่
+// PUT /api/destinations/:id - อัปเดตข้อมูลสถานที่
 // DELETE /api/destinations/:id - ลบสถานที่
 
 router.get('/', destinationController.getAllDestinations);

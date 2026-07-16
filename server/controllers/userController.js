@@ -140,7 +140,7 @@ const loginUser = async (req, res) => {
 const toggleBanUser = async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
-        
+
         const { rows: userRows } = await pool.query(
             'SELECT is_banned FROM users WHERE id = $1',
             [userId]
@@ -175,7 +175,7 @@ const toggleBanUser = async (req, res) => {
 const updateUserProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        
+
         if (Object.keys(req.body).length === 0) {
             return res.status(400).json({ message: 'ไม่มีข้อมูลที่ต้องการอัปเดต' });
         }
@@ -209,9 +209,9 @@ const updateUserProfile = async (req, res) => {
 
         values.push(userId);
         const { rows } = await pool.query(
-            `UPDATE users 
-             SET ${updateStrings.join(', ')} 
-             WHERE id = $${index} 
+            `UPDATE users
+             SET ${updateStrings.join(', ')}
+             WHERE id = $${index}
              RETURNING ${PUBLIC_COLUMNS}`,
             values
         );

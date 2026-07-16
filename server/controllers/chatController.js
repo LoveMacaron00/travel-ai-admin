@@ -168,7 +168,7 @@ const getSessionByTrip = async (req, res) => {
             [req.params.tripId, userId]
         );
         const session = rows[0] || null;
-        
+
         if (!session) return res.status(404).json({ message: 'ไม่พบ session' });
         res.json(session);
     } catch (err) {

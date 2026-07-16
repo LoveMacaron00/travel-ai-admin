@@ -115,7 +115,7 @@ const DestinationsView = ({
                         {/* Source Filter */}
                         <div className="space-y-3">
                             <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">Data Source</p>
-                            
+
                             <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer ${filters.source === 'tat' ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-black/20 border-transparent'}`}>
                                 <input
                                     type="radio"
@@ -255,7 +255,7 @@ const DestinationsView = ({
                                                 <span className="text-xs text-gray-500">No Image</span>
                                             </div>
                                         )}
-                                        
+
                                         {/* Overlay Gradient */}
                                         <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/20 to-transparent" />
 
@@ -394,7 +394,7 @@ const DestinationsView = ({
                             <p className="text-sm text-gray-400">
                                 Showing page <span className="text-white font-medium">{visiblePage}</span> of <span className="text-white font-medium">{visibleTotalPages}</span>
                             </p>
-                            
+
                             <div className="flex items-center gap-1.5 bg-black/30 p-1.5 rounded-xl border border-gray-800">
                                 <button
                                     onClick={() => handlePageChange(page - 1)}

@@ -7,7 +7,7 @@ const getDestinations = async (req, res) => {
         const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
 
         let sql = `
-            SELECT 
+            SELECT
                 id,
                 name,
                 province,

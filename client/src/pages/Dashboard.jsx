@@ -64,7 +64,7 @@ const Dashboard = () => {
                         Real-time insights and performance metrics for tourist destinations.
                     </p>
                 </div>
-                
+
                 <button className="relative z-10 flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-black font-bold rounded-lg shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:shadow-[0_0_25px_rgba(234,179,8,0.5)] text-xs">
                     <Download size={16} />
                     Export Report
@@ -209,7 +209,7 @@ const Dashboard = () => {
                                         <div className="absolute -top-10 opacity-0 bg-gray-800 text-white text-[10px] font-bold px-2 py-1 rounded pointer-events-none z-20 whitespace-nowrap shadow-xl border border-gray-700">
                                             {Math.round(item.value)} visits
                                         </div>
-                                        
+
                                         <div
                                             className="w-full rounded-t-sm"
                                             style={{
@@ -238,7 +238,7 @@ const Dashboard = () => {
                         </h2>
                         <p className="text-sm text-gray-500 mt-1">Most visited places</p>
                     </div>
-                    
+
                     <div className="p-3 md:p-4 space-y-2 flex-1">
                         {stats.topDestinations.length > 0 ? (
                             stats.topDestinations.map((dest, i) => (

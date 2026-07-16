@@ -20,5 +20,7 @@ module.exports = {
         'react/jsx-uses-vars': 'error',
         'react/react-in-jsx-scope': 'off',
         'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+        'no-multi-spaces': 'error',
+        'no-trailing-spaces': 'error',
     },
 };

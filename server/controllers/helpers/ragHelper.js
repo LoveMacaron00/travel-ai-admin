@@ -8,9 +8,9 @@ const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 // Semantic retrieval สำหรับคำถามที่ไม่มีพิกัด พร้อม filter จังหวัด/หมวดหมู่
 async function retrieveRelevantPlaces(queryText, options = {}) {
     const {
-        province   = null,
+        province = null,
         categories = null, // string[] เช่น ['restaurant','attraction']
-        limit      = 10,
+        limit = 10,
     } = options;
 
     // embed คำถาม
@@ -40,8 +40,8 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
          FROM place_embeddings pe
          JOIN destinations d ON d.id = pe.destination_id
          WHERE d.status = 'approved'
-           AND ($2::text    IS NULL OR d.province  = $2)
-           AND ($3::text[]  IS NULL OR d.category  = ANY($3))
+           AND ($2::text IS NULL OR d.province = $2)
+           AND ($3::text[] IS NULL OR d.category = ANY($3))
          ORDER BY pe.embedding <=> $1::vector
          LIMIT $4`,
         [

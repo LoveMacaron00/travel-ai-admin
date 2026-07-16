@@ -7,15 +7,15 @@ const { config } = require('../config/env');
 
 const TAT_API_KEY = config.tat.apiKey;
 const TAT_API_BASE = config.tat.apiBaseUrl;
-const TAT_HEADERS  = { 'x-api-key': TAT_API_KEY, 'Accept-Language': 'th' };
+const TAT_HEADERS = { 'x-api-key': TAT_API_KEY, 'Accept-Language': 'th' };
 
 const CATEGORY_MAP = {
-    'สถานที่ท่องเที่ยว' : 'attraction',
-    'ที่พัก'            : 'hotel',
-    'ร้านอาหาร'         : 'restaurant',
-    'ร้านค้า'           : 'shop',
+    'สถานที่ท่องเที่ยว': 'attraction',
+    'ที่พัก': 'hotel',
+    'ร้านอาหาร': 'restaurant',
+    'ร้านค้า': 'shop',
     'บริการนักท่องเที่ยว': 'service',
-    'กิจกรรม'           : 'activity',
+    'กิจกรรม': 'activity',
 };
 const mapCategory = c => CATEGORY_MAP[c] ?? 'general';
 
@@ -23,10 +23,13 @@ async function fetchTATPage(page, limit = 100, keyword = '', province = '', plac
     if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
         throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
     }
-    const params = new URLSearchParams({ numberOfResult: limit, page,
-        ...(keyword       && { keyword }),
-        ...(province      && { provinceName: province }),
-        ...(placeCategory && { place_category: placeCategory }) });
+    const params = new URLSearchParams({
+        numberOfResult: limit,
+        page,
+        ...(keyword && { keyword }),
+        ...(province && { provinceName: province }),
+        ...(placeCategory && { place_category: placeCategory }),
+    });
     const res = await fetch(`${TAT_API_BASE}/places?${params}`, { headers: TAT_HEADERS });
     if (!res.ok) throw new Error(`TAT API error: ${res.status}`);
     return res.json();
@@ -65,8 +68,8 @@ async function upsertTATPlace(place) {
 
     const images = allImageUrls.map(url => ({ url, is_cover: false }));
 
-    let mainImageUrl = place.thumbnailUrl || (images.length > 0 ? images[0].url : null);
-    
+    const mainImageUrl = place.thumbnailUrl || (images.length > 0 ? images[0].url : null);
+
     if (mainImageUrl) {
         images.unshift({ url: mainImageUrl, is_cover: true });
     }
@@ -97,34 +100,34 @@ async function upsertTATPlace(place) {
             tat_place_id, tat_raw, admission_fee
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'tat','approved',$14,$15,$16)
         ON CONFLICT (tat_place_id) DO UPDATE SET
-            name          = EXCLUDED.name,
-            province      = EXCLUDED.province,
-            description   = CASE WHEN destinations.override_description IS NOT NULL
+            name = EXCLUDED.name,
+            province = EXCLUDED.province,
+            description = CASE WHEN destinations.override_description IS NOT NULL
                             THEN destinations.description ELSE EXCLUDED.description END,
-            category      = EXCLUDED.category,
-            tags          = EXCLUDED.tags,
-            latitude      = EXCLUDED.latitude,
-            longitude     = EXCLUDED.longitude,
-            address       = EXCLUDED.address,
-            opening_time  = EXCLUDED.opening_time,
-            closing_time  = EXCLUDED.closing_time,
+            category = EXCLUDED.category,
+            tags = EXCLUDED.tags,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            address = EXCLUDED.address,
+            opening_time = EXCLUDED.opening_time,
+            closing_time = EXCLUDED.closing_time,
             opening_hours = EXCLUDED.opening_hours,
-            image_url     = EXCLUDED.image_url,
-            images        = EXCLUDED.images,
-            tat_raw       = EXCLUDED.tat_raw,
+            image_url = EXCLUDED.image_url,
+            images = EXCLUDED.images,
+            tat_raw = EXCLUDED.tat_raw,
             admission_fee = EXCLUDED.admission_fee,
-            updated_at    = NOW()
+            updated_at = NOW()
         RETURNING id`,
         [
             place.name,
             locationString,
-            place.information?.detail      || null,
+            place.information?.detail || null,
             mapCategory(place.category?.name),
             (place.tags || []).filter(Boolean),
-            parseFloat(place.latitude)  || null,
+            parseFloat(place.latitude) || null,
             parseFloat(place.longitude) || null,
-            place.location?.address     || null,
-            place.openingHours?.[0]?.open  || place.openingHours?.[0]?.openTime  || '00:00',
+            place.location?.address || null,
+            place.openingHours?.[0]?.open || place.openingHours?.[0]?.openTime || '00:00',
             place.openingHours?.[0]?.close || place.openingHours?.[0]?.closeTime || '00:00',
             JSON.stringify(place.openingHours || []),
             mainImageUrl || null,

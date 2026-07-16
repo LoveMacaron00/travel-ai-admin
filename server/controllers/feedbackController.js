@@ -22,7 +22,7 @@ const updateFeedback = async (req, res) => {
     try {
         const { status, admin_reply } = req.body;
         const feedbackId = parseInt(req.params.id, 10);
-        
+
         const { rows } = await pool.query(
             `UPDATE feedback
              SET status = $1, admin_reply = $2
@@ -31,7 +31,7 @@ const updateFeedback = async (req, res) => {
             [status, admin_reply, feedbackId]
         );
         const feedback = rows[0] || null;
-        
+
         if (!feedback) {
             return res.status(404).json({ message: 'ไม่พบ feedback' });
         }

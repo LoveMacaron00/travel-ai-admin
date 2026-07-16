@@ -25,13 +25,13 @@ const getOverview = async (req, res) => {
 
         try {
             const { rows: dests } = await pool.query(`
-                SELECT id, name, province, category, image_url, review_count 
-                FROM destinations 
-                WHERE status = 'approved' 
-                ORDER BY review_count DESC, created_at DESC 
+                SELECT id, name, province, category, image_url, review_count
+                FROM destinations
+                WHERE status = 'approved'
+                ORDER BY review_count DESC, created_at DESC
                 LIMIT 5
             `);
-            
+
             const formattedDests = dests.map((d) => ({
                 id: d.id,
                 name: d.name,
