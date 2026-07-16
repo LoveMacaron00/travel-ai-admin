@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import AuthenticatedImage from './AuthenticatedImage';
 
 const ImageLightbox = ({ images, currentIndex, onClose, onPrevious, onNext }) => {
     const isOpen = currentIndex != null && images.length > 0;
@@ -64,7 +65,7 @@ const ImageLightbox = ({ images, currentIndex, onClose, onPrevious, onNext }) =>
                 className="max-w-6xl max-h-full flex flex-col items-center gap-4"
                 onClick={(event) => event.stopPropagation()}
             >
-                <img
+                <AuthenticatedImage
                     src={images[currentIndex]}
                     alt={`Preview ${currentIndex + 1}`}
                     className="max-w-full max-h-[80vh] h-auto w-auto"

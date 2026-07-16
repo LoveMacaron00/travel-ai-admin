@@ -9,6 +9,7 @@ import api from '../utils/api';
 import { appConfig } from '../config';
 import { showErrorAlert, showSuccessAlert, showWarningAlert } from '../utils/alerts';
 import ImageLightbox from '../components/ImageLightbox';
+import AuthenticatedImage from '../components/AuthenticatedImage';
 import {
     DESTINATION_EDITOR_MODULES,
     MapClickHandler,
@@ -243,7 +244,7 @@ const AddDestination = () => {
                                     onClick={() => setLightboxIndex(i)}
                                     className="w-full h-full cursor-zoom-in block"
                                 >
-                                    <img src={url} alt={`upload-${i}`} className="w-full h-full object-cover" />
+                                    <AuthenticatedImage src={url} alt={`upload-${i}`} className="w-full h-full object-cover" />
                                 </button>
                                 {i === 0 && (
                                     <span className="absolute top-2 left-2 text-[10px] bg-yellow-500 text-black px-2 py-1 rounded-lg font-bold shadow-sm">

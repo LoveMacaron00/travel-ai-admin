@@ -1,6 +1,6 @@
 # API endpoint inventory
 
-อัปเดตล่าสุด: 2026-07-13
+อัปเดตล่าสุด: 2026-07-16
 
 เอกสารนี้เทียบ route ที่ backend เปิดกับ caller ใน `client/src` และ
 `travel-ai-app/lib` เพื่อแยก endpoint ที่ใช้งานจริงออกจาก endpoint สำหรับงานดูแลระบบ
@@ -30,18 +30,19 @@
 
 | Method | Endpoint | Caller / purpose |
 | --- | --- | --- |
-| POST | `/api/users/register` | `ApiService.registerUser` |
-| POST | `/api/users/login` | `ApiService.loginUser` |
-| PUT | `/api/users/profile` | `ApiService.updateUserProfile` |
-| POST | `/api/users/profile/upload-image` | `ApiService.uploadProfileImageFile` |
-| GET | `/api/mobile/destinations` | `ApiService.getDestinations` |
-| GET | `/api/mobile/destinations/:id` | `ApiService.getDestinationDetails` |
-| POST | `/api/trips` | `ApiService.createTravelPlan` |
-| GET | `/api/trips/:id` | โหลดผลหลังสร้างแผนผ่าน `ApiService.getTravelPlan` |
+| POST | `/api/users/register` | `AuthService.register` |
+| POST | `/api/users/login` | `AuthService.login` |
+| PUT | `/api/users/profile` | `AuthService.updateProfile` |
+| POST | `/api/users/profile/upload-image` | `AuthService.uploadProfileImage` |
+| GET | `/api/mobile/destinations` | `DestinationService.getDestinations` |
+| GET | `/api/mobile/destinations/:id` | `DestinationService.getDestinationDetails` |
+| POST | `/api/trips` | `TripService.createTravelPlan` |
+| GET | `/api/trips/:id` | โหลดผลหลังสร้างแผนผ่าน `TripService.getTravelPlan` |
 | GET | `/api/chat/sessions/latest` | เปิด session แชทล่าสุด |
 | POST | `/api/chat/sessions` | สร้าง session เมื่อยังไม่มี |
 | GET | `/api/chat/sessions/:sessionId/messages` | โหลดประวัติแชท |
 | POST | `/api/chat/sessions/:sessionId/messages` | ส่งข้อความและรับ SSE |
+| POST | `/api/chat/sessions/:sessionId/images` | ส่งภาพ place/sign/food ผ่าน `ChatService.sendImage` |
 
 ## Endpoint ที่ตั้งใจเก็บแม้ยังไม่มีหน้าจอเรียกตรง
 

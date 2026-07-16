@@ -5,15 +5,12 @@ const { adminJwtSecret, userJwtSecret } = require('../config/jwtSecrets');
 const pool = require('../config/db');
 
 const secureUploads = async (req, res, next) => {
-    // รองรับ query token ไว้สำหรับ client เก่าที่ใส่ Authorization header ให้ <img>
-    // ไม่ได้ ควรใช้ header หรือ signed URL สำหรับ client ใหม่เพื่อลด token ใน log
-    let token = req.query.token;
-    if (!token) {
-        const authHeader = req.headers.authorization || '';
-        if (authHeader.startsWith('Bearer ')) {
-            token = authHeader.slice(7).trim();
-        }
-    }
+    // รับ token จาก header เท่านั้น ป้องกัน JWT ติด browser history, referrer
+    // และ access log จาก query string
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : null;
 
     if (!token) {
         return res.status(401).json({ message: 'จำเป็นต้องเข้าสู่ระบบเพื่อเข้าถึงไฟล์นี้' });

@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, MapPin, Clock, Info, Image as ImageIcon, Map, Building, RefreshCw, Ticket } from 'lucide-react';
 import api from '../utils/api';
 import ImageLightbox from '../components/ImageLightbox';
+import AuthenticatedImage from '../components/AuthenticatedImage';
 import { showErrorAlert, showSuccessAlert, showConfirmAlert } from '../utils/alerts';
 
 const ReadDestination = () => {
@@ -198,7 +199,7 @@ const ReadDestination = () => {
                                 onClick={() => setLightboxIndex(i)}
                                 className="relative aspect-square rounded-xl overflow-hidden shadow-md border border-gray-800 cursor-zoom-in"
                             >
-                                <img 
+                                <AuthenticatedImage
                                     src={url} 
                                     alt={`${name} ${i + 1}`} 
                                     className="w-full h-full object-cover" 

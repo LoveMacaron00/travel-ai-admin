@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Users, Clock, Download, TrendingUp, Activity, BarChart3, ArrowUpRight, Eye, MapPin } from 'lucide-react';
 import api from '../utils/api';
+import AuthenticatedImage from '../components/AuthenticatedImage';
 
 const Dashboard = () => {
     const [stats, setStats] = useState(null);
@@ -246,7 +247,7 @@ const Dashboard = () => {
                                     className="flex items-center gap-4 rounded-2xl p-2 -mx-2"
                                 >
                                     <div className="relative w-16 h-12 rounded-xl overflow-hidden bg-gray-800 shrink-0 border border-gray-800">
-                                        <img
+                                        <AuthenticatedImage
                                             src={dest.image}
                                             alt={dest.name}
                                             loading="lazy"
