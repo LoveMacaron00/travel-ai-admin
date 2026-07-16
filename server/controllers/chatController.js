@@ -2,6 +2,7 @@
 
 const pool = require('../config/db');
 const { ragChat } = require('./helpers/aiHelper');
+const { analyzeTravelImage } = require('./helpers/imageAnalysisHelper');
 
 // POST /api/chat/sessions — สร้าง session ใหม่สำหรับ trip
 const createSession = async (req, res) => {
@@ -70,6 +71,53 @@ const sendMessage = async (req, res) => {
     }
 };
 
+// POST /api/chat/sessions/:sessionId/images — วิเคราะห์ภาพโดยไม่จัดเก็บไฟล์ต้นฉบับ
+const analyzeImage = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const mode = String(req.body.mode || '').trim().toLowerCase();
+        if (!req.file) return res.status(400).json({ message: 'กรุณาแนบรูปภาพ' });
+
+        const { rows: sessionRows } = await pool.query(
+            'SELECT id FROM chat_sessions WHERE id = $1 AND user_id = $2',
+            [sessionId, req.user?.id],
+        );
+        if (!sessionRows[0]) return res.status(404).json({ message: 'ไม่พบ session' });
+
+        const latitude = Number(req.body.latitude);
+        const longitude = Number(req.body.longitude);
+        const result = await analyzeTravelImage({
+            mode,
+            imageBuffer: req.file.buffer,
+            mimeType: req.file.mimetype,
+            latitude: Number.isFinite(latitude) ? latitude : null,
+            longitude: Number.isFinite(longitude) ? longitude : null,
+        });
+
+        const userContent = {
+            place: 'Scanned a place photo',
+            sign: 'Scanned a Thai sign',
+            food: 'Scanned a Thai food photo',
+        }[mode] || 'Scanned a photo';
+
+        await pool.query(
+            `INSERT INTO chat_messages (session_id, role, content, source_chunk_ids)
+             VALUES ($1, 'user', $2, '{}'), ($1, 'assistant', $3, $4)`,
+            [sessionId, userContent, result.answer, result.sourceChunkIds || []],
+        );
+
+        res.json({
+            answer: result.answer,
+            analysis: result.analysis,
+        });
+    } catch (err) {
+        console.error('[chatController] analyzeImage:', err.message);
+        res.status(err.statusCode || 500).json({
+            message: err.publicMessage || 'ไม่สามารถวิเคราะห์รูปภาพได้ในขณะนี้',
+        });
+    }
+};
+
 // GET /api/chat/sessions/:sessionId/messages — ดึงประวัติ chat
 const getMessages = async (req, res) => {
     try {
@@ -129,4 +177,11 @@ const getSessionByTrip = async (req, res) => {
     }
 };
 
-module.exports = { createSession, sendMessage, getMessages, getLatestSession, getSessionByTrip };
+module.exports = {
+    createSession,
+    sendMessage,
+    analyzeImage,
+    getMessages,
+    getLatestSession,
+    getSessionByTrip,
+};

@@ -6,12 +6,22 @@ client/.vite/
 
 # Environment files
 .env
+.env.*
 server/.env
 client/.env
 client/.env.*
 server/.env.*
+!.env.example
 !client/.env.example
 !server/.env.example
+
+# Private keys and service-account credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*service-account*.json
+*credentials*.json
 
 # Logs
 *.log
