@@ -5,15 +5,15 @@ const { config, warnAboutMissingEnvironment } = require('./config/env');
 
 const express = require('express');
 const cors = require('cors');
-const compression = require('compression'); // ใช้สำหรับบีบอัดข้อมูล
-const morgan = require('morgan'); // ใช้สำหรับบันทึก Log การทำงานของ HTTP Request
+const compression = require('compression');
+const morgan = require('morgan');
 const { requireAdminAuth } = require('./middleware/adminAuth');
 const { secureUploads } = require('./middleware/secureUploads');
 
 
 const app = express();
 
-// Middleware
+// Middleware ส่วนกลางต้องมาก่อน routes เพื่อให้ policy เหมือนกันทุก endpoint
 app.use(morgan('dev'));
 app.use(cors({
     origin: config.allowedOrigins,
@@ -23,7 +23,8 @@ app.use(cors({
 app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 
-// uploads รูป (ปกป้องการเข้าถึงไฟล์โดยตรง)
+// ไฟล์ถาวร เช่น รูปโปรไฟล์/สถานที่ ต้องผ่าน auth ก่อน express.static
+// ส่วนรูป image scan ใช้ memory upload และไม่เข้ามาที่โฟลเดอร์นี้
 const uploadsDir = path.join(__dirname, 'uploads');
 
 app.use('/uploads', secureUploads, express.static(uploadsDir));
@@ -31,7 +32,7 @@ app.use('/uploads', secureUploads, express.static(uploadsDir));
 
 warnAboutMissingEnvironment();
 
-// Routes
+// แบ่ง route ตามผู้ใช้: admin, mobile public และ mobile ที่ต้อง login
 const authRoutes = require('./routes/auth');
 const destinationRoutes = require('./routes/destinationRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
@@ -58,7 +59,7 @@ app.use('/api/mobile', mobileRoutes);
 
 app.get('/', (req, res) => res.send('Smart Travel API กำลังทำงาน'));
 
-// error handler
+// แปลง error จาก middleware (โดยเฉพาะ Multer) เป็น JSON รูปเดียวกัน
 app.use((err, req, res, next) => {
     if (err?.name === 'MulterError') return res.status(400).json({ message: err.message });
     if (err) return res.status(400).json({ message: err.message || 'คำขอไม่ถูกต้อง' });

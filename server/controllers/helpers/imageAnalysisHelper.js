@@ -6,6 +6,7 @@ const {
 
 const SCAN_MODES = new Set(['place', 'sign', 'food']);
 
+// อย่าเชื่อ MIME จาก multipart เพียงอย่างเดียว เพราะ client เป็นผู้ส่งค่านี้มา
 const detectImageMimeType = (buffer) => {
     if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
     if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
@@ -99,6 +100,7 @@ const clampConfidence = (value) => {
 };
 
 const requestWithTimeout = async (url, options, label) => {
+    // provider ภายนอกทุกตัวต้องจบภายในเวลาเดียวกันและคืนข้อความที่ปลอดภัยต่อผู้ใช้
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
     try {
@@ -169,14 +171,18 @@ async function generateGeminiJson({
         },
     };
 
-    const url = `${config.gemini.apiBaseUrl}/models/${config.gemini.model}:generateContent?key=${config.gemini.apiKey}`;
+    const url = `${config.gemini.apiBaseUrl}/models/${config.gemini.model}:generateContent`;
     let lastError;
 
     for (let attempt = 0; attempt <= config.gemini.maxRetries; attempt++) {
         try {
             const response = await requestWithTimeout(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    // ไม่วาง key ใน query string เพื่อป้องกันค่าติด URL log
+                    'x-goog-api-key': config.gemini.apiKey,
+                },
                 body: JSON.stringify(body),
             }, 'AI Guide');
             const payload = await response.json();
@@ -284,7 +290,9 @@ async function recognizeText(imageBuffer, mimeType) {
     let payload = raw;
     try {
         payload = JSON.parse(raw);
-    } catch (_) {}
+    } catch {
+        // OCR บางเวอร์ชันคืนข้อความล้วน จึงส่ง raw text เข้า parser ต่อได้
+    }
     const text = extractOcrText(payload);
     if (!text || !/[\u0E00-\u0E7F]/.test(text)) {
         throw new ImageAnalysisError(
@@ -354,6 +362,7 @@ async function classifyThaiFood(imageBuffer) {
 }
 
 async function analyzePlace({ imageBuffer, mimeType, latitude, longitude }) {
+    // พิกัดเป็น context ช่วยยืนยัน landmark ไม่ใช่หลักฐานว่าภาพคือสถานที่นั้นแน่นอน
     let nearbyPlaces = [];
     if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
         try {
@@ -415,6 +424,8 @@ async function analyzeSign({ imageBuffer, mimeType }) {
         });
         return { analysis, answer: analysisToAnswer(analysis), sourceChunkIds: [] };
     } catch (primaryError) {
+        // Gemini เป็น fallback เพื่อให้ผู้ใช้ยังอ่านป้ายได้เมื่อ AI for Thai ล่ม
+        // หรือภาพไม่ใช่ JPEG ตามข้อจำกัดของ OCR
         console.warn('[image-analysis] AI for Thai sign flow failed:', primaryError.message);
         const result = await generateGeminiJson({
             systemPrompt:
@@ -462,6 +473,7 @@ async function analyzeFood({ imageBuffer, mimeType }) {
         result.confidence = candidates[0].score;
         result.thaiName = candidates[0].name;
     } catch (primaryError) {
+        // หาก T-Food ไม่มีผลลัพธ์ ให้ vision model วิเคราะห์แทนและลดความแน่นอนตามผลจริง
         console.warn('[image-analysis] T-Food flow failed:', primaryError.message);
         provider = 'gemini_fallback';
         result = await generateGeminiJson({
@@ -504,6 +516,7 @@ async function analyzeTravelImage({
     latitude,
     longitude,
 }) {
+    // จุดเข้าเดียวของทั้งสามโหมด: validate ไฟล์ก่อนเลือก pipeline ของ provider
     if (!SCAN_MODES.has(mode)) {
         throw new ImageAnalysisError('Unsupported scan mode', 'Please choose place, sign, or food.', 400);
     }

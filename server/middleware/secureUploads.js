@@ -1,11 +1,12 @@
 // server/middleware/secureUploads.js
 
 const jwt = require('jsonwebtoken');
-const { ADMIN_JWT_SECRET } = require('./adminAuth');
-const { USER_JWT_SECRET } = require('./userAuth');
+const { adminJwtSecret, userJwtSecret } = require('../config/jwtSecrets');
 const pool = require('../config/db');
 
 const secureUploads = async (req, res, next) => {
+    // รองรับ query token ไว้สำหรับ client เก่าที่ใส่ Authorization header ให้ <img>
+    // ไม่ได้ ควรใช้ header หรือ signed URL สำหรับ client ใหม่เพื่อลด token ใน log
     let token = req.query.token;
     if (!token) {
         const authHeader = req.headers.authorization || '';
@@ -19,9 +20,9 @@ const secureUploads = async (req, res, next) => {
     }
 
     try {
-        // 1. ตรวจสอบสิทธิ์ของแอดมินก่อน
+        // Token สองประเภทใช้ secret คนละชุด จึงลอง admin ก่อนแล้วค่อย user
         try {
-            const adminDecoded = jwt.verify(token, ADMIN_JWT_SECRET);
+            const adminDecoded = jwt.verify(token, adminJwtSecret);
             if (adminDecoded) {
                 return next();
             }
@@ -29,8 +30,7 @@ const secureUploads = async (req, res, next) => {
             // ไม่ใช่แอดมิน ลองตรวจสอบผู้ใช้ทั่วไปต่อ
         }
 
-        // 2. ตรวจสอบสิทธิ์ของผู้ใช้ทั่วไป
-        const userDecoded = jwt.verify(token, USER_JWT_SECRET);
+        const userDecoded = jwt.verify(token, userJwtSecret);
         if (userDecoded && userDecoded.id) {
             const { rows } = await pool.query('SELECT id, is_banned FROM users WHERE id = $1', [userDecoded.id]);
             const user = rows[0] || null;

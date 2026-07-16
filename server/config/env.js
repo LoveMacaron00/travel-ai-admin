@@ -10,6 +10,8 @@ const asNumber = (value, fallback) => {
 
 const withoutTrailingSlash = (value) => value.replace(/\/+$/, '');
 
+// อ่าน process.env เพียงไฟล์เดียว เพื่อให้ชื่อ ค่า default และการแปลง type
+// ไม่กระจายอยู่ตาม controller รวมถึงช่วยให้ตรวจ config ตอนเริ่มระบบได้
 const config = {
     nodeEnv: process.env.NODE_ENV || 'development',
     port: asNumber(process.env.PORT, 5000),
@@ -66,6 +68,8 @@ const requiredEnvironmentVariables = [
 ];
 
 const warnAboutMissingEnvironment = () => {
+    // development แจ้งเตือนเพื่อให้เปิดบาง feature ได้ตามคีย์ที่มี
+    // ส่วน secret ที่กระทบ auth จะถูกตรวจแบบ fail-fast ใน jwtSecrets.js
     for (const [name, value] of requiredEnvironmentVariables) {
         if (!value) console.warn(`[env] ${name} ไม่ได้ตั้งค่าใน .env`);
     }

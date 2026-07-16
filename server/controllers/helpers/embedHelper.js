@@ -9,6 +9,7 @@ const EMBED_MODEL = config.gemini.embeddingModel;
 const EMBED_DIMENSIONS = 1536;
 const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
+// taskType ต้องต่างกันระหว่างเอกสารกับคำค้นตามสัญญาของ embedding model
 async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
     if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
         throw new Error('ไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ (.env)');
@@ -39,6 +40,8 @@ async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
 }
 
 function buildChunks(dest) {
+    // แยก facts คนละความหมายเพื่อให้ vector search จับชื่อ รายละเอียด
+    // และบริบทตำแหน่งได้โดยไม่ต้อง embed เอกสารก้อนใหญ่ก้อนเดียว
     const facts = buildPlaceFacts(dest);
 
     return [

@@ -3,7 +3,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
-const { ADMIN_JWT_SECRET } = require('../middleware/adminAuth');
+const { adminJwtSecret } = require('../config/jwtSecrets');
 
 /**
  * เข้าสู่ระบบแอดมิน
@@ -34,7 +34,7 @@ const login = async (req, res) => {
 
         const token = jwt.sign(
             { id: admin.id, email: admin.email, role: 'admin' },
-            ADMIN_JWT_SECRET,
+            adminJwtSecret,
             { expiresIn: '12h' }
         );
 

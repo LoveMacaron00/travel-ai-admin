@@ -11,6 +11,11 @@ const GEMINI_MODEL = config.gemini.model;
 const GEMINI_MAX_RETRIES = config.gemini.maxRetries;
 const GEMINI_PLAN_THINKING_BUDGET = config.gemini.planThinkingBudget;
 const SUPPORTED_TRANSPORT_MODES = new Set(['car', 'walking']);
+const GEMINI_HEADERS = {
+    'Content-Type': 'application/json',
+    // ส่ง key ใน header เพื่อไม่ให้ค่าลับติด URL หรือ access log
+    'x-goog-api-key': GEMINI_API_KEY,
+};
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -24,6 +29,7 @@ const getAllowedTransportModes = (modes) => {
 };
 
 const normalizePlanTransportModes = (planData, allowedModes) => {
+    // model อาจตอบ mode นอกตัวเลือกของผู้ใช้ จึงบังคับ schema เชิงธุรกิจอีกชั้น
     for (const day of planData.days || []) {
         for (const stop of day.stops || []) {
             const mode = String(stop.transportMode || '').toLowerCase();
@@ -109,8 +115,7 @@ const PLAN_RESPONSE_SCHEMA = {
     },
 };
 
-// streamGemini()
-// คืน async generator ที่ yield ทีละ text delta
+// คืน async generator ที่ yield text delta เพื่อส่งต่อเป็น SSE โดยไม่รอคำตอบทั้งหมด
 async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode = false) {
 
     const contents = messages.map(m => ({
@@ -137,13 +142,13 @@ async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode 
         };
     }
 
-    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
+    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse`;
 
     let response;
     for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
         response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: GEMINI_HEADERS,
             body: JSON.stringify(body),
         });
 
@@ -186,15 +191,16 @@ async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode 
                 if (text) {
                     yield text;
                 }
-            } catch {}
+            } catch {
+                // ข้ามเฉพาะ SSE event ที่ถูกตัดกลางทาง แล้วอ่าน event ถัดไปต่อ
+            }
         }
     }
 }
 
-// Structured plans are requested as one complete response. This avoids
-// assembling partial SSE chunks into malformed JSON.
+// แผนเที่ยวขอเป็น response เดียวเพื่อไม่ต้องต่อ JSON ที่ถูกแบ่งเป็น SSE หลายชิ้น
 async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
-    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent`;
     const body = {
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
@@ -212,7 +218,7 @@ async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
     for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: GEMINI_HEADERS,
             body: JSON.stringify(body),
         });
 
@@ -243,9 +249,7 @@ async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
     }
 }
 
-// generateTripPlan()
-// สร้างแผนเที่ยว พร้อม ส่งกลับไป Flutter
-// หลังส่งเสร็จ → save trip_plans + embed plan chunks
+// สร้างแผนแล้ว stream สถานะกลับ Flutter ก่อนบันทึก JSON ที่ normalize ลงฐานข้อมูล
 async function generateTripPlan(tripId, tripInput, res) {
     const allowedTransportModes = getAllowedTransportModes(tripInput.transport_modes);
 

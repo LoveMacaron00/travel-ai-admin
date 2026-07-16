@@ -1,3 +1,4 @@
+// VITE_* จะถูกฝังใน browser bundle จึงเก็บได้เฉพาะ URL สาธารณะ ห้ามใส่ secret
 export const appConfig = {
     apiBaseUrl: import.meta.env.VITE_API_BASE_URL || '/api',
     nominatimBaseUrl:

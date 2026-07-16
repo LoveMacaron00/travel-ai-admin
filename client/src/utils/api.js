@@ -11,6 +11,7 @@ const api = axios.create({
 
 api.interceptors.request.use(
     (config) => {
+        // ผูก admin token ที่จุดเดียวเพื่อไม่ให้แต่ละ page สร้าง header เอง
         const token = localStorage.getItem('adminToken');
 
         if (token) {
@@ -35,6 +36,8 @@ api.interceptors.response.use(
             const hadSession = Boolean(localStorage.getItem('adminToken'));
 
             if (error.response.status === 401 && hadSession) {
+                // 401 หลังมี session หมายถึง token หมดอายุ/ใช้ไม่ได้ ให้ล้าง state
+                // แล้วกลับไป auth gate ของ App แทนการปล่อยแต่ละหน้าจัดการเอง
                 localStorage.removeItem('admin');
                 localStorage.removeItem('adminToken');
 

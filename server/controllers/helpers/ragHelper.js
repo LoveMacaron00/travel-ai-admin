@@ -5,8 +5,7 @@ const query = pool.query.bind(pool);
 const { getEmbedding } = require('./embedHelper');
 const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
-// ค้นหา destinations ที่เกี่ยวข้องกับ query
-// options: { province, categories, limit }
+// Semantic retrieval สำหรับคำถามที่ไม่มีพิกัด พร้อม filter จังหวัด/หมวดหมู่
 async function retrieveRelevantPlaces(queryText, options = {}) {
     const {
         province   = null,
@@ -67,8 +66,7 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
     return places;
 }
 
-// Location-first retrieval for the mobile planner. Uses a Haversine distance
-// so plan creation does not depend on the embedding API when GPS is available.
+// เมื่อมี GPS ให้ค้นด้วย Haversine ก่อน เพื่อไม่ให้การสร้างแผนผูกกับ embedding API
 async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
     const lat = Number(latitude);
     const lng = Number(longitude);
@@ -96,7 +94,7 @@ async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
     return rows;
 }
 
-// format places เป็น context string สำหรับ inject ใน Gemini prompt
+// ส่งเฉพาะ facts ที่ผ่าน formatter เข้า prompt เพื่อลด HTML และ schema ของ TAT ที่แกว่ง
 function formatPlacesContext(places) {
     if (places.length === 0) return 'ไม่พบสถานที่ที่เกี่ยวข้องในฐานข้อมูล';
 

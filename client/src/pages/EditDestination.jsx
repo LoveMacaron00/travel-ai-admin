@@ -1,8 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Upload, X, Maximize2, ImagePlus, Search, MapPin } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import 'leaflet/dist/leaflet.css';
@@ -10,52 +9,12 @@ import api from '../utils/api';
 import { appConfig } from '../config';
 import { showErrorAlert, showSuccessAlert, showWarningAlert } from '../utils/alerts';
 import ImageLightbox from '../components/ImageLightbox';
-
-// Fix default marker icon
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
-
-
-const QUILL_MODULES = {
-    toolbar: [
-        [{ header: [1, 2, 3, false] }],
-        ['bold', 'italic', 'underline', 'strike'],
-        [{ list: 'ordered' }, { list: 'bullet' }],
-        ['link'],
-        ['clean']
-    ]
-};
-
-// Component to recenter map when lat/lng changes
-const MapUpdater = ({ lat, lng }) => {
-    const map = useMap();
-    if (lat && lng) map.setView([lat, lng], map.getZoom());
-    return null;
-};
-
-// Trigger map resize when container size changes
-const MapResizeTrigger = ({ expanded }) => {
-    const map = useMap();
-    useEffect(() => {
-        const t = setTimeout(() => map.invalidateSize(), 300);
-        return () => clearTimeout(t);
-    }, [map, expanded]);
-    return null;
-};
-
-// Component to handle map clicks
-const MapClickHandler = ({ onLocationSelect }) => {
-    useMapEvents({
-        click(e) {
-            onLocationSelect(e.latlng.lat, e.latlng.lng);
-        },
-    });
-    return null;
-};
+import {
+    DESTINATION_EDITOR_MODULES,
+    MapClickHandler,
+    MapResizeTrigger,
+    MapUpdater,
+} from '../components/destinationEditorShared';
 
 const EditDestination = () => {
     const { id } = useParams();
@@ -379,7 +338,7 @@ const EditDestination = () => {
                             theme="snow"
                             value={form.description}
                             onChange={(val) => handleChange('description', val)}
-                            modules={QUILL_MODULES}
+                            modules={DESTINATION_EDITOR_MODULES}
                             placeholder="Enter detailed description here..."
                         />
                     </div>

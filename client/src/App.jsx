@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import {
     BrowserRouter as Router,
     Routes,
@@ -11,12 +11,20 @@ import { LayoutDashboard, MapPin, LogOut, Users } from 'lucide-react';
 import { showConfirmAlert, showSuccessAlert } from './utils/alerts';
 
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Destinations from './pages/Destinations';
-import ReadDestination from './pages/ReadDestination';
-import AddDestination from './pages/AddDestination';
-import EditDestination from './pages/EditDestination';
-import UserManager from './pages/UserManager';
+
+// โหลดหน้าหลังบ้านเมื่อเปิด route นั้นจริง เพื่อลด JavaScript ชุดแรกที่หน้า Login ต้องดาวน์โหลด
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Destinations = lazy(() => import('./pages/Destinations'));
+const ReadDestination = lazy(() => import('./pages/ReadDestination'));
+const AddDestination = lazy(() => import('./pages/AddDestination'));
+const EditDestination = lazy(() => import('./pages/EditDestination'));
+const UserManager = lazy(() => import('./pages/UserManager'));
+
+const RouteFallback = () => (
+    <div className="flex min-h-screen items-center justify-center bg-[#1a1a2e] text-sm text-gray-400">
+        กำลังโหลดหน้าจัดการ...
+    </div>
+);
 
 
 // Sidebar Component
@@ -166,13 +174,15 @@ function App() {
 
     return (
         <Router>
-            {admin ? (
-                <ProtectedLayout onLogout={handleLogout} />
-            ) : (
-                <Routes>
-                    <Route path="*" element={<Login onLogin={handleLogin} />} />
-                </Routes>
-            )}
+            <Suspense fallback={<RouteFallback />}>
+                {admin ? (
+                    <ProtectedLayout onLogout={handleLogout} />
+                ) : (
+                    <Routes>
+                        <Route path="*" element={<Login onLogin={handleLogin} />} />
+                    </Routes>
+                )}
+            </Suspense>
         </Router>
     );
 }

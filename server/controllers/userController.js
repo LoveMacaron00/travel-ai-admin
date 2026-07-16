@@ -3,7 +3,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
-const { USER_JWT_SECRET } = require('../middleware/userAuth');
+const { userJwtSecret } = require('../config/jwtSecrets');
 
 const PUBLIC_COLUMNS = 'id, email, username, profile_image_url, interests, is_banned, created_at';
 
@@ -59,7 +59,7 @@ const registerUser = async (req, res) => {
 
         const token = jwt.sign(
             { id: newUser.id, email: newUser.email },
-            USER_JWT_SECRET,
+            userJwtSecret,
             { expiresIn: '30d' }
         );
 
@@ -120,7 +120,7 @@ const loginUser = async (req, res) => {
 
         const token = jwt.sign(
             { id: user.id, email: user.email },
-            USER_JWT_SECRET,
+            userJwtSecret,
             { expiresIn: '30d' }
         );
 
