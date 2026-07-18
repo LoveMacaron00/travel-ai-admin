@@ -24,8 +24,9 @@
 | PUT | `/api/users/:id/ban` | `UserManager.jsx` |
 | GET | `/api/feedback` | `UserManager.jsx` |
 | PUT | `/api/feedback/:id` | `UserManager.jsx` |
-| POST | `/api/admin/sync/tat` | sync ผลค้นหาจาก `Destinations.jsx` |
-| POST | `/api/admin/sync/tat/:tatPlaceId` | sync สถานที่เดียวจากหน้า list/detail |
+| POST | `/api/admin/sync/tat` | sync ภาษาไทยลง `destinations` และภาษาอังกฤษลง `destination_translations` |
+| POST | `/api/admin/sync/tat/translations` | เติม English translation เฉพาะสถานที่ TAT เดิมที่ยังไม่มีภาษาอังกฤษ |
+| POST | `/api/admin/sync/tat/:tatPlaceId` | sync สถานที่เดียว โดยไทยอยู่ตารางหลักและอังกฤษอยู่ตาราง translation |
 
 ## Mobile app
 
@@ -37,8 +38,8 @@
 | POST | `/api/users/profile/upload-image` | `AuthService.uploadProfileImage` |
 | POST | `/api/activity/heartbeat` | `ActivityService` ต่ออายุ foreground session ทุก 1 นาที |
 | POST | `/api/activity/end` | `ActivityService` ปิด session เมื่อเข้า background/logout |
-| GET | `/api/mobile/destinations` | `DestinationService.getDestinations` |
-| GET | `/api/mobile/destinations/:id` | `DestinationService.getDestinationDetails` |
+| GET | `/api/mobile/destinations` | `DestinationService.getDestinations`; เลือก translation ด้วย `Accept-Language: th|en` และ fallback เป็นไทย |
+| GET | `/api/mobile/destinations/:id` | `DestinationService.getDestinationDetails`; เลือก translation ด้วย `Accept-Language: th|en` และ fallback เป็นไทย |
 | POST | `/api/mobile/destinations/:id/view` | `ActivityService.recordDestinationView` นับหนึ่งครั้งต่อ activity session |
 | POST | `/api/trips` | `TripService.createTravelPlan` |
 | GET | `/api/trips/:id` | โหลดผลหลังสร้างแผนผ่าน `TripService.getTravelPlan` |
@@ -63,3 +64,7 @@ endpoint กลุ่ม maintenance ต้องใช้ admin token และ
 `/api/destinations` และ `/api/mobile/destinations` ดูคล้ายกันแต่ไม่ซ้ำกัน:
 ชุดแรกเป็น CRUD สำหรับ admin และถูกครอบด้วย admin auth ส่วนชุด mobile เป็น read-only,
 คืนเฉพาะสถานะ `approved` และแปลง response ให้ตรงกับ model ของแอป
+
+ข้อมูล TAT ที่ sync จะเก็บภาษาไทยและฟิลด์ร่วม เช่น destination ID, พิกัด รูปภาพ
+และสถานะใน `destinations` ส่วน `destination_translations` เก็บเฉพาะข้อความ
+ภาษาอังกฤษ หากไม่พบภาษาอังกฤษ Mobile API จะ fallback ไปยังภาษาไทยในตารางหลัก

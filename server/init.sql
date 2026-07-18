@@ -112,6 +112,25 @@ CREATE TABLE IF NOT EXISTS destinations (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ข้อความของสถานที่แยกตามภาษา ส่วนพิกัด รูป และสถานะยังอยู่ตารางหลัก
+CREATE TABLE IF NOT EXISTS destination_translations (
+    destination_id INT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+    language_code VARCHAR(5) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    province VARCHAR(255),
+    description TEXT,
+    address TEXT,
+    tags TEXT[] NOT NULL DEFAULT '{}',
+    opening_hours JSONB,
+    admission_fee JSONB NOT NULL DEFAULT '{}',
+    tat_raw JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (destination_id, language_code),
+    CONSTRAINT destination_translation_language
+        CHECK (language_code = 'en')
+);
+
 -- destination_images (gallery)
 CREATE TABLE IF NOT EXISTS destination_images (
     id SERIAL PRIMARY KEY,
@@ -231,6 +250,8 @@ CREATE INDEX IF NOT EXISTS idx_dest_status ON destinations(status);
 CREATE INDEX IF NOT EXISTS idx_dest_province ON destinations(province);
 CREATE INDEX IF NOT EXISTS idx_dest_category ON destinations(category);
 CREATE INDEX IF NOT EXISTS idx_dest_tat_place_id ON destinations(tat_place_id);
+CREATE INDEX IF NOT EXISTS idx_destination_translations_language
+    ON destination_translations(language_code, destination_id);
 
 -- place_embeddings — HNSW cosine (เร็วกว่า IVFFlat สำหรับ < 5M rows)
 CREATE INDEX IF NOT EXISTS idx_place_emb_hnsw

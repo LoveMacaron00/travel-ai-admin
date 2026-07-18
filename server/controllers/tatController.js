@@ -1,14 +1,12 @@
 // server/controllers/tatController.js
 
 const { config } = require('../config/env');
+const { tatHeadersFor } = require('./helpers/tatLanguage');
 const TAT_API_KEY = config.tat.apiKey;
 const TAT_API_BASE = config.tat.apiBaseUrl;
 
-// Headers สำหรับเรียก TAT API
-const tatHeaders = {
-    'x-api-key': TAT_API_KEY,
-    'Accept-Language': 'th'
-};
+const requestTatHeaders = (req) =>
+    tatHeadersFor(TAT_API_KEY, req.get('Accept-Language'));
 
 // ตรวจสอบความถูกต้องของ API Key ใน Environment ก่อนเรียกใช้งาน
 const checkEnvConfig = (res) => {
@@ -35,10 +33,11 @@ const searchPlaces = async (req, res) => {
         if (place_category) params.set('place_category', place_category);
 
         const url = `${TAT_API_BASE}/places?${params}`;
-        const response = await fetch(url, { headers: tatHeaders });
+        const response = await fetch(url, { headers: requestTatHeaders(req) });
         const data = await response.json();
 
-        res.json(data);
+        res.vary('Accept-Language');
+        res.status(response.status).json(data);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงข้อมูล TAT API (ค้นหา):', err);
         res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน tatController - searchPlaces" });
@@ -51,10 +50,11 @@ const getPlaceById = async (req, res) => {
     if (!checkEnvConfig(res)) return;
     try {
         const url = `${TAT_API_BASE}/places/${req.params.id}`;
-        const response = await fetch(url, { headers: tatHeaders });
+        const response = await fetch(url, { headers: requestTatHeaders(req) });
         const data = await response.json();
 
-        res.json(data);
+        res.vary('Accept-Language');
+        res.status(response.status).json(data);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงข้อมูล TaT API (รายละเอียด):', err);
         res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน tatController - getPlaceById" });

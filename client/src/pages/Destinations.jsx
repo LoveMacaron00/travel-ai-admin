@@ -91,7 +91,8 @@ const Destinations = () => {
                 tatParams.set('page', pageNum);
 
                 const tatRes = await api.get(`/v2/places?${tatParams}`, {
-                    signal: controller.signal
+                    signal: controller.signal,
+                    headers: { 'Accept-Language': 'th' }
                 });
 
                 if (requestIdRef.current !== currentRequestId) {

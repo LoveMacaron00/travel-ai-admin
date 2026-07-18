@@ -4,10 +4,11 @@ const pool = require('../config/db');
 const query = pool.query.bind(pool);
 const { embedDestination, bulkEmbedMissing } = require('./helpers/embedHelper');
 const { config } = require('../config/env');
+const { tatHeadersFor } = require('./helpers/tatLanguage');
+const { buildTATTranslation, getLocationParts } = require('./helpers/tatPlaceTranslation');
 
 const TAT_API_KEY = config.tat.apiKey;
 const TAT_API_BASE = config.tat.apiBaseUrl;
-const TAT_HEADERS = { 'x-api-key': TAT_API_KEY, 'Accept-Language': 'th' };
 
 const CATEGORY_MAP = {
     'สถานที่ท่องเที่ยว': 'attraction',
@@ -19,7 +20,7 @@ const CATEGORY_MAP = {
 };
 const mapCategory = c => CATEGORY_MAP[c] ?? 'general';
 
-async function fetchTATPage(page, limit = 100, keyword = '', province = '', placeCategory = '') {
+async function fetchTATPage(page, limit = 100, keyword = '', province = '', placeCategory = '', languageCode = 'th') {
     if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
         throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
     }
@@ -30,19 +31,58 @@ async function fetchTATPage(page, limit = 100, keyword = '', province = '', plac
         ...(province && { provinceName: province }),
         ...(placeCategory && { place_category: placeCategory }),
     });
-    const res = await fetch(`${TAT_API_BASE}/places?${params}`, { headers: TAT_HEADERS });
+    const res = await fetch(`${TAT_API_BASE}/places?${params}`, {
+        headers: tatHeadersFor(TAT_API_KEY, languageCode),
+    });
     if (!res.ok) throw new Error(`TAT API error: ${res.status}`);
     return res.json();
 }
 
-async function fetchTATPlaceDetail(tatPlaceId) {
+async function fetchTATPlaceDetail(tatPlaceId, languageCode = 'th') {
     if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
         throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
     }
-    const res = await fetch(`${TAT_API_BASE}/places/${tatPlaceId}`, { headers: TAT_HEADERS });
+    const res = await fetch(`${TAT_API_BASE}/places/${tatPlaceId}`, {
+        headers: tatHeadersFor(TAT_API_KEY, languageCode),
+    });
     if (!res.ok) throw new Error(`TAT API error: ${res.status}`);
     const payload = await res.json();
     return payload.data || payload.result || payload;
+}
+
+async function upsertDestinationTranslation(destinationId, languageCode, place) {
+    const translation = buildTATTranslation(place);
+    if (!translation) return false;
+
+    await query(
+        `INSERT INTO destination_translations (
+            destination_id, language_code, name, province, description,
+            address, tags, opening_hours, admission_fee, tat_raw
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        ON CONFLICT (destination_id, language_code) DO UPDATE SET
+            name = EXCLUDED.name,
+            province = EXCLUDED.province,
+            description = EXCLUDED.description,
+            address = EXCLUDED.address,
+            tags = EXCLUDED.tags,
+            opening_hours = EXCLUDED.opening_hours,
+            admission_fee = EXCLUDED.admission_fee,
+            tat_raw = EXCLUDED.tat_raw,
+            updated_at = NOW()`,
+        [
+            destinationId,
+            languageCode,
+            translation.name,
+            translation.province,
+            translation.description,
+            translation.address,
+            translation.tags,
+            JSON.stringify(translation.openingHours),
+            JSON.stringify(translation.admissionFee),
+            JSON.stringify(translation.tatRaw),
+        ],
+    );
+    return true;
 }
 
 async function upsertTATPlace(place) {
@@ -84,12 +124,7 @@ async function upsertTATPlace(place) {
         }
     }
 
-    const provName = place.location?.province?.name || place.province_name || place.provinceName || place.province || '';
-    const distName = place.location?.district?.name || place.district_name || place.districtName || place.district || '';
-    const subDistName = place.location?.subDistrict?.name || place.sub_district || place.subDistrictName || place.subDistrict || '';
-
-    const locationParts = [subDistName, distName, provName].filter(Boolean);
-    const locationString = locationParts.length > 0 ? locationParts.join(', ') : null;
+    const { location: locationString } = getLocationParts(place);
 
     const { rows } = await query(
         `INSERT INTO destinations (
@@ -157,12 +192,17 @@ async function upsertTATPlace(place) {
 
 async function syncAllTATPlaces(options = {}) {
     const { province = '', keyword = '', placeCategory = '', maxPages = 50, hydrateDetails = false } = options;
-    let page = 1, totalUpserted = 0, totalEmbedded = 0, totalFailed = 0;
+    let page = 1;
+    let totalUpserted = 0;
+    let totalEmbedded = 0;
+    let totalFailed = 0;
+    let totalTranslations = 0;
+    let totalTranslationFailed = 0;
     console.log(`[tat-sync] เริ่ม sync — province:"${province}" keyword:"${keyword}" placeCategory:"${placeCategory}"`);
 
     while (page <= maxPages) {
         let data;
-        try { data = await fetchTATPage(page, 100, keyword, province, placeCategory); }
+        try { data = await fetchTATPage(page, 100, keyword, province, placeCategory, 'th'); }
         catch (err) { console.error(`[tat-sync] page ${page} error:`, err.message); break; }
 
         const places = data.result || data.data || [];
@@ -173,10 +213,23 @@ async function syncAllTATPlaces(options = {}) {
             try {
                 const tatPlaceId = place.placeId || place.id;
                 const detailPlace = hydrateDetails && tatPlaceId
-                    ? { ...place, ...(await fetchTATPlaceDetail(tatPlaceId)), placeId: tatPlaceId }
+                    ? { ...place, ...(await fetchTATPlaceDetail(tatPlaceId, 'th')), placeId: tatPlaceId }
                     : place;
                 const row = await upsertTATPlace(detailPlace);
                 totalUpserted++;
+
+                if (tatPlaceId) {
+                    try {
+                        const englishPlace = await fetchTATPlaceDetail(tatPlaceId, 'en');
+                        const saved = await upsertDestinationTranslation(row.id, 'en', englishPlace);
+                        if (saved) totalTranslations++;
+                        else totalTranslationFailed++;
+                    } catch (translationError) {
+                        totalTranslationFailed++;
+                        console.error(`[tat-sync] ✗ English translation ${tatPlaceId}:`, translationError.message);
+                    }
+                }
+
                 await embedDestination(row.id);
                 totalEmbedded++;
                 await new Promise(r => setTimeout(r, 120));
@@ -189,16 +242,68 @@ async function syncAllTATPlaces(options = {}) {
         page++;
     }
 
-    const summary = { totalUpserted, totalEmbedded, totalFailed, pages: page };
+    const summary = {
+        totalUpserted,
+        totalEmbedded,
+        totalFailed,
+        totalTranslations,
+        totalTranslationFailed,
+        pages: page,
+    };
     console.log('[tat-sync] done:', summary);
     return summary;
 }
 
 async function syncOneTATPlace(tatPlaceId) {
-    const place = await fetchTATPlaceDetail(tatPlaceId);
-    const row = await upsertTATPlace(place);
+    const thaiPlace = await fetchTATPlaceDetail(tatPlaceId, 'th');
+    const row = await upsertTATPlace(thaiPlace);
+    const languages = ['th'];
+    try {
+        const englishPlace = await fetchTATPlaceDetail(tatPlaceId, 'en');
+        if (await upsertDestinationTranslation(row.id, 'en', englishPlace)) {
+            languages.push('en');
+        }
+    } catch (translationError) {
+        console.error(`[tat-sync] ✗ English translation ${tatPlaceId}:`, translationError.message);
+    }
     await embedDestination(row.id);
-    return row;
+    return { ...row, languages };
+}
+
+async function syncMissingTATTranslations() {
+    const { rows } = await query(
+        `SELECT d.id, d.tat_place_id
+         FROM destinations d
+         LEFT JOIN destination_translations english
+           ON english.destination_id = d.id
+          AND english.language_code = 'en'
+         WHERE d.source = 'tat'
+           AND d.tat_place_id IS NOT NULL
+           AND english.destination_id IS NULL
+         ORDER BY d.id ASC`,
+    );
+
+    let synced = 0;
+    let failed = 0;
+    for (const row of rows) {
+        try {
+            const englishPlace = await fetchTATPlaceDetail(row.tat_place_id, 'en');
+            if (await upsertDestinationTranslation(row.id, 'en', englishPlace)) {
+                synced++;
+            } else {
+                failed++;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 120));
+        } catch (error) {
+            failed++;
+            console.error(
+                `[tat-sync] ✗ English translation ${row.tat_place_id}:`,
+                error.message,
+            );
+        }
+    }
+
+    return { total: rows.length, synced, failed };
 }
 
 // POST /api/admin/embed/bulk
@@ -242,10 +347,30 @@ const syncTAT = async (req, res) => {
 const syncOneTAT = async (req, res) => {
     try {
         const row = await syncOneTATPlace(req.params.tatPlaceId);
-        res.json({ message: 'sync และ embed สำเร็จ', id: row.id });
+        res.json({ message: 'sync และ embed สำเร็จ', id: row.id, languages: row.languages });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 };
 
-module.exports = { bulkEmbed, embedOne, syncTAT, syncOneTAT };
+// POST /api/admin/sync/tat/translations
+const syncTATTranslations = async (_req, res) => {
+    try {
+        const summary = await syncMissingTATTranslations();
+        res.json({ message: 'sync English translations สำเร็จ', ...summary });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+};
+
+module.exports = {
+    bulkEmbed,
+    embedOne,
+    syncTAT,
+    syncOneTAT,
+    syncTATTranslations,
+    fetchTATPlaceDetail,
+    syncAllTATPlaces,
+    syncOneTATPlace,
+    syncMissingTATTranslations,
+};

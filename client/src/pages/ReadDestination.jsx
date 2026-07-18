@@ -19,7 +19,9 @@ const ReadDestination = () => {
     useEffect(() => {
         const fetchPlace = async () => {
             try {
-                const res = await api.get(`/v2/places/${id}`);
+                const res = await api.get(`/v2/places/${id}`, {
+                    headers: { 'Accept-Language': 'th' }
+                });
                 const data = res.data;
                 setPlace(data?.data || data?.result || data);
             } catch (err) {
