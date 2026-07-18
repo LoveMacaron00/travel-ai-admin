@@ -1,6 +1,6 @@
 # API endpoint inventory
 
-อัปเดตล่าสุด: 2026-07-16
+อัปเดตล่าสุด: 2026-07-17
 
 เอกสารนี้เทียบ route ที่ backend เปิดกับ caller ใน `client/src` และ
 `travel-ai-app/lib` เพื่อแยก endpoint ที่ใช้งานจริงออกจาก endpoint สำหรับงานดูแลระบบ
@@ -10,7 +10,8 @@
 | Method | Endpoint | Caller / purpose |
 | --- | --- | --- |
 | POST | `/api/auth/login` | `Login.jsx` |
-| GET | `/api/analytics/overview` | `Dashboard.jsx` |
+| GET | `/api/analytics/overview?range=24h\|7d\|30d\|90d` | `UsageAnalytics.jsx` โหลดผู้ใช้ active, MAU, session และกราฟแนวโน้ม |
+| GET | `/api/analytics/destinations/:id/trend?range=24h\|7d\|30d\|90d` | กราฟยอดดูรายสถานที่ใน `UsageAnalytics.jsx` |
 | GET | `/api/destinations` | `Destinations.jsx` |
 | GET | `/api/destinations/:id` | `EditDestination.jsx` |
 | POST | `/api/destinations` | `AddDestination.jsx` |
@@ -34,8 +35,11 @@
 | POST | `/api/users/login` | `AuthService.login` |
 | PUT | `/api/users/profile` | `AuthService.updateProfile` |
 | POST | `/api/users/profile/upload-image` | `AuthService.uploadProfileImage` |
+| POST | `/api/activity/heartbeat` | `ActivityService` ต่ออายุ foreground session ทุก 1 นาที |
+| POST | `/api/activity/end` | `ActivityService` ปิด session เมื่อเข้า background/logout |
 | GET | `/api/mobile/destinations` | `DestinationService.getDestinations` |
 | GET | `/api/mobile/destinations/:id` | `DestinationService.getDestinationDetails` |
+| POST | `/api/mobile/destinations/:id/view` | `ActivityService.recordDestinationView` นับหนึ่งครั้งต่อ activity session |
 | POST | `/api/trips` | `TripService.createTravelPlan` |
 | GET | `/api/trips/:id` | โหลดผลหลังสร้างแผนผ่าน `TripService.getTravelPlan` |
 | GET | `/api/chat/sessions/latest` | เปิด session แชทล่าสุด |

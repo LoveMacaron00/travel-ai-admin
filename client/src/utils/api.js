@@ -31,6 +31,9 @@ api.interceptors.response.use(
         return response;
     },
     (error) => {
+        if (error.code === 'ERR_CANCELED') {
+            return Promise.reject(error);
+        }
         if (error.response) {
             console.error('API Error:', error.response.status, error.response.data);
             const hadSession = Boolean(localStorage.getItem('adminToken'));

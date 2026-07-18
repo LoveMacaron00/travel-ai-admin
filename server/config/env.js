@@ -26,6 +26,9 @@ const config = {
         password: process.env.DB_PASS,
         name: process.env.DB_NAME || 'smarttravel',
     },
+    analytics: {
+        timeZone: process.env.ANALYTICS_TIME_ZONE || 'Asia/Bangkok',
+    },
     jwt: {
         adminSecret: process.env.ADMIN_JWT_SECRET,
         userSecret: process.env.USER_JWT_SECRET,

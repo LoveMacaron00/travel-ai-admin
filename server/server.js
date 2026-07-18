@@ -2,6 +2,7 @@
 
 const path = require('path');
 const { config, warnAboutMissingEnvironment } = require('./config/env');
+const { ensureAppUsageSchema } = require('./config/appUsageSchema');
 
 const express = require('express');
 const cors = require('cors');
@@ -44,6 +45,7 @@ const tripRoutes = require('./routes/tripRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const adminEmbedRoutes = require('./routes/adminEmbedRoutes');
 const mobileRoutes = require('./routes/mobileRoutes');
+const activityRoutes = require('./routes/activityRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/destinations', requireAdminAuth, destinationRoutes);
@@ -56,6 +58,7 @@ app.use('/api/trips', tripRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/admin', adminEmbedRoutes);
 app.use('/api/mobile', mobileRoutes);
+app.use('/api/activity', activityRoutes);
 
 app.get('/', (req, res) => res.send('Smart Travel API กำลังทำงาน'));
 
@@ -66,6 +69,21 @@ app.use((err, req, res, next) => {
     next();
 });
 
-app.listen(config.port, () => {
-    console.log(`เซิร์ฟเวอร์กำลังทำงานบนพอร์ต ${config.port}`);
-});
+const startServer = async () => {
+    try {
+        await ensureAppUsageSchema();
+        return app.listen(config.port, () => {
+            console.log(`เซิร์ฟเวอร์กำลังทำงานบนพอร์ต ${config.port}`);
+        });
+    } catch (error) {
+        console.error('[server] เตรียม schema สำหรับ analytics ไม่สำเร็จ:', error);
+        process.exitCode = 1;
+        return null;
+    }
+};
+
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = { app, startServer };

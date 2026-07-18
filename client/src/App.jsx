@@ -13,7 +13,7 @@ import { showConfirmAlert, showSuccessAlert } from './utils/alerts';
 import Login from './pages/Login';
 
 // โหลดหน้าหลังบ้านเมื่อเปิด route นั้นจริง เพื่อลด JavaScript ชุดแรกที่หน้า Login ต้องดาวน์โหลด
-const Dashboard = lazy(() => import('./pages/Dashboard'));
+const UsageAnalytics = lazy(() => import('./pages/UsageAnalytics'));
 const Destinations = lazy(() => import('./pages/Destinations'));
 const ReadDestination = lazy(() => import('./pages/ReadDestination'));
 const AddDestination = lazy(() => import('./pages/AddDestination'));
@@ -39,12 +39,13 @@ const Sidebar = ({ onLogout }) => {
 
     return (
         <aside
-            className="w-52 shrink-0 flex flex-col"
+            className="flex w-16 shrink-0 flex-col sm:w-52"
             style={{ background: '#0f1728', height: '100vh', overflow: 'hidden' }}
         >
-            <div className="px-5 py-6">
-                <h1 className="text-lg font-bold" style={{ color: '#f0a500' }}>
-                    Admin Wave
+            <div className="px-3 py-6 text-center sm:px-5 sm:text-left">
+                <h1 className="text-base font-bold sm:text-lg" style={{ color: '#f0a500' }}>
+                    <span className="sm:hidden">AW</span>
+                    <span className="hidden sm:inline">Admin Wave</span>
                 </h1>
             </div>
 
@@ -59,7 +60,8 @@ const Sidebar = ({ onLogout }) => {
                         <Link
                             key={item.path}
                             to={item.path}
-                            className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all ${
+                            aria-label={item.label}
+                            className={`flex items-center justify-center gap-3 rounded-lg px-2 py-3 text-sm transition-all sm:justify-start sm:px-4 ${
                                 isActive
                                     ? 'text-white'
                                     : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -74,7 +76,7 @@ const Sidebar = ({ onLogout }) => {
                             }
                         >
                             <item.icon size={18} />
-                            <span>{item.label}</span>
+                            <span className="hidden sm:inline">{item.label}</span>
                         </Link>
                     );
                 })}
@@ -83,10 +85,11 @@ const Sidebar = ({ onLogout }) => {
             <div className="px-3 pb-6 flex-shrink-0">
                 <button
                     onClick={onLogout}
-                    className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition w-full"
+                    aria-label="Log Out"
+                    className="flex w-full items-center justify-center gap-3 rounded-lg px-2 py-3 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white sm:justify-start sm:px-4"
                 >
                     <LogOut size={18} />
-                    <span>Log Out</span>
+                    <span className="hidden sm:inline">Log Out</span>
                 </button>
             </div>
         </aside>
@@ -100,11 +103,11 @@ const ProtectedLayout = ({ onLogout }) => {
         <div className="flex h-screen" style={{ background: '#1a1a2e' }}>
             <Sidebar onLogout={onLogout} />
             <main
-                className="flex-1 overflow-y-auto"
+                className="min-w-0 flex-1 overflow-y-auto"
                 style={{ background: '#1a1a2e', height: '100vh' }}
             >
                 <Routes>
-                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/" element={<UsageAnalytics />} />
                     <Route path="/destinations" element={<Destinations />} />
                     <Route
                         path="/destinations/read-tat/:id"

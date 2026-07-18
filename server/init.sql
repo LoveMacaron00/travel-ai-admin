@@ -6,9 +6,10 @@
 -- 2. ENUM types
 -- 3. Core tables (admins, users)
 -- 4. Places layer (destinations, destination_images, place_embeddings)
--- 5. AI layer (trips, trip_plans, chat_sessions, chat_messages)
--- 6. Support (feedback)
--- 7. Indexes
+-- 5. App analytics (usage sessions and destination views)
+-- 6. AI layer (trips, trip_plans, chat_sessions, chat_messages)
+-- 7. Support (feedback)
+-- 8. Indexes
 -- =============================================================
 
 -- -------------------------------------------------------------
@@ -132,7 +133,31 @@ CREATE TABLE IF NOT EXISTS place_embeddings (
 );
 
 -- -------------------------------------------------------------
--- 5. AI layer
+-- 5. App analytics
+-- -------------------------------------------------------------
+
+-- หนึ่งแถวคือหนึ่งช่วงที่ผู้ใช้เปิดแอปอยู่ใน foreground
+CREATE TABLE IF NOT EXISTS app_usage_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ
+);
+
+-- การเปิดรายละเอียดสถานที่ นับหนึ่งครั้งต่อ activity session
+CREATE TABLE IF NOT EXISTS destination_view_events (
+    id BIGSERIAL PRIMARY KEY,
+    destination_id INT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    usage_session_id BIGINT NOT NULL REFERENCES app_usage_sessions(id) ON DELETE CASCADE,
+    viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT destination_view_once_per_session
+        UNIQUE (usage_session_id, destination_id)
+);
+
+-- -------------------------------------------------------------
+-- 6. AI layer
 -- -------------------------------------------------------------
 
 -- trips (คำขอสร้างแผนเที่ยวของ user)
@@ -183,7 +208,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 
 -- -------------------------------------------------------------
--- 6. Support tables
+-- 7. Support tables
 -- -------------------------------------------------------------
 
 -- feedback
@@ -197,7 +222,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 );
 
 -- -------------------------------------------------------------
--- 7. Indexes
+-- 8. Indexes
 -- -------------------------------------------------------------
 
 -- destinations
@@ -221,6 +246,15 @@ CREATE INDEX IF NOT EXISTS idx_dest_images_dest_id ON destination_images(destina
 -- trips & plans
 CREATE INDEX IF NOT EXISTS idx_trips_user_id ON trips(user_id);
 CREATE INDEX IF NOT EXISTS idx_trip_plans_trip ON trip_plans(trip_id);
+
+-- app analytics
+CREATE INDEX IF NOT EXISTS idx_app_usage_sessions_user ON app_usage_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_app_usage_sessions_started ON app_usage_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_app_usage_sessions_last_seen ON app_usage_sessions(last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_destination_views_destination_time
+    ON destination_view_events(destination_id, viewed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_destination_views_user_time
+    ON destination_view_events(user_id, viewed_at DESC);
 
 -- chat
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_trip ON chat_sessions(trip_id);
