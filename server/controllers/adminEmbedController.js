@@ -124,7 +124,7 @@ async function upsertTATPlace(place) {
         }
     }
 
-    const { location: locationString } = getLocationParts(place);
+    const { location: locationString, address } = getLocationParts(place);
 
     const { rows } = await query(
         `INSERT INTO destinations (
@@ -137,8 +137,7 @@ async function upsertTATPlace(place) {
         ON CONFLICT (tat_place_id) DO UPDATE SET
             name = EXCLUDED.name,
             province = EXCLUDED.province,
-            description = CASE WHEN destinations.override_description IS NOT NULL
-                            THEN destinations.description ELSE EXCLUDED.description END,
+            description = EXCLUDED.description,
             category = EXCLUDED.category,
             tags = EXCLUDED.tags,
             latitude = EXCLUDED.latitude,
@@ -161,7 +160,7 @@ async function upsertTATPlace(place) {
             (place.tags || []).filter(Boolean),
             parseFloat(place.latitude) || null,
             parseFloat(place.longitude) || null,
-            place.location?.address || null,
+            address,
             place.openingHours?.[0]?.open || place.openingHours?.[0]?.openTime || '00:00',
             place.openingHours?.[0]?.close || place.openingHours?.[0]?.closeTime || '00:00',
             JSON.stringify(place.openingHours || []),

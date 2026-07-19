@@ -33,7 +33,6 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
             d.closing_time,
             d.opening_hours,
             d.tat_raw,
-            d.avg_rating,
             pe.chunk_text,
             pe.chunk_field,
             1 - (pe.embedding <=> $1::vector) AS similarity
@@ -77,7 +76,7 @@ async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
             d.id, d.name, d.province, d.description, d.category, d.tags,
             d.latitude, d.longitude, d.address, d.image_url,
             d.opening_time, d.closing_time, d.opening_hours,
-            d.tat_raw, d.avg_rating,
+            d.tat_raw,
             (6371 * acos(LEAST(1, GREATEST(-1,
                 cos(radians($1)) * cos(radians(d.latitude))
                 * cos(radians(d.longitude) - radians($2))
@@ -87,7 +86,7 @@ async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
          WHERE d.status = 'approved'
            AND d.latitude IS NOT NULL
            AND d.longitude IS NOT NULL
-         ORDER BY distance_km ASC, d.avg_rating DESC NULLS LAST
+         ORDER BY distance_km ASC, d.created_at DESC
          LIMIT $3`,
         [lat, lng, limit],
     );
@@ -102,7 +101,8 @@ function formatPlacesContext(places) {
         const facts = buildPlaceFacts(p);
 
         return `[${i + 1}] ${p.name}
-    จังหวัด: ${p.province || '-'} | หมวดหมู่: ${p.category} | คะแนน: ${p.avg_rating || '-'}
+    จังหวัด: ${p.province || '-'} | หมวดหมู่: ${p.category}
+    ที่อยู่: ${p.address || '-'}
     ${facts.detailText || (p.description ? stripHtml(p.description).slice(0, 300) : '')}
     แท็ก: ${(p.tags || []).join(', ') || '-'}
     ${facts.openingHoursText ? `เวลาเปิด-ปิด: ${facts.openingHoursText}` : ''}

@@ -26,10 +26,19 @@ const getLocationParts = (place = {}) => {
         place.subDistrictName,
         place.subDistrict,
     );
+    const postcode = firstValue(
+        place.location?.postcode,
+        place.postcode,
+        place.postalCode,
+    );
+    const streetAddress = firstValue(place.location?.address, place.address);
+    const locationParts = [subDistrict, district, province].filter(Boolean);
+    const addressParts = [streetAddress, ...locationParts, postcode].filter(Boolean);
 
     return {
         province,
-        location: [subDistrict, district, province].filter(Boolean).join(', ') || null,
+        location: locationParts.join(', ') || null,
+        address: [...new Set(addressParts)].join(', ') || null,
     };
 };
 
@@ -37,12 +46,12 @@ const buildTATTranslation = (place = {}) => {
     const name = firstValue(place.name, place.placeName, place.title);
     if (!name) return null;
 
-    const { province, location } = getLocationParts(place);
+    const { province, location, address } = getLocationParts(place);
     return {
         name,
         province: location || province,
         description: firstValue(place.information?.detail, place.detail, place.description),
-        address: firstValue(place.location?.address, place.address),
+        address,
         tags: Array.isArray(place.tags) ? place.tags.filter(Boolean).map(String) : [],
         openingHours: Array.isArray(place.openingHours) ? place.openingHours : [],
         admissionFee: place.information?.fee || place.fee || {},

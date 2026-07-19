@@ -169,7 +169,6 @@ const getTopDestinations = async (range) => {
             destinations.province,
             destinations.category,
             destinations.image_url,
-            destinations.review_count,
             COUNT(views.id)::int AS view_count,
             COUNT(DISTINCT views.user_id)::int AS unique_viewers
          FROM destinations
@@ -179,7 +178,7 @@ const getTopDestinations = async (range) => {
          WHERE destinations.status = 'approved'
          GROUP BY destinations.id
          ORDER BY view_count DESC, unique_viewers DESC,
-                  destinations.review_count DESC, destinations.created_at DESC
+                  destinations.created_at DESC
          LIMIT 5`,
         [range.lookback],
     );
@@ -191,7 +190,6 @@ const getTopDestinations = async (range) => {
         image: destination.image_url,
         viewer: destination.view_count,
         uniqueViewers: destination.unique_viewers,
-        reviewCount: destination.review_count || 0,
         category: destination.category,
     }));
     return withRankStats(destinations);

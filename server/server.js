@@ -3,7 +3,6 @@
 const path = require('path');
 const { config, warnAboutMissingEnvironment } = require('./config/env');
 const { ensureAppUsageSchema } = require('./config/appUsageSchema');
-const { ensureDestinationTranslationsSchema } = require('./config/destinationTranslationsSchema');
 
 const express = require('express');
 const cors = require('cors');
@@ -73,12 +72,11 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
     try {
         await ensureAppUsageSchema();
-        await ensureDestinationTranslationsSchema();
         return app.listen(config.port, () => {
             console.log(`เซิร์ฟเวอร์กำลังทำงานบนพอร์ต ${config.port}`);
         });
     } catch (error) {
-        console.error('[server] เตรียม schema สำหรับ analytics ไม่สำเร็จ:', error);
+        console.error('[server] เตรียม schema ไม่สำเร็จ:', error);
         process.exitCode = 1;
         return null;
     }

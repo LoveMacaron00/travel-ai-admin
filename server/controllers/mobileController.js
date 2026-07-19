@@ -30,7 +30,6 @@ const createMobileControllers = (database) => {
                 SELECT
                     d.id,
                     COALESCE(
-                        d.override_name,
                         CASE WHEN $1 = 'th' THEN d.name ELSE preferred.name END,
                         d.name
                     ) AS name,
@@ -39,14 +38,18 @@ const createMobileControllers = (database) => {
                         d.province
                     ) AS province,
                     COALESCE(
-                        d.override_description,
                         CASE WHEN $1 = 'th' THEN d.description ELSE preferred.description END,
                         d.description
                     ) AS description,
                     d.latitude,
                     d.longitude,
                     d.image_url AS image,
-                    d.category
+                    d.category,
+                    (
+                        SELECT COUNT(*)::int
+                        FROM destination_view_events view_events
+                        WHERE view_events.destination_id = d.id
+                    ) AS viewer
                 FROM destinations d
                 LEFT JOIN destination_translations preferred
                     ON preferred.destination_id = d.id
@@ -74,6 +77,7 @@ const createMobileControllers = (database) => {
                 longitude: row.longitude,
                 image: row.image || '',
                 category: row.category || 'general',
+                viewer: row.viewer || 0,
             }));
 
             addLanguageVaryHeader(res);
@@ -108,7 +112,6 @@ const createMobileControllers = (database) => {
                 `SELECT
                     d.id,
                     COALESCE(
-                        d.override_name,
                         CASE WHEN $2 = 'th' THEN d.name ELSE preferred.name END,
                         d.name
                     ) AS name,
@@ -117,7 +120,6 @@ const createMobileControllers = (database) => {
                         d.province
                     ) AS province,
                     COALESCE(
-                        d.override_description,
                         CASE WHEN $2 = 'th' THEN d.description ELSE preferred.description END,
                         d.description
                     ) AS description,

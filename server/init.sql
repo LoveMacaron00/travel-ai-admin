@@ -99,14 +99,6 @@ CREATE TABLE IF NOT EXISTS destinations (
     tat_raw JSONB, -- raw response จาก TAT เก็บไว้เต็ม
     admission_fee JSONB NOT NULL DEFAULT '{}', -- ค่าเข้าชมที่ใช้งานง่าย
 
-    -- Admin override (ป้องกัน TAT sync ทับงาน admin)
-    override_name VARCHAR(255),
-    override_description TEXT,
-
-    -- สถิติ
-    avg_rating NUMERIC(3,2) DEFAULT 0,
-    review_count INT NOT NULL DEFAULT 0,
-
     -- approval tracking
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
