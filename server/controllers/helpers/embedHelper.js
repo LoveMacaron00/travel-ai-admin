@@ -66,7 +66,10 @@ function buildChunks(dest) {
             text: [
                 `${dest.name} ตั้งอยู่`,
                 dest.address ? `ที่อยู่: ${dest.address}` : '',
+                dest.sub_district ? `ตำบล/แขวง: ${dest.sub_district}` : '',
+                dest.district ? `อำเภอ/เขต: ${dest.district}` : '',
                 dest.province ? `สถานที่ตั้ง: ${dest.province}` : '',
+                dest.postcode ? `รหัสไปรษณีย์: ${dest.postcode}` : '',
                 (dest.latitude && dest.longitude) ? `พิกัด ${dest.latitude}, ${dest.longitude}` : '',
                 `หมวดหมู่: ${dest.category}`,
                 facts.feeText ? `ค่าเข้าชม: ${facts.feeText}` : '',
@@ -80,7 +83,8 @@ function buildChunks(dest) {
 async function embedDestination(destinationId) {
     const { rows } = await query(
         `SELECT id, name, province, description, category, tags,
-                latitude, longitude, address, opening_time, closing_time,
+                latitude, longitude, address, district, sub_district, postcode,
+                opening_time, closing_time,
                 opening_hours, tat_raw
          FROM destinations WHERE id = $1 AND status = 'approved'`,
         [destinationId]

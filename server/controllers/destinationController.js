@@ -58,6 +58,38 @@ const normalizeAdmissionFee = (fee) => {
     return result;
 };
 
+const nullableText = (value) => {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    return text || null;
+};
+
+const nullableLocationId = (value) => {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const normalizeLocationInput = (data = {}) => {
+    const location = data.location && typeof data.location === 'object' ? data.location : {};
+    const province = location.province && typeof location.province === 'object' ? location.province : {};
+    const district = location.district && typeof location.district === 'object' ? location.district : {};
+    const subDistrict = location.subDistrict && typeof location.subDistrict === 'object'
+        ? location.subDistrict
+        : {};
+
+    return {
+        address: location.address ?? data.address,
+        provinceId: province.provinceId ?? data.province_id,
+        province: province.name ?? data.province,
+        districtId: district.districtId ?? data.district_id,
+        district: district.name ?? data.district,
+        subDistrictId: subDistrict.subDistrictId ?? data.sub_district_id,
+        subDistrict: subDistrict.name ?? data.sub_district,
+        postcode: location.postcode ?? data.postcode,
+    };
+};
+
 const getRemovedImages = (currentImages, nextImages) => {
     const nextSet = new Set(nextImages);
     return currentImages.filter((image) => image && !nextSet.has(image));
@@ -186,19 +218,31 @@ const createDestination = async (req, res) => {
         }
 
         const data = req.body;
+        const location = normalizeLocationInput(data);
         const images = req.body.images;
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
 
             const { rows } = await client.query(
-                `INSERT INTO destinations (name, province, description, latitude, longitude, opening_time, closing_time, status, source, image_url, admission_fee)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'admin', $9, $10)
+                `INSERT INTO destinations (
+                    name, address, province_id, province, district_id, district,
+                    sub_district_id, sub_district, postcode,
+                    description, latitude, longitude, opening_time, closing_time,
+                    status, source, image_url, admission_fee
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'admin',$16,$17)
                  RETURNING id`,
                 [
                     data.name.trim(),
-                    data.province || null,
-                    data.description || null,
+                    nullableText(location.address),
+                    nullableLocationId(location.provinceId),
+                    nullableText(location.province),
+                    nullableLocationId(location.districtId),
+                    nullableText(location.district),
+                    nullableLocationId(location.subDistrictId),
+                    nullableText(location.subDistrict),
+                    nullableText(location.postcode),
+                    nullableText(data.description),
                     data.latitude !== '' && data.latitude != null ? parseFloat(data.latitude) : null,
                     data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
                     data.opening_time || '00:00 AM',
@@ -263,6 +307,7 @@ const updateDestination = async (req, res) => {
         }
 
         const data = req.body;
+        const location = normalizeLocationInput(data);
         const client = await pool.connect();
         let result;
         try {
@@ -280,14 +325,25 @@ const updateDestination = async (req, res) => {
 
             await client.query(
                 `UPDATE destinations
-                 SET name = $1, province = $2, description = $3, latitude = $4, longitude = $5,
-                      opening_time = $6, closing_time = $7, status = $8, image_url = $9,
-                      admission_fee = $10, updated_at = NOW()
-                 WHERE id = $11`,
+                 SET name = $1, address = $2, province_id = $3, province = $4,
+                     district_id = $5, district = $6,
+                     sub_district_id = $7, sub_district = $8,
+                     postcode = $9, description = $10,
+                     latitude = $11, longitude = $12, opening_time = $13,
+                     closing_time = $14, status = $15, image_url = $16,
+                     admission_fee = $17, updated_at = NOW()
+                 WHERE id = $18`,
                 [
                     data.name,
-                    data.province || null,
-                    data.description || null,
+                    nullableText(location.address),
+                    nullableLocationId(location.provinceId),
+                    nullableText(location.province),
+                    nullableLocationId(location.districtId),
+                    nullableText(location.district),
+                    nullableLocationId(location.subDistrictId),
+                    nullableText(location.subDistrict),
+                    nullableText(location.postcode),
+                    nullableText(data.description),
                     data.latitude !== '' && data.latitude != null ? parseFloat(data.latitude) : null,
                     data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
                     data.opening_time,

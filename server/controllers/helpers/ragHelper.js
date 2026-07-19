@@ -28,6 +28,9 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
             d.latitude,
             d.longitude,
             d.address,
+            d.district,
+            d.sub_district,
+            d.postcode,
             d.image_url,
             d.opening_time,
             d.closing_time,
@@ -74,7 +77,8 @@ async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
     const { rows } = await query(
         `SELECT
             d.id, d.name, d.province, d.description, d.category, d.tags,
-            d.latitude, d.longitude, d.address, d.image_url,
+            d.latitude, d.longitude, d.address, d.district,
+            d.sub_district, d.postcode, d.image_url,
             d.opening_time, d.closing_time, d.opening_hours,
             d.tat_raw,
             (6371 * acos(LEAST(1, GREATEST(-1,
@@ -103,6 +107,7 @@ function formatPlacesContext(places) {
         return `[${i + 1}] ${p.name}
     จังหวัด: ${p.province || '-'} | หมวดหมู่: ${p.category}
     ที่อยู่: ${p.address || '-'}
+    ตำบล/แขวง: ${p.sub_district || '-'} | อำเภอ/เขต: ${p.district || '-'} | รหัสไปรษณีย์: ${p.postcode || '-'}
     ${facts.detailText || (p.description ? stripHtml(p.description).slice(0, 300) : '')}
     แท็ก: ${(p.tags || []).join(', ') || '-'}
     ${facts.openingHoursText ? `เวลาเปิด-ปิด: ${facts.openingHoursText}` : ''}

@@ -56,14 +56,18 @@ async function upsertDestinationTranslation(destinationId, languageCode, place) 
 
     await query(
         `INSERT INTO destination_translations (
-            destination_id, language_code, name, province, description,
-            address, tags, opening_hours, admission_fee, tat_raw
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            destination_id, language_code, name, address, province,
+            district, sub_district, postcode, description,
+            tags, opening_hours, admission_fee, tat_raw
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
         ON CONFLICT (destination_id, language_code) DO UPDATE SET
             name = EXCLUDED.name,
-            province = EXCLUDED.province,
-            description = EXCLUDED.description,
             address = EXCLUDED.address,
+            province = EXCLUDED.province,
+            district = EXCLUDED.district,
+            sub_district = EXCLUDED.sub_district,
+            postcode = EXCLUDED.postcode,
+            description = EXCLUDED.description,
             tags = EXCLUDED.tags,
             opening_hours = EXCLUDED.opening_hours,
             admission_fee = EXCLUDED.admission_fee,
@@ -73,9 +77,12 @@ async function upsertDestinationTranslation(destinationId, languageCode, place) 
             destinationId,
             languageCode,
             translation.name,
-            translation.province,
-            translation.description,
             translation.address,
+            translation.province,
+            translation.district,
+            translation.subDistrict,
+            translation.postcode,
+            translation.description,
             translation.tags,
             JSON.stringify(translation.openingHours),
             JSON.stringify(translation.admissionFee),
@@ -124,25 +131,41 @@ async function upsertTATPlace(place) {
         }
     }
 
-    const { location: locationString, address } = getLocationParts(place);
+    const {
+        address,
+        provinceId,
+        province,
+        districtId,
+        district,
+        subDistrictId,
+        subDistrict,
+        postcode,
+    } = getLocationParts(place);
 
     const { rows } = await query(
         `INSERT INTO destinations (
-            name, province, description, category, tags,
-            latitude, longitude, address,
+            name, address, province_id, province, district_id, district,
+            sub_district_id, sub_district, postcode,
+            description, category, tags, latitude, longitude,
             opening_time, closing_time, opening_hours,
             image_url, images, source, status,
             tat_place_id, tat_raw, admission_fee
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'tat','approved',$14,$15,$16)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'tat','approved',$20,$21,$22)
         ON CONFLICT (tat_place_id) DO UPDATE SET
             name = EXCLUDED.name,
+            address = EXCLUDED.address,
+            province_id = EXCLUDED.province_id,
             province = EXCLUDED.province,
+            district_id = EXCLUDED.district_id,
+            district = EXCLUDED.district,
+            sub_district_id = EXCLUDED.sub_district_id,
+            sub_district = EXCLUDED.sub_district,
+            postcode = EXCLUDED.postcode,
             description = EXCLUDED.description,
             category = EXCLUDED.category,
             tags = EXCLUDED.tags,
             latitude = EXCLUDED.latitude,
             longitude = EXCLUDED.longitude,
-            address = EXCLUDED.address,
             opening_time = EXCLUDED.opening_time,
             closing_time = EXCLUDED.closing_time,
             opening_hours = EXCLUDED.opening_hours,
@@ -154,13 +177,19 @@ async function upsertTATPlace(place) {
         RETURNING id`,
         [
             place.name,
-            locationString,
+            address,
+            provinceId,
+            province,
+            districtId,
+            district,
+            subDistrictId,
+            subDistrict,
+            postcode,
             place.information?.detail || null,
             mapCategory(place.category?.name),
             (place.tags || []).filter(Boolean),
             parseFloat(place.latitude) || null,
             parseFloat(place.longitude) || null,
-            address,
             place.openingHours?.[0]?.open || place.openingHours?.[0]?.openTime || '00:00',
             place.openingHours?.[0]?.close || place.openingHours?.[0]?.closeTime || '00:00',
             JSON.stringify(place.openingHours || []),

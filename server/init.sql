@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS destinations (
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
     address TEXT,
+    province_id INTEGER,
+    district VARCHAR(255),
+    district_id INTEGER,
+    sub_district VARCHAR(255),
+    sub_district_id INTEGER,
+    postcode VARCHAR(20),
 
     -- เวลาทำการ
     opening_time VARCHAR(20) DEFAULT '00:00',
@@ -110,6 +116,9 @@ CREATE TABLE IF NOT EXISTS destination_translations (
     language_code VARCHAR(5) NOT NULL,
     name VARCHAR(255) NOT NULL,
     province VARCHAR(255),
+    district VARCHAR(255),
+    sub_district VARCHAR(255),
+    postcode VARCHAR(20),
     description TEXT,
     address TEXT,
     tags TEXT[] NOT NULL DEFAULT '{}',

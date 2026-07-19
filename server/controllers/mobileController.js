@@ -38,6 +38,14 @@ const createMobileControllers = (database) => {
                         d.province
                     ) AS province,
                     COALESCE(
+                        CASE WHEN $1 = 'th' THEN d.district ELSE preferred.district END,
+                        d.district
+                    ) AS district,
+                    COALESCE(
+                        CASE WHEN $1 = 'th' THEN d.sub_district ELSE preferred.sub_district END,
+                        d.sub_district
+                    ) AS sub_district,
+                    COALESCE(
                         CASE WHEN $1 = 'th' THEN d.description ELSE preferred.description END,
                         d.description
                     ) AS description,
@@ -67,18 +75,27 @@ const createMobileControllers = (database) => {
 
             const { rows } = await database.query(sql, params);
             const fallbackCountry = language === 'en' ? 'Thailand' : 'ประเทศไทย';
-            const data = rows.map((row) => ({
-                id: row.id,
-                name: row.name,
-                city: row.province || fallbackCountry,
-                location: row.province || fallbackCountry,
-                description: row.description || '',
-                latitude: row.latitude,
-                longitude: row.longitude,
-                image: row.image || '',
-                category: row.category || 'general',
-                viewer: row.viewer || 0,
-            }));
+            const data = rows.map((row) => {
+                const province = row.province || fallbackCountry;
+                const location = [row.sub_district, row.district, province]
+                    .filter(Boolean)
+                    .join(', ');
+                return {
+                    id: row.id,
+                    name: row.name,
+                    city: province,
+                    location,
+                    province,
+                    district: row.district || '',
+                    sub_district: row.sub_district || '',
+                    description: row.description || '',
+                    latitude: row.latitude,
+                    longitude: row.longitude,
+                    image: row.image || '',
+                    category: row.category || 'general',
+                    viewer: row.viewer || 0,
+                };
+            });
 
             addLanguageVaryHeader(res);
             res.json({ data, language });
@@ -115,10 +132,25 @@ const createMobileControllers = (database) => {
                         CASE WHEN $2 = 'th' THEN d.name ELSE preferred.name END,
                         d.name
                     ) AS name,
+                    d.province_id,
                     COALESCE(
                         CASE WHEN $2 = 'th' THEN d.province ELSE preferred.province END,
                         d.province
                     ) AS province,
+                    d.district_id,
+                    COALESCE(
+                        CASE WHEN $2 = 'th' THEN d.district ELSE preferred.district END,
+                        d.district
+                    ) AS district,
+                    d.sub_district_id,
+                    COALESCE(
+                        CASE WHEN $2 = 'th' THEN d.sub_district ELSE preferred.sub_district END,
+                        d.sub_district
+                    ) AS sub_district,
+                    COALESCE(
+                        CASE WHEN $2 = 'th' THEN d.postcode ELSE preferred.postcode END,
+                        d.postcode
+                    ) AS postcode,
                     COALESCE(
                         CASE WHEN $2 = 'th' THEN d.description ELSE preferred.description END,
                         d.description
@@ -186,6 +218,22 @@ const createMobileControllers = (database) => {
             res.json({
                 ...destination,
                 language,
+                location: {
+                    address: destination.address,
+                    province: {
+                        provinceId: destination.province_id,
+                        name: destination.province,
+                    },
+                    district: {
+                        districtId: destination.district_id,
+                        name: destination.district,
+                    },
+                    subDistrict: {
+                        subDistrictId: destination.sub_district_id,
+                        name: destination.sub_district,
+                    },
+                    postcode: destination.postcode,
+                },
                 images: imageUrls.map((image_url) => ({ image_url })),
             });
         } catch (err) {

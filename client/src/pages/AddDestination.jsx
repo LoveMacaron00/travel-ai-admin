@@ -22,7 +22,9 @@ const AddDestination = () => {
     const fileInputRef = useRef(null);
 
     const [form, setForm] = useState({
-        name: '', province: '', description: '',
+        name: '', address: '',
+        province_id: '', province: '', district_id: '', district: '',
+        sub_district_id: '', sub_district: '', postcode: '', description: '',
         latitude: '', longitude: '',
         status: 'approved',
         admission_adult: '', admission_child: '',
@@ -72,7 +74,7 @@ const AddDestination = () => {
         if (!searchQuery.trim()) return;
         setIsSearching(true);
         try {
-            const res = await fetch(`${appConfig.nominatimBaseUrl}/search?format=json&q=${encodeURIComponent(searchQuery)}`);
+            const res = await fetch(`${appConfig.nominatimBaseUrl}/search?format=json&addressdetails=1&accept-language=th&q=${encodeURIComponent(searchQuery)}`);
             const data = await res.json();
             setSearchResults(data);
         } catch (error) {
@@ -83,7 +85,17 @@ const AddDestination = () => {
     };
 
     const handleSearchResultSelect = (result) => {
-        handleLocationSelect(parseFloat(result.lat), parseFloat(result.lon));
+        const location = result.address || {};
+        setForm(prev => ({
+            ...prev,
+            latitude: parseFloat(result.lat).toFixed(6),
+            longitude: parseFloat(result.lon).toFixed(6),
+            address: [location.house_number, location.road].filter(Boolean).join(' ') || prev.address,
+            province: location.state || location.province || prev.province,
+            district: location.county || location.city_district || location.city || prev.district,
+            sub_district: location.suburb || location.town || location.village || prev.sub_district,
+            postcode: location.postcode || prev.postcode,
+        }));
         setSearchResults([]);
         setSearchQuery('');
     };
@@ -285,9 +297,47 @@ const AddDestination = () => {
                             value={form.name} onChange={e => handleChange('name', e.target.value)} />
                     </div>
                     <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Province / Location</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all" placeholder="e.g. Sub-district, District, Province"
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Address</label>
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all" placeholder="e.g. 169 ถนนลงหาดบางแสน"
+                            value={form.address} onChange={e => handleChange('address', e.target.value)} />
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Province</label>
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="e.g. ชลบุรี"
                             value={form.province} onChange={e => handleChange('province', e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Province ID</label>
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="e.g. 464" inputMode="numeric"
+                            value={form.province_id} onChange={e => handleChange('province_id', e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">District</label>
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="e.g. เมืองชลบุรี"
+                            value={form.district} onChange={e => handleChange('district', e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">District ID</label>
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="e.g. 2001" inputMode="numeric"
+                            value={form.district_id} onChange={e => handleChange('district_id', e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Sub-district</label>
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="e.g. แสนสุข"
+                            value={form.sub_district} onChange={e => handleChange('sub_district', e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Sub-district ID</label>
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="e.g. 200104" inputMode="numeric"
+                            value={form.sub_district_id} onChange={e => handleChange('sub_district_id', e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Postcode</label>
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="e.g. 20000" inputMode="numeric"
+                            value={form.postcode} onChange={e => handleChange('postcode', e.target.value)} />
                     </div>
                 </div>
 

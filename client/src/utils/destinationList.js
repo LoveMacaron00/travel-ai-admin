@@ -24,11 +24,10 @@ export const normalizeDestinationItems = ({ source, status, tatItems, adminItems
     let items = source === 'tat'
         ? tatItems.map((destination, index) => {
             const province = destination.location?.province?.name || '';
-            const district = destination.location?.district?.name || '';
             return {
                 id: destination.placeId || destination.id || `tat-${index}`,
                 name: destination.name || 'Unknown',
-                province: [district, province].filter(Boolean).join(', ') || 'Unknown',
+                province: province || 'Unknown',
                 image: firstImage(destination.thumbnailUrl)
                     || destination.sha?.detailThumbnail
                     || destination.sha?.thumbnailUrl

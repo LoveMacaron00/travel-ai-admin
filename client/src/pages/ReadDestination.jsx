@@ -81,13 +81,36 @@ const ReadDestination = () => {
         return '';
     };
 
-    // Fix: Handle province/district/subDistrict
-    const provName = extractName(place.province) || place.province_name || place.provinceName || extractName(place.location?.province);
-    const distName = extractName(place.district) || place.district_name || extractName(place.location?.district);
-    const subDistName = extractName(place.subDistrict) || place.sub_district || extractName(place.location?.subDistrict);
+    const tatLocation = place.location && typeof place.location === 'object' ? place.location : {};
+    const provinceData = tatLocation.province && typeof tatLocation.province === 'object'
+        ? tatLocation.province
+        : {};
+    const districtData = tatLocation.district && typeof tatLocation.district === 'object'
+        ? tatLocation.district
+        : {};
+    const subDistrictData = tatLocation.subDistrict && typeof tatLocation.subDistrict === 'object'
+        ? tatLocation.subDistrict
+        : {};
 
-    const locationParts = [subDistName, distName, provName].filter(Boolean);
-    const province = locationParts.length > 0 ? locationParts.join(', ') : 'Unknown Location';
+    const address = tatLocation.address ?? place.address ?? '';
+    const provinceId = provinceData.provinceId ?? place.province_id ?? '';
+    const provinceName = extractName(provinceData)
+        || extractName(place.province)
+        || place.province_name
+        || place.provinceName
+        || '';
+    const districtId = districtData.districtId ?? place.district_id ?? '';
+    const districtName = extractName(districtData)
+        || extractName(place.district)
+        || place.district_name
+        || '';
+    const subDistrictId = subDistrictData.subDistrictId ?? place.sub_district_id ?? '';
+    const subDistrictName = extractName(subDistrictData)
+        || extractName(place.subDistrict)
+        || place.sub_district
+        || '';
+    const postcode = tatLocation.postcode ?? place.postcode ?? '';
+    const headerLocation = address || provinceName || 'Unknown Location';
 
     const rawDesc = place.information?.detail || place.detail || place.description || place.sha?.detail || place.place_information?.detail || place.introduction || navIntroduction || '';
     const desc = rawDesc.replace(/<\/?p>/gi, '').replace(/<\/?strong>/gi, '');
@@ -164,7 +187,7 @@ const ReadDestination = () => {
                     </h1>
                     <div className="flex items-center gap-2 text-gray-400 mt-2 text-sm font-medium">
                         <MapPin size={16} className="text-yellow-500" />
-                        {province}
+                        {headerLocation}
                     </div>
                 </div>
 
@@ -224,39 +247,52 @@ const ReadDestination = () => {
                     <span className="px-2.5 py-1 rounded-lg bg-yellow-500/10 text-yellow-500 text-xs font-bold border border-yellow-500/20 tracking-wider">READ ONLY</span>
                 </h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 relative z-10">
-                    <div className="space-y-4">
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                <Building size={14} /> Destination Name
-                            </label>
-                            <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{name || '-'}</div>
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                <MapPin size={14} /> Province / Location
-                            </label>
-                            <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{province || '-'}</div>
-                        </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            <Building size={14} /> Destination Name
+                        </label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{name || '-'}</div>
                     </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            <MapPin size={14} /> Address
+                        </label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{address || '-'}</div>
+                    </div>
+                </div>
 
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Latitude</label>
-                                <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lat || 'N/A'}</div>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Longitude</label>
-                                <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lng || 'N/A'}</div>
-                            </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-4 relative z-10">
+                    {[
+                        ['Province', provinceName],
+                        ['Province ID', provinceId],
+                        ['District', districtName],
+                        ['District ID', districtId],
+                        ['Sub-district', subDistrictName],
+                        ['Sub-district ID', subDistrictId],
+                        ['Postcode', postcode],
+                    ].map(([label, value]) => (
+                        <div key={label}>
+                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">{label}</label>
+                            <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{value !== '' && value != null ? value : '-'}</div>
                         </div>
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                <Clock size={14} /> Opening Hours
-                            </label>
-                            <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{openTime || 'N/A'}</div>
-                        </div>
+                    ))}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-4 relative z-10">
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Latitude</label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lat || 'N/A'}</div>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Longitude</label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lng || 'N/A'}</div>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            <Clock size={14} /> Opening Hours
+                        </label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{openTime || 'N/A'}</div>
                     </div>
                 </div>
 
