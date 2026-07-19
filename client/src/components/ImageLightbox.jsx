@@ -42,7 +42,7 @@ const ImageLightbox = ({ images, currentIndex, onClose, onPrevious, onNext }) =>
                     onClose();
                 }}
                 className="absolute top-5 right-5 text-white/80 hover:text-white transition"
-                aria-label="Close image preview"
+                aria-label="ปิดตัวอย่างรูปภาพ"
             >
                 <X size={28} />
             </button>
@@ -55,7 +55,7 @@ const ImageLightbox = ({ images, currentIndex, onClose, onPrevious, onNext }) =>
                         onPrevious();
                     }}
                     className="absolute left-5 top-1/2 -translate-y-1/2 rounded-full bg-white/10 p-3 text-white hover:bg-white/20 transition"
-                    aria-label="Previous image"
+                    aria-label="รูปก่อนหน้า"
                 >
                     <ChevronLeft size={28} />
                 </button>
@@ -85,7 +85,7 @@ const ImageLightbox = ({ images, currentIndex, onClose, onPrevious, onNext }) =>
                         onNext();
                     }}
                     className="absolute right-5 top-1/2 -translate-y-1/2 rounded-full bg-white/10 p-3 text-white hover:bg-white/20 transition"
-                    aria-label="Next image"
+                    aria-label="รูปถัดไป"
                 >
                     <ChevronRight size={28} />
                 </button>

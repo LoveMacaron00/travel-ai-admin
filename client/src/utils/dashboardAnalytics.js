@@ -1,26 +1,33 @@
 export const analyticsRanges = [
-    { key: '24h', label: '24 Hours' },
-    { key: '7d', label: '7 Days' },
-    { key: '30d', label: '30 Days' },
-    { key: '90d', label: '90 Days' },
+    { key: '24h', label: '24 ชั่วโมง' },
+    { key: '7d', label: '7 วัน' },
+    { key: '30d', label: '30 วัน' },
+    { key: '90d', label: '90 วัน' },
 ];
+
+export const formatPeriodLabel = (value) => ({
+    '24 Hours': '24 ชั่วโมง',
+    '7 Days': '7 วัน',
+    '30 Days': '30 วัน',
+    '90 Days': '90 วัน',
+}[value] || value || 'ช่วงเวลาที่เลือก');
 
 export const formatDuration = (seconds) => {
     const totalSeconds = Math.max(0, Number(seconds) || 0);
-    if (totalSeconds < 60) return `${Math.round(totalSeconds)} sec`;
+    if (totalSeconds < 60) return `${Math.round(totalSeconds)} วินาที`;
 
     const totalMinutes = Math.round(totalSeconds / 60);
-    if (totalMinutes < 60) return `${totalMinutes} min`;
+    if (totalMinutes < 60) return `${totalMinutes} นาที`;
 
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
+    return minutes === 0 ? `${hours} ชั่วโมง` : `${hours} ชั่วโมง ${minutes} นาที`;
 };
 
 export const formatUpdatedAt = (value, timeZone = 'Asia/Bangkok') => {
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return 'Not updated yet';
-    return new Intl.DateTimeFormat('en-GB', {
+    if (Number.isNaN(date.getTime())) return 'ยังไม่มีการอัปเดต';
+    return new Intl.DateTimeFormat('th-TH', {
         day: '2-digit',
         month: 'short',
         hour: '2-digit',
@@ -45,7 +52,7 @@ export const normalizeAnalyticsPayload = (payload) => {
         || !Array.isArray(payload.trendData)
         || !Array.isArray(payload.topDestinations)
     ) {
-        throw new Error('Analytics API response is incompatible. Please restart the updated server.');
+        throw new Error('ข้อมูลจาก Analytics API ไม่ตรงกับเวอร์ชันนี้ กรุณารีสตาร์ตเซิร์ฟเวอร์ที่อัปเดตแล้ว');
     }
 
     return {
@@ -89,7 +96,7 @@ export const normalizeAnalyticsPayload = (payload) => {
 
 export const normalizeDestinationTrendPayload = (payload) => {
     if (payload == null || !Array.isArray(payload.trendData)) {
-        throw new Error('Destination trend response is incompatible.');
+        throw new Error('ข้อมูลแนวโน้มสถานที่ไม่ตรงกับรูปแบบที่รองรับ');
     }
     return payload.trendData.map((point) => ({
         ...point,
@@ -103,24 +110,24 @@ const escapeCsvValue = (value) => `"${String(value ?? '').replaceAll('"', '""')}
 export const buildAnalyticsCsv = (stats) => {
     const summary = stats.summary ?? {};
     const rows = [
-        ['Usage Analytics generated at', stats.generatedAt],
-        ['Selected period', stats.periodLabel],
-        ['Time zone', stats.timeZone],
+        ['สร้างรายงานสถิติการใช้งานเมื่อ', stats.generatedAt],
+        ['ช่วงเวลาที่เลือก', formatPeriodLabel(stats.periodLabel)],
+        ['เขตเวลา', stats.timeZone],
         [],
-        ['Metric', 'Value'],
-        ['Active users now', summary.activeUsersNow],
-        ['Total registered users', summary.totalRegisteredUsers],
-        ['Monthly active users', summary.monthlyActiveUsers],
-        ['Monthly growth (%)', summary.monthlyUserGrowth ?? 'New'],
-        ['Average session (seconds)', summary.averageSessionSeconds],
-        ['Peak usage time', summary.peakUsageTime ?? 'No data'],
-        ['Sessions in selected period', summary.totalSessions],
-        ['Monthly destination views', summary.monthlyDestinationViews],
-        ['Monthly unique destination viewers', summary.monthlyUniqueDestinationViewers],
-        ['Destination views in selected period', summary.periodDestinationViews],
-        ['Unique destination viewers in selected period', summary.periodUniqueDestinationViewers],
+        ['ตัวชี้วัด', 'ค่า'],
+        ['ผู้ใช้ที่ใช้งานขณะนี้', summary.activeUsersNow],
+        ['ผู้ใช้ที่ลงทะเบียนทั้งหมด', summary.totalRegisteredUsers],
+        ['ผู้ใช้ต่อเดือน', summary.monthlyActiveUsers],
+        ['การเติบโตรายเดือน (%)', summary.monthlyUserGrowth ?? 'ใหม่'],
+        ['ระยะเวลาใช้งานเฉลี่ย (วินาที)', summary.averageSessionSeconds],
+        ['ช่วงเวลาที่มีผู้ใช้สูงสุด', summary.peakUsageTime ?? 'ไม่มีข้อมูล'],
+        ['เซสชันในช่วงเวลาที่เลือก', summary.totalSessions],
+        ['ยอดดูสถานที่รายเดือน', summary.monthlyDestinationViews],
+        ['ผู้ชมสถานที่ไม่ซ้ำรายเดือน', summary.monthlyUniqueDestinationViewers],
+        ['ยอดดูสถานที่ในช่วงเวลาที่เลือก', summary.periodDestinationViews],
+        ['ผู้ชมสถานที่ไม่ซ้ำในช่วงเวลาที่เลือก', summary.periodUniqueDestinationViewers],
         [],
-        ['Time bucket', 'Active users', 'Sessions', 'Destination views', 'Unique destination viewers'],
+        ['ช่วงเวลา', 'ผู้ใช้ที่ใช้งาน', 'เซสชัน', 'ยอดดูสถานที่', 'ผู้ชมสถานที่ไม่ซ้ำ'],
         ...(stats.trendData ?? []).map((point) => [
             point.key,
             point.activeUsers,
@@ -129,7 +136,7 @@ export const buildAnalyticsCsv = (stats) => {
             point.uniqueDestinationViewers,
         ]),
         [],
-        ['Popular destination', 'Views', 'Unique viewers'],
+        ['สถานที่ยอดนิยม', 'ยอดดู', 'ผู้ชมไม่ซ้ำ'],
         ...(stats.topDestinations ?? []).map((destination) => [
             destination.name,
             destination.viewer,

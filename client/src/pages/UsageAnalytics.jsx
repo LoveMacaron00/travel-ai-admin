@@ -19,6 +19,7 @@ import {
     analyticsRanges,
     buildAnalyticsCsv,
     formatDuration,
+    formatPeriodLabel,
     formatUpdatedAt,
     normalizeAnalyticsPayload,
     normalizeDestinationTrendPayload,
@@ -56,7 +57,7 @@ const UsageAnalytics = () => {
                     setError(
                         requestError.response?.data?.message
                         || requestError.message
-                        || 'Unable to load analytics data.',
+                        || 'ไม่สามารถโหลดข้อมูลสถิติได้',
                     );
                 }
             } finally {
@@ -118,7 +119,7 @@ const UsageAnalytics = () => {
                 setDestinationTrendError(
                     requestError.response?.data?.message
                     || requestError.message
-                    || 'Unable to load destination trend.',
+                    || 'ไม่สามารถโหลดแนวโน้มของสถานที่ได้',
                 );
             }
         } finally {
@@ -146,7 +147,7 @@ const UsageAnalytics = () => {
             <div className="flex h-[60vh] items-center justify-center p-6" role="status">
                 <div className="flex flex-col items-center gap-4">
                     <div className="h-12 w-12 animate-spin rounded-full border-4 border-yellow-500/20 border-t-yellow-500" />
-                    <p className="font-medium text-gray-400">Loading live analytics...</p>
+                    <p className="font-medium text-gray-400">กำลังโหลดข้อมูลสถิติ...</p>
                 </div>
             </div>
         );
@@ -157,7 +158,7 @@ const UsageAnalytics = () => {
             <div className="flex h-[60vh] items-center justify-center p-6">
                 <div className="max-w-md rounded-xl border border-rose-500/20 bg-gray-900 p-6 text-center shadow-xl">
                     <Activity className="mx-auto text-rose-400" size={36} />
-                    <h1 className="mt-4 text-lg font-bold text-white">Analytics are unavailable</h1>
+                    <h1 className="mt-4 text-lg font-bold text-white">ไม่สามารถแสดงข้อมูลสถิติได้</h1>
                     <p className="mt-2 text-sm text-gray-400">{error}</p>
                     <button
                         type="button"
@@ -165,7 +166,7 @@ const UsageAnalytics = () => {
                         className="mt-5 inline-flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-bold text-black hover:bg-yellow-400"
                     >
                         <RefreshCw size={15} />
-                        Try again
+                        ลองอีกครั้ง
                     </button>
                 </div>
             </div>
@@ -185,9 +186,10 @@ const UsageAnalytics = () => {
             uniqueDestinationViewers: destinationPoint?.uniqueViewers ?? 0,
         };
     });
+    const periodLabel = formatPeriodLabel(stats.periodLabel);
     const viewLabel = selectedDestination
-        ? `${selectedDestination.name} views`
-        : 'destination views';
+        ? `ยอดดู ${selectedDestination.name}`
+        : 'ยอดดูสถานที่';
 
     return (
         <main className="w-full space-y-4 p-3 md:p-4">
@@ -195,12 +197,12 @@ const UsageAnalytics = () => {
                 <div className="pointer-events-none absolute -mr-20 -mt-20 right-0 top-0 h-64 w-64 rounded-full bg-yellow-500/10 blur-3xl" />
                 <div className="relative z-10 flex flex-col justify-between gap-4 md:flex-row md:items-end">
                     <div>
-                        <h1 className="text-xl font-extrabold tracking-tight text-white md:text-2xl">Usage Analytics</h1>
+                        <h1 className="text-xl font-extrabold tracking-tight text-white md:text-2xl">สถิติการใช้งาน</h1>
                         <p className="mt-2 max-w-xl text-sm leading-relaxed text-gray-400">
-                            Live users, monthly activity and session trends from the GoThai mobile app.
+                            ข้อมูลผู้ใช้แบบเรียลไทม์ กิจกรรมรายเดือน และแนวโน้มการใช้งานจากแอป GoThai
                         </p>
                         <p className="mt-2 text-xs text-gray-500">
-                            Last updated {formatUpdatedAt(stats.generatedAt, stats.timeZone)} · {stats.timeZone}
+                            อัปเดตล่าสุด {formatUpdatedAt(stats.generatedAt, stats.timeZone)} · {stats.timeZone}
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -211,7 +213,7 @@ const UsageAnalytics = () => {
                             className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs font-bold text-gray-200 hover:border-gray-600 hover:bg-gray-800 disabled:cursor-wait disabled:opacity-60"
                         >
                             <RefreshCw className={isRefreshing ? 'animate-spin' : ''} size={15} />
-                            Refresh
+                            รีเฟรช
                         </button>
                         <button
                             type="button"
@@ -219,7 +221,7 @@ const UsageAnalytics = () => {
                             className="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-yellow-500 to-yellow-600 px-4 py-2 text-xs font-bold text-black shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:from-yellow-400 hover:to-yellow-500"
                         >
                             <Download size={15} />
-                            Export CSV
+                            ส่งออก CSV
                         </button>
                     </div>
                 </div>
@@ -227,39 +229,39 @@ const UsageAnalytics = () => {
 
             {error && (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                    <span>{error} Showing the last successful update.</span>
-                    <button type="button" className="font-bold underline" onClick={refresh}>Retry</button>
+                    <span>{error} กำลังแสดงข้อมูลล่าสุดที่โหลดสำเร็จ</span>
+                    <button type="button" className="font-bold underline" onClick={refresh}>ลองอีกครั้ง</button>
                 </div>
             )}
 
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Usage summary">
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="สรุปการใช้งาน">
                 <MetricCard
                     icon={Activity}
-                    label="Active Users Now"
+                    label="ผู้ใช้ที่ใช้งานขณะนี้"
                     value={summary.activeUsersNow.toLocaleString()}
-                    detail={`${summary.totalRegisteredUsers.toLocaleString()} total registered users`}
+                    detail={`ผู้ใช้ลงทะเบียนทั้งหมด ${summary.totalRegisteredUsers.toLocaleString()} คน`}
                     tone="emerald"
                 />
                 <MetricCard
                     icon={Users}
-                    label="Monthly Active Users"
+                    label="ผู้ใช้ที่ใช้งานรายเดือน"
                     value={summary.monthlyActiveUsers.toLocaleString()}
-                    detail={summary.monthlyUserGrowth == null ? 'First month with recorded activity' : 'Compared with the previous calendar month'}
+                    detail={summary.monthlyUserGrowth == null ? 'เดือนแรกที่มีการบันทึกกิจกรรม' : 'เปรียบเทียบกับเดือนก่อนหน้า'}
                     tone="blue"
                     growth={summary.monthlyUserGrowth}
                 />
                 <MetricCard
                     icon={Timer}
-                    label="Average Session"
+                    label="ระยะเวลาใช้งานเฉลี่ย"
                     value={formatDuration(summary.averageSessionSeconds)}
-                    detail={`${summary.totalSessions.toLocaleString()} sessions during ${stats.periodLabel.toLowerCase()}`}
+                    detail={`${summary.totalSessions.toLocaleString()} เซสชัน ในช่วง ${periodLabel}`}
                     tone="violet"
                 />
                 <MetricCard
                     icon={Clock3}
-                    label="Peak Usage Time"
-                    value={summary.peakUsageTime || 'No data yet'}
-                    detail={`Most session starts during ${stats.periodLabel.toLowerCase()}`}
+                    label="ช่วงเวลาที่มีผู้ใช้สูงสุด"
+                    value={summary.peakUsageTime || 'ยังไม่มีข้อมูล'}
+                    detail={`ช่วงเริ่มเซสชันสูงสุดภายใน ${periodLabel}`}
                     tone="amber"
                 />
             </section>
@@ -270,12 +272,12 @@ const UsageAnalytics = () => {
                         <div>
                             <h2 className="flex items-center gap-2 text-lg font-bold text-white">
                                 <TrendingUp className="text-emerald-500" size={20} />
-                                Usage & Destination Views
+                                การใช้งานและยอดดูสถานที่
                             </h2>
                             <p className="mt-1 text-sm text-gray-500">
                                 {selectedDestination
-                                    ? `Popularity trend for ${selectedDestination.name}`
-                                    : 'Active users and all destination detail views'}
+                                    ? `แนวโน้มความนิยมของ ${selectedDestination.name}`
+                                    : 'ผู้ใช้ที่ใช้งานและยอดดูรายละเอียดสถานที่ทั้งหมด'}
                             </p>
                             {selectedDestination && (
                                 <button
@@ -283,11 +285,11 @@ const UsageAnalytics = () => {
                                     onClick={() => selectDestination(selectedDestination)}
                                     className="mt-2 text-xs font-semibold text-amber-400 hover:text-amber-300"
                                 >
-                                    Clear destination filter
+                                    ล้างตัวกรองสถานที่
                                 </button>
                             )}
                         </div>
-                        <div className="flex flex-wrap rounded-lg border border-gray-800 bg-black/40 p-1" aria-label="Chart time range">
+                        <div className="flex flex-wrap rounded-lg border border-gray-800 bg-black/40 p-1" aria-label="ช่วงเวลาของกราฟ">
                             {analyticsRanges.map((option) => (
                                 <button
                                     type="button"
@@ -310,7 +312,7 @@ const UsageAnalytics = () => {
                         <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-gray-500">
                             <span className="inline-flex items-center gap-2">
                                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                                Active users
+                                ผู้ใช้ที่ใช้งาน
                             </span>
                             <span className="inline-flex items-center gap-2">
                                 <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
@@ -327,10 +329,10 @@ const UsageAnalytics = () => {
                     <div className="border-b border-gray-800 p-4">
                         <h2 className="flex items-center gap-2 text-lg font-bold text-white">
                             <BarChart3 className="text-blue-500" size={20} />
-                            Popular Destinations
+                            สถานที่ยอดนิยม
                         </h2>
                         <p className="mt-1 text-sm text-gray-500">
-                            Ranked by detail views during {stats.periodLabel.toLowerCase()}
+                            จัดอันดับตามยอดดูรายละเอียดในช่วง {periodLabel}
                         </p>
                     </div>
                     <div className="space-y-2 p-4">
@@ -365,17 +367,17 @@ const UsageAnalytics = () => {
                                 </div>
                                 <div className="text-right">
                                     <p className="text-sm font-bold text-gray-200">{destination.viewer.toLocaleString()}</p>
-                                    <p className="text-[10px] text-gray-500">views</p>
+                                    <p className="text-[10px] text-gray-500">ครั้ง</p>
                                     <p className="mt-0.5 text-[10px] text-gray-600">
-                                        {destination.uniqueViewers.toLocaleString()} unique
+                                        ผู้ชมไม่ซ้ำ {destination.uniqueViewers.toLocaleString()} คน
                                     </p>
                                 </div>
                             </button>
                         )) : (
                             <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
                                 <CalendarDays className="mb-3 text-gray-700" size={36} />
-                                <p className="text-sm font-semibold text-gray-400">No destinations yet</p>
-                                <p className="mt-1 text-xs text-gray-600">Approved destinations will appear here.</p>
+                                <p className="text-sm font-semibold text-gray-400">ยังไม่มีสถานที่</p>
+                                <p className="mt-1 text-xs text-gray-600">สถานที่ที่อนุมัติแล้วจะแสดงที่นี่</p>
                             </div>
                         )}
                     </div>

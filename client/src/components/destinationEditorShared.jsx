@@ -11,6 +11,9 @@ L.Icon.Default.mergeOptions({
     shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
+L.Control.Zoom.prototype.options.zoomInTitle = 'ซูมเข้า';
+L.Control.Zoom.prototype.options.zoomOutTitle = 'ซูมออก';
+
 // Toolbar ต้องเหมือนกันทั้งหน้า Add และ Edit เพื่อไม่ให้ HTML ที่บันทึกมีรูปแบบต่างกัน
 export const DESTINATION_EDITOR_MODULES = {
     toolbar: [
@@ -20,6 +23,67 @@ export const DESTINATION_EDITOR_MODULES = {
         ['link'],
         ['clean'],
     ],
+};
+
+const EDITOR_BUTTON_LABELS = {
+    'ql-bold': 'ตัวหนา',
+    'ql-italic': 'ตัวเอียง',
+    'ql-underline': 'ขีดเส้นใต้',
+    'ql-strike': 'ขีดทับ',
+    'ql-link': 'แทรกลิงก์',
+    'ql-clean': 'ล้างรูปแบบ',
+};
+
+/** เปลี่ยนชื่อเครื่องมือที่ Quill สร้างเป็นภาษาไทยหลัง editor แสดงผล */
+export const useThaiDestinationEditorLabels = () => {
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            document.querySelectorAll('.ql-toolbar button').forEach((button) => {
+                const className = Object.keys(EDITOR_BUTTON_LABELS)
+                    .find((name) => button.classList.contains(name));
+                const listType = button.classList.contains('ql-list')
+                    ? button.value || button.getAttribute('value')
+                    : null;
+                const label = className
+                    ? EDITOR_BUTTON_LABELS[className]
+                    : listType === 'ordered'
+                        ? 'รายการลำดับเลข'
+                        : listType === 'bullet'
+                            ? 'รายการหัวข้อ'
+                            : '';
+
+                if (label) {
+                    button.setAttribute('aria-label', label);
+                    button.setAttribute('title', label);
+                }
+            });
+
+            document.querySelectorAll('.ql-header .ql-picker-label').forEach((label) => {
+                label.setAttribute('aria-label', 'รูปแบบข้อความ');
+                label.setAttribute('title', 'รูปแบบข้อความ');
+            });
+
+            document.querySelectorAll('.ql-header .ql-picker-item').forEach((item) => {
+                const value = item.getAttribute('data-value');
+                const label = value ? `หัวข้อ ${value}` : 'ข้อความปกติ';
+                item.setAttribute('aria-label', label);
+                item.setAttribute('title', label);
+            });
+
+            document.querySelectorAll('.ql-tooltip input').forEach((input) => {
+                input.setAttribute('placeholder', 'กรอก URL');
+                input.setAttribute('aria-label', 'URL ของลิงก์');
+            });
+            document.querySelectorAll('.ql-tooltip .ql-action').forEach((action) => {
+                action.setAttribute('aria-label', 'บันทึกหรือแก้ไขลิงก์');
+            });
+            document.querySelectorAll('.ql-tooltip .ql-remove').forEach((remove) => {
+                remove.setAttribute('aria-label', 'ลบลิงก์');
+            });
+        }, 0);
+
+        return () => clearTimeout(timer);
+    }, []);
 };
 
 /** เลื่อนแผนที่ตามค่าพิกัดที่เปลี่ยนจากฟอร์มหรือผลการค้นหา */

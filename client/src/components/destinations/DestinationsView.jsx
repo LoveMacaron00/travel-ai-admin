@@ -35,21 +35,21 @@ const DestinationsView = ({
 
                 <div className="relative z-10">
                     <div className="flex items-center gap-2 mb-3">
-                        <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">Explore</span>
+                        <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">จัดการสถานที่</span>
                     </div>
                     <h1 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
-                        Destinations
+                        สถานที่ท่องเที่ยว
                     </h1>
                     <p className="text-gray-400 mt-2 text-base max-w-xl leading-relaxed">
-                        Manage all travel destinations. Browse places from TAT API or create your own custom locations.
+                        จัดการสถานที่ท่องเที่ยวจาก TAT API และสถานที่ที่ผู้ดูแลระบบเพิ่มเอง
                     </p>
                     {sourceTotalCount > 0 && (
                         <div className="flex items-center gap-2 mt-4">
                             <span className="bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-700">
-                                Total: {sourceTotalCount.toLocaleString()} places
+                                ทั้งหมด: {sourceTotalCount.toLocaleString()} แห่ง
                             </span>
                             <span className="bg-gray-800/50 text-gray-400 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-700/50">
-                                Source: {filters.source === 'tat' ? 'TAT API' : 'Admin Added'}
+                                แหล่งข้อมูล: {filters.source === 'tat' ? 'TAT API' : 'ผู้ดูแลระบบเพิ่ม'}
                             </span>
                         </div>
                     )}
@@ -65,7 +65,7 @@ const DestinationsView = ({
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Search places..."
+                            placeholder="ค้นหาสถานที่..."
                             className="pl-10 pr-4 py-3 w-full sm:w-72 bg-black/40 border border-gray-700 focus:border-yellow-500/50 focus:ring-2 focus:ring-yellow-500/20 rounded-xl text-sm text-white shadow-inner outline-none"
                         />
                     </form>
@@ -77,7 +77,7 @@ const DestinationsView = ({
                             className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none disabled:transform-none"
                         >
                             <RefreshCw size={18} className={bulkSyncing ? 'animate-spin' : ''} />
-                            {bulkSyncing ? 'Syncing...' : 'Sync TAT to DB'}
+                            {bulkSyncing ? 'กำลังซิงก์...' : 'ซิงก์ TAT เข้าฐานข้อมูล'}
                         </button>
                     )}
 
@@ -87,7 +87,7 @@ const DestinationsView = ({
                             className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.3)]"
                         >
                             <Plus size={18} />
-                            Add New
+                            เพิ่มสถานที่
                         </button>
                     )}
                 </div>
@@ -100,7 +100,7 @@ const DestinationsView = ({
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="font-bold text-white flex items-center gap-2">
                                 <Filter size={18} className="text-yellow-500" />
-                                Filters
+                                ตัวกรอง
                             </h3>
                             <button
                                 onClick={() =>
@@ -108,13 +108,13 @@ const DestinationsView = ({
                                 }
                                 className="text-xs font-semibold text-yellow-500/80 px-2 py-1 bg-yellow-500/10 rounded-lg"
                             >
-                                Reset
+                                ล้างค่า
                             </button>
                         </div>
 
                         {/* Source Filter */}
                         <div className="space-y-3">
-                            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">Data Source</p>
+                            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">แหล่งข้อมูล</p>
 
                             <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer ${filters.source === 'tat' ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-black/20 border-transparent'}`}>
                                 <input
@@ -141,14 +141,14 @@ const DestinationsView = ({
                                 <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${filters.source === 'admin' ? 'border-blue-500' : 'border-gray-500'}`}>
                                     {filters.source === 'admin' && <div className="w-2 h-2 rounded-full bg-blue-500" />}
                                 </div>
-                                <span className={`text-sm font-medium ${filters.source === 'admin' ? 'text-blue-400' : 'text-gray-400'}`}>Admin Added</span>
+                                <span className={`text-sm font-medium ${filters.source === 'admin' ? 'text-blue-400' : 'text-gray-400'}`}>ผู้ดูแลระบบเพิ่ม</span>
                             </label>
                         </div>
 
                         {/* Category Filter (TAT API only) */}
                         {filters.source === 'tat' && (
                             <div className="mt-8 pt-6 border-t border-gray-800 space-y-3">
-                                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">หมวดหมู่ (Category)</p>
+                                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">หมวดหมู่</p>
 
                                 {placeCategories.map((cat) => (
                                     <label
@@ -176,13 +176,13 @@ const DestinationsView = ({
                         {/* Status Filter (Admin Added only) */}
                         {filters.source === 'admin' && (
                         <div className="mt-8 pt-6 border-t border-gray-800 space-y-3">
-                            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">Status</p>
+                            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">สถานะ</p>
 
                             {[
-                                { id: 'all', label: 'All Status', count: null },
-                                { id: 'approved', label: 'Approved', count: statusCounts.approved },
-                                { id: 'pending', label: 'Pending', count: statusCounts.pending },
-                                { id: 'rejected', label: 'Rejected', count: statusCounts.rejected }
+                                { id: 'all', label: 'ทุกสถานะ', count: null },
+                                { id: 'approved', label: 'อนุมัติแล้ว', count: statusCounts.approved },
+                                { id: 'pending', label: 'รออนุมัติ', count: statusCounts.pending },
+                                { id: 'rejected', label: 'ไม่อนุมัติ', count: statusCounts.rejected }
                             ].map((status) => (
                                 <label key={status.id} className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer group ${filters.status === status.id ? 'bg-white/10' : 'hover:bg-white/5'}`}>
                                     <div className="flex items-center gap-3">
@@ -213,7 +213,7 @@ const DestinationsView = ({
                     <div className="flex items-center justify-between">
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <LayoutGrid size={20} className="text-gray-400" />
-                            Results Showcase
+                            รายการสถานที่
                         </h2>
                     </div>
 
@@ -252,7 +252,7 @@ const DestinationsView = ({
                                         ) : (
                                             <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
                                                 <Compass size={40} className="text-gray-600 mb-2" />
-                                                <span className="text-xs text-gray-500">No Image</span>
+                                                <span className="text-xs text-gray-500">ไม่มีรูปภาพ</span>
                                             </div>
                                         )}
 
@@ -268,21 +268,21 @@ const DestinationsView = ({
                                                             : 'bg-blue-500/20 text-blue-300 border-blue-500/30'
                                                     }`}
                                                 >
-                                                    {(item.source === 'tat_api' || item.source === 'tat_synced') ? 'TAT API' : 'ADMIN'}
+                                                    {(item.source === 'tat_api' || item.source === 'tat_synced') ? 'TAT API' : 'ผู้ดูแลระบบ'}
                                                 </span>
                                                 {item.status === 'approved' && (item.source === 'admin' || item.source === 'tat_synced') && (
                                                 <span className="px-2 py-1 bg-emerald-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-emerald-400/50">
-                                                    APPROVED
+                                                    อนุมัติแล้ว
                                                 </span>
                                             )}
                                             {item.status === 'pending' && (
                                                 <span className="px-2 py-1 bg-amber-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-amber-400/50">
-                                                    PENDING
+                                                    รออนุมัติ
                                                 </span>
                                             )}
                                             {item.status === 'rejected' && (
                                                 <span className="px-2 py-1 bg-rose-500/80 backdrop-blur-md text-white text-[10px] font-bold rounded-lg border border-rose-400/50">
-                                                    REJECTED
+                                                    ไม่อนุมัติ
                                                 </span>
                                             )}
                                         </div>
@@ -298,7 +298,7 @@ const DestinationsView = ({
                                         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
                                             <p className="text-xs text-gray-400 flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/5">
                                                 <MapPin size={12} className="text-gray-500" />
-                                                <span className="truncate max-w-[120px]">{item.province || 'N/A'}</span>
+                                                <span className="truncate max-w-[120px]">{item.province || 'ไม่ระบุ'}</span>
                                             </p>
 
                                             {item.category && (
@@ -342,7 +342,7 @@ const DestinationsView = ({
                                                         className="flex-1 py-2.5 bg-white/5 text-white text-sm font-semibold rounded-xl border border-gray-700 text-center flex items-center justify-center gap-2"
                                                     >
                                                         <Eye size={16} />
-                                                        View
+                                                        ดูข้อมูล
                                                     </button>
                                                     <button
                                                         onClick={() => handleSingleSyncTAT(item.id, item.name)}
@@ -350,7 +350,7 @@ const DestinationsView = ({
                                                         className="flex-1 py-2.5 bg-emerald-600 disabled:bg-gray-800 disabled:text-gray-500 text-white text-sm font-semibold rounded-xl text-center flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 disabled:shadow-none"
                                                     >
                                                         <RefreshCw size={16} className={syncingId === item.id ? 'animate-spin' : ''} />
-                                                        {syncingId === item.id ? 'Syncing' : 'Sync & Embed'}
+                                                        {syncingId === item.id ? 'กำลังซิงก์' : 'ซิงก์และสร้าง Embedding'}
                                                     </button>
                                                 </>
                                             ) : (
@@ -359,13 +359,13 @@ const DestinationsView = ({
                                                         onClick={() => navigate(`/destinations/edit/${item.id}`)}
                                                         className="flex-1 py-2.5 bg-yellow-500 text-white text-sm font-semibold rounded-xl text-center shadow-lg shadow-yellow-500/20"
                                                     >
-                                                        Edit
+                                                        แก้ไข
                                                     </button>
                                                     <button
                                                         onClick={() => handleDelete(item.id)}
                                                         className="flex-1 py-2.5 bg-red-500/10 text-red-500 text-sm font-semibold rounded-xl text-center border border-red-500/20"
                                                     >
-                                                        Delete
+                                                        ลบ
                                                     </button>
                                                 </>
                                             )}
@@ -381,9 +381,9 @@ const DestinationsView = ({
                             <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mb-4">
                                 <Search size={32} className="text-gray-500" />
                             </div>
-                            <h3 className="text-xl font-bold text-white mb-2">No Destinations Found</h3>
+                            <h3 className="text-xl font-bold text-white mb-2">ไม่พบสถานที่</h3>
                             <p className="text-gray-500 max-w-sm">
-                                Try adjusting your search or filters to find what you're looking for, or add a new destination manually.
+                                ลองเปลี่ยนคำค้นหาหรือตัวกรอง หรือเพิ่มสถานที่ใหม่ด้วยตนเอง
                             </p>
                         </div>
                     )}
@@ -392,7 +392,7 @@ const DestinationsView = ({
                     {filters.source === 'tat' && totalPages > 1 && (
                         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 shadow-lg">
                             <p className="text-sm text-gray-400">
-                                Showing page <span className="text-white font-medium">{visiblePage}</span> of <span className="text-white font-medium">{visibleTotalPages}</span>
+                                หน้า <span className="text-white font-medium">{visiblePage}</span> จาก <span className="text-white font-medium">{visibleTotalPages}</span>
                             </p>
 
                             <div className="flex items-center gap-1.5 bg-black/30 p-1.5 rounded-xl border border-gray-800">

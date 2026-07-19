@@ -189,9 +189,9 @@ const Destinations = () => {
             ? PLACE_CATEGORIES.find((c) => c.id === filters.placeCategory)?.label || filters.placeCategory
             : 'ทุกหมวดหมู่';
         const result = await showConfirmAlert({
-            title: 'Sync สถานที่จาก TAT API?',
-            text: `คุณต้องการเริ่ม Sync สถานที่ทั้งหมด (หมวดหมู่: ${activeCategory}, คำค้น: "${debouncedSearch || 'ทั้งหมด'}") เข้าสู่ระบบและคำนวณ Embedding ใช่หรือไม่? (ใช้เวลาสักครู่ใน Background)`,
-            confirmButtonText: 'เริ่ม Sync',
+            title: 'ซิงก์สถานที่จาก TAT API หรือไม่?',
+            text: `คุณต้องการเริ่มซิงก์สถานที่ทั้งหมด (หมวดหมู่: ${activeCategory}, คำค้น: "${debouncedSearch || 'ทั้งหมด'}") เข้าสู่ระบบและสร้าง Embedding ใช่หรือไม่? ระบบจะดำเนินการต่อในเบื้องหลัง`,
+            confirmButtonText: 'เริ่มซิงก์',
             cancelButtonText: 'ยกเลิก'
         });
 
@@ -203,10 +203,10 @@ const Destinations = () => {
                 keyword: debouncedSearch,
                 placeCategory: filters.placeCategory !== 'all' ? filters.placeCategory : undefined
             });
-            await showSuccessAlert(res.data?.message || 'สั่ง Sync ข้อมูลทั้งหมดเรียบร้อยแล้ว (รันใน Background)');
+            await showSuccessAlert(res.data?.message || 'เริ่มซิงก์ข้อมูลทั้งหมดแล้ว ระบบกำลังดำเนินการในเบื้องหลัง');
         } catch (err) {
             console.error('เกิดข้อผิดพลาดในการ Bulk Sync:', err);
-            await showErrorAlert(err.response?.data?.message || 'สั่ง Sync ข้อมูลไม่สำเร็จ');
+            await showErrorAlert(err.response?.data?.message || 'สั่งซิงก์ข้อมูลไม่สำเร็จ');
         } finally {
             setBulkSyncing(false);
         }
@@ -214,9 +214,9 @@ const Destinations = () => {
 
     const handleSingleSyncTAT = async (tatPlaceId, name) => {
         const result = await showConfirmAlert({
-            title: 'Sync สถานที่นี้?',
-            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและทำ Embedding ใช่หรือไม่?`,
-            confirmButtonText: 'เริ่ม Sync',
+            title: 'ซิงก์สถานที่นี้หรือไม่?',
+            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและสร้าง Embedding ใช่หรือไม่?`,
+            confirmButtonText: 'เริ่มซิงก์',
             cancelButtonText: 'ยกเลิก'
         });
 
@@ -225,10 +225,10 @@ const Destinations = () => {
         setSyncingId(tatPlaceId);
         try {
             await api.post(`/admin/sync/tat/${tatPlaceId}`);
-            await showSuccessAlert(`Sync และทำ Embedding สำหรับ "${name}" สำเร็จแล้ว!`);
+            await showSuccessAlert(`ซิงก์และสร้าง Embedding สำหรับ "${name}" สำเร็จแล้ว`);
         } catch (err) {
             console.error('เกิดข้อผิดพลาดในการ Sync รายบุคคล:', err);
-            await showErrorAlert(err.response?.data?.message || 'Sync สถานที่ไม่สำเร็จ');
+            await showErrorAlert(err.response?.data?.message || 'ซิงก์สถานที่ไม่สำเร็จ');
         } finally {
             setSyncingId(null);
         }

@@ -30,6 +30,43 @@ body {
   overflow: hidden;
 }
 
+/* Quill สร้างชื่อเมนูจาก pseudo-element จึงกำหนดคำไทยสำหรับ editor ของผู้ดูแลระบบ */
+.ql-snow .ql-picker.ql-header .ql-picker-label:not([data-value])::before,
+.ql-snow .ql-picker.ql-header .ql-picker-item:not([data-value])::before {
+  content: 'ข้อความปกติ' !important;
+}
+
+.ql-snow .ql-picker.ql-header .ql-picker-label[data-value='1']::before,
+.ql-snow .ql-picker.ql-header .ql-picker-item[data-value='1']::before {
+  content: 'หัวข้อ 1' !important;
+}
+
+.ql-snow .ql-picker.ql-header .ql-picker-label[data-value='2']::before,
+.ql-snow .ql-picker.ql-header .ql-picker-item[data-value='2']::before {
+  content: 'หัวข้อ 2' !important;
+}
+
+.ql-snow .ql-picker.ql-header .ql-picker-label[data-value='3']::before,
+.ql-snow .ql-picker.ql-header .ql-picker-item[data-value='3']::before {
+  content: 'หัวข้อ 3' !important;
+}
+
+.ql-snow .ql-tooltip::before {
+  content: 'ไปยัง URL:' !important;
+}
+
+.ql-snow .ql-tooltip a.ql-action::after {
+  content: 'แก้ไข' !important;
+}
+
+.ql-snow .ql-tooltip.ql-editing a.ql-action::after {
+  content: 'บันทึก' !important;
+}
+
+.ql-snow .ql-tooltip a.ql-remove::before {
+  content: 'ลบ' !important;
+}
+
 /* แก้ไขปัญหา sidebar สูงไม่พอ */
 .flex.h-screen {
   height: 100vh;

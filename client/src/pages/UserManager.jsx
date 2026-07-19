@@ -77,13 +77,13 @@ const UserManager = () => {
 
                 <div className="relative z-10">
                     <div className="flex items-center gap-2 mb-3">
-                        <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">Homiie Admin</span>
+                        <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">ผู้ดูแลระบบ Homiie</span>
                     </div>
                     <h1 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
-                        User Management
+                        จัดการผู้ใช้งาน
                     </h1>
                     <p className="text-gray-400 mt-2 text-base max-w-xl leading-relaxed">
-                        Monitor user activity, manage access permissions, and engage with community feedback from a centralized dashboard.
+                        ตรวจสอบกิจกรรม จัดการสิทธิ์การใช้งาน และตอบกลับความคิดเห็นของผู้ใช้ในที่เดียว
                     </p>
                 </div>
 
@@ -93,7 +93,7 @@ const UserManager = () => {
                     className="relative z-10 flex items-center gap-2 px-5 py-2.5 bg-white/5 border border-gray-700 rounded-xl text-sm font-medium text-gray-300 disabled:opacity-50"
                 >
                     <RefreshCw size={16} className={isLoading ? "text-yellow-400" : "text-yellow-400"} />
-                    Refresh Data
+                    รีเฟรชข้อมูล
                 </button>
             </div>
 
@@ -107,7 +107,7 @@ const UserManager = () => {
                         <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20 shadow-[0_0_20px_rgba(59,130,246,0.1)]">
                             <Users size={16} />
                         </div>
-                        <p className="font-semibold text-gray-400">Total Users</p>
+                        <p className="font-semibold text-gray-400">ผู้ใช้ทั้งหมด</p>
                     </div>
                     <div className="flex items-baseline gap-3">
                         <p className="text-xl md:text-2xl font-extrabold text-white tracking-tight">{users.length}</p>
@@ -122,7 +122,7 @@ const UserManager = () => {
                         <div className="p-2.5 rounded-lg bg-red-500/10 text-red-400 ring-1 ring-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
                             <Shield size={16} />
                         </div>
-                        <p className="font-semibold text-gray-400">Restricted</p>
+                        <p className="font-semibold text-gray-400">ถูกระงับ</p>
                     </div>
                     <div className="flex items-baseline gap-3">
                         <p className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
@@ -139,12 +139,12 @@ const UserManager = () => {
                         <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
                             <MessageSquare size={16} />
                         </div>
-                        <p className="font-semibold text-gray-400">Feedback</p>
+                        <p className="font-semibold text-gray-400">ความคิดเห็น</p>
                     </div>
                     <div className="flex items-baseline gap-3">
                         <p className="text-xl md:text-2xl font-extrabold text-white tracking-tight">{feedbacks.length}</p>
                         <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md">
-                            {feedbacks.filter(f => f.status !== 'replied').length} Pending
+                            รอตอบ {feedbacks.filter(f => f.status !== 'replied').length} รายการ
                         </span>
                     </div>
                 </div>
@@ -155,14 +155,14 @@ const UserManager = () => {
                 <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col h-[500px]">
                     <div className="p-3 md:p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900/80">
                         <div>
-                            <h2 className="text-xl font-bold text-white">Directory</h2>
-                            <p className="text-sm text-gray-500 mt-1">Manage user accounts and statuses</p>
+                            <h2 className="text-xl font-bold text-white">รายชื่อผู้ใช้งาน</h2>
+                            <p className="text-sm text-gray-500 mt-1">จัดการบัญชีและสถานะผู้ใช้งาน</p>
                         </div>
                         <div className="relative">
                             <Search className="absolute left-3.5 top-1/2 text-gray-500" size={16} />
                             <input
                                 type="text"
-                                placeholder="Search users..."
+                                placeholder="ค้นหาผู้ใช้งาน..."
                                 className="pl-10 pr-4 py-2.5 bg-black/40 border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/50 w-64 shadow-inner"
                             />
                         </div>
@@ -172,16 +172,16 @@ const UserManager = () => {
                         <table className="w-full text-left border-collapse">
                             <thead className="sticky top-0 bg-gray-900/95 backdrop-blur-md text-xs text-gray-500 font-semibold uppercase tracking-wider z-10 shadow-sm border-b border-gray-800">
                                 <tr>
-                                    <th className="py-2.5 px-3">User Details</th>
-                                    <th className="py-2.5 px-3">Status</th>
-                                    <th className="py-2.5 px-3 text-right">Actions</th>
+                                    <th className="py-2.5 px-3">ข้อมูลผู้ใช้</th>
+                                    <th className="py-2.5 px-3">สถานะ</th>
+                                    <th className="py-2.5 px-3 text-right">การจัดการ</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-800/50">
                                 {users.length === 0 && !isLoading ? (
                                     <tr>
                                         <td colSpan="3" className="py-16 text-center text-gray-500">
-                                            No users found.
+                                            ไม่พบผู้ใช้งาน
                                         </td>
                                     </tr>
                                 ) : users.map((user) => (
@@ -196,7 +196,7 @@ const UserManager = () => {
                                                 </div>
                                                 <div>
                                                     <p className="font-semibold text-gray-200">
-                                                        {user.username || 'Unknown User'}
+                                                        {user.username || 'ไม่ทราบชื่อผู้ใช้'}
                                                     </p>
                                                     <p className="text-sm text-gray-500 mt-0.5">
                                                         {user.email}
@@ -212,13 +212,13 @@ const UserManager = () => {
                                                     }`}
                                             >
                                                 <span className={`w-1.5 h-1.5 rounded-full ${user.is_banned ? 'bg-red-400' : 'bg-emerald-400'}`}></span>
-                                                {user.is_banned ? 'Suspended' : 'Active'}
+                                                {user.is_banned ? 'ถูกระงับ' : 'ใช้งานอยู่'}
                                             </span>
                                         </td>
                                         <td className="py-2 px-3 text-right">
                                             {user.is_banned ? (
                                                 <span className="inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 bg-gray-800/50">
-                                                    Banned
+                                                    ระงับแล้ว
                                                 </span>
                                             ) : (
                                                 <button
@@ -226,7 +226,7 @@ const UserManager = () => {
                                                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-red-400/90 border border-transparent shadow-sm"
                                                 >
                                                     <Ban size={15} />
-                                                    Ban User
+                                                    ระงับผู้ใช้
                                                 </button>
                                             )}
                                         </td>
@@ -241,16 +241,16 @@ const UserManager = () => {
                 <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col h-[500px]">
                     <div className="p-3 md:p-4 border-b border-gray-800 bg-gray-900/80">
                         <div className="flex justify-between items-center mb-1">
-                            <h2 className="text-xl font-bold text-white">User Voices</h2>
+                            <h2 className="text-xl font-bold text-white">ความคิดเห็นจากผู้ใช้</h2>
                         </div>
-                        <p className="text-sm text-gray-500">Recent feedback & inquiries</p>
+                        <p className="text-sm text-gray-500">ความคิดเห็นและคำถามล่าสุด</p>
                     </div>
 
                     <div className="overflow-y-auto flex-1 p-3 md:p-4 space-y-3 custom-scrollbar bg-gray-900/30">
                         {feedbacks.length === 0 && !isLoading ? (
                             <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
                                 <MessageSquare size={40} className="opacity-20" />
-                                <p className="font-medium">No feedback available</p>
+                                <p className="font-medium">ยังไม่มีความคิดเห็น</p>
                             </div>
                         ) : feedbacks.map((fb) => (
                             <div
@@ -264,7 +264,7 @@ const UserManager = () => {
                                         </div>
                                         <div>
                                             <span className="font-semibold text-gray-200 text-sm block">
-                                                {fb.username || 'Unknown'}
+                                                {fb.username || 'ไม่ทราบชื่อ'}
                                             </span>
                                             <span className="text-gray-500 text-xs font-medium">
                                                 {fb.user_email}
@@ -275,7 +275,7 @@ const UserManager = () => {
                                         ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
                                         : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
                                         }`}>
-                                        {fb.status === 'replied' ? 'Replied' : 'Pending'}
+                                        {fb.status === 'replied' ? 'ตอบแล้ว' : 'รอตอบ'}
                                     </span>
                                 </div>
 
@@ -286,7 +286,7 @@ const UserManager = () => {
                                 {fb.admin_reply && (
                                     <div className="pl-4 border-l-2 border-blue-500/40 mt-4 relative">
                                         <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-                                        <p className="text-[11px] font-bold text-blue-400 mb-1.5 uppercase tracking-wider">Admin Response</p>
+                                        <p className="text-[11px] font-bold text-blue-400 mb-1.5 uppercase tracking-wider">คำตอบจากผู้ดูแลระบบ</p>
                                         <p className="text-gray-400 text-sm bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">{fb.admin_reply}</p>
                                     </div>
                                 )}
@@ -296,7 +296,7 @@ const UserManager = () => {
                                         <textarea
                                             value={replyText}
                                             onChange={(e) => setReplyText(e.target.value)}
-                                            placeholder="Type your response here..."
+                                            placeholder="พิมพ์คำตอบที่นี่..."
                                             className="w-full p-4 bg-gray-900/80 border border-gray-700 focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 rounded-xl text-sm text-gray-200 mb-3 outline-none resize-none shadow-inner"
                                             rows={3}
                                             autoFocus
@@ -306,7 +306,7 @@ const UserManager = () => {
                                                 onClick={() => { setReplyingTo(null); setReplyText(''); }}
                                                 className="px-4 py-2 bg-transparent text-gray-400 hover:text-white rounded-xl text-sm font-semibold"
                                             >
-                                                Cancel
+                                                ยกเลิก
                                             </button>
                                             <button
                                                 onClick={() => handleReply(fb.id)}
@@ -314,7 +314,7 @@ const UserManager = () => {
                                                 className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-[0_4px_14px_0_rgba(37,99,235,0.39)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.23)] disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
                                             >
                                                 <Check size={16} />
-                                                Send Reply
+                                                ส่งคำตอบ
                                             </button>
                                         </div>
                                     </div>
@@ -325,7 +325,7 @@ const UserManager = () => {
                                             className="mt-3 flex items-center gap-1.5 text-blue-400 text-sm font-semibold opacity-80"
                                         >
                                             <MessageSquare size={15} />
-                                            Write Reply
+                                            เขียนคำตอบ
                                         </button>
                                     )
                                 )}

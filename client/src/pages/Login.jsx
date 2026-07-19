@@ -22,7 +22,7 @@ const Login = ({ onLogin }) => {
             await showSuccessAlert('เข้าสู่ระบบสำเร็จ', 'ยินดีต้อนรับ');
             onLogin(data.admin);
         } catch (err) {
-            let message = 'ไม่สามารถเชื่อมต่อ Server ได้';
+            let message = 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้';
             if (err.response) {
                 message = err.response.data?.message || 'เกิดข้อผิดพลาด';
             }
@@ -44,7 +44,7 @@ const Login = ({ onLogin }) => {
                 <form onSubmit={handleSubmit} className="space-y-6">
                     {/* Email */}
                     <div>
-                        <label className="block text-sm text-gray-300 mb-2">Email</label>
+                        <label className="block text-sm text-gray-300 mb-2">อีเมล</label>
                         <input
                             type="text"
                             value={email}
@@ -56,7 +56,7 @@ const Login = ({ onLogin }) => {
 
                     {/* Password */}
                     <div>
-                        <label className="block text-sm text-gray-300 mb-2">Password</label>
+                        <label className="block text-sm text-gray-300 mb-2">รหัสผ่าน</label>
                         <input
                             type="password"
                             value={password}
@@ -79,7 +79,7 @@ const Login = ({ onLogin }) => {
                             className="px-16 py-3 font-semibold text-lg rounded"
                             style={{ background: '#f0a500', color: '#000' }}
                         >
-                            {loading ? 'กำลังเข้าสู่ระบบ...' : 'Login'}
+                            {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
                         </button>
                     </div>
                 </form>

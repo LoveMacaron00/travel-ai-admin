@@ -48,9 +48,9 @@ const ReadDestination = () => {
 
     const handleSync = async () => {
         const result = await showConfirmAlert({
-            title: 'Sync สถานที่นี้?',
-            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและทำ Embedding ใช่หรือไม่?`,
-            confirmButtonText: 'เริ่ม Sync',
+            title: 'ซิงก์สถานที่นี้หรือไม่?',
+            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและสร้าง Embedding ใช่หรือไม่?`,
+            confirmButtonText: 'เริ่มซิงก์',
             cancelButtonText: 'ยกเลิก'
         });
 
@@ -59,11 +59,11 @@ const ReadDestination = () => {
         setSyncing(true);
         try {
             await api.post(`/admin/sync/tat/${id}`);
-            await showSuccessAlert(`Sync และทำ Embedding สำหรับ "${name}" สำเร็จแล้ว!`);
+            await showSuccessAlert(`ซิงก์และสร้าง Embedding สำหรับ "${name}" สำเร็จแล้ว`);
             navigate('/destinations');
         } catch (err) {
             console.error('เกิดข้อผิดพลาดในการ Sync รายบุคคล:', err);
-            await showErrorAlert(err.response?.data?.message || 'Sync สถานที่ไม่สำเร็จ');
+            await showErrorAlert(err.response?.data?.message || 'ซิงก์สถานที่ไม่สำเร็จ');
         } finally {
             setSyncing(false);
         }
@@ -110,7 +110,7 @@ const ReadDestination = () => {
         || place.sub_district
         || '';
     const postcode = tatLocation.postcode ?? place.postcode ?? '';
-    const headerLocation = address || provinceName || 'Unknown Location';
+    const headerLocation = address || provinceName || 'ไม่ระบุตำแหน่ง';
 
     const rawDesc = place.information?.detail || place.detail || place.description || place.sha?.detail || place.place_information?.detail || place.introduction || navIntroduction || '';
     const desc = rawDesc.replace(/<\/?p>/gi, '').replace(/<\/?strong>/gi, '');
@@ -135,10 +135,10 @@ const ReadDestination = () => {
 
     const fee = place.information?.fee || place.fee || {};
     const feeRows = [
-        fee.thaiAdult != null && { label: 'Thai adult', value: `${fee.thaiAdult} THB` },
-        fee.thaiChild != null && { label: 'Thai child', value: `${fee.thaiChild} THB` },
-        fee.foreignerAdult != null && { label: 'Foreigner adult', value: `${fee.foreignerAdult} THB` },
-        fee.foreignerChild != null && { label: 'Foreigner child', value: `${fee.foreignerChild} THB` },
+        fee.thaiAdult != null && { label: 'ผู้ใหญ่ชาวไทย', value: `${fee.thaiAdult} บาท` },
+        fee.thaiChild != null && { label: 'เด็กชาวไทย', value: `${fee.thaiChild} บาท` },
+        fee.foreignerAdult != null && { label: 'ผู้ใหญ่ชาวต่างชาติ', value: `${fee.foreignerAdult} บาท` },
+        fee.foreignerChild != null && { label: 'เด็กชาวต่างชาติ', value: `${fee.foreignerChild} บาท` },
     ].filter(Boolean);
     const feeDetail = fee.detail || '';
 
@@ -180,10 +180,10 @@ const ReadDestination = () => {
 
                 <div className="relative z-10">
                     <div className="flex items-center gap-2 mb-3">
-                        <span className="px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs font-bold tracking-widest uppercase border border-blue-500/20">Destination Details</span>
+                        <span className="px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs font-bold tracking-widest uppercase border border-blue-500/20">รายละเอียดสถานที่</span>
                     </div>
                     <h1 className="text-2xl font-bold text-white tracking-tight">
-                        {name || 'Loading...'}
+                        {name || 'กำลังโหลด...'}
                     </h1>
                     <div className="flex items-center gap-2 text-gray-400 mt-2 text-sm font-medium">
                         <MapPin size={16} className="text-yellow-500" />
@@ -196,7 +196,7 @@ const ReadDestination = () => {
                         onClick={() => navigate('/destinations')}
                         className="flex items-center justify-center gap-2 px-4 py-2 bg-white/5 text-white font-bold rounded-xl border border-gray-700"
                     >
-                        <ArrowLeft size={18} /> Back to List
+                        <ArrowLeft size={18} /> กลับไปหน้ารายการ
                     </button>
                     <button
                         onClick={handleSync}
@@ -204,7 +204,7 @@ const ReadDestination = () => {
                         className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none"
                     >
                         <RefreshCw size={18} className={syncing ? 'animate-spin' : ''} />
-                        {syncing ? 'Syncing...' : 'Sync & Embed'}
+                        {syncing ? 'กำลังซิงก์...' : 'ซิงก์และสร้าง Embedding'}
                     </button>
                 </div>
             </div>
@@ -214,7 +214,7 @@ const ReadDestination = () => {
                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl">
                     <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-6">
                         <ImageIcon size={20} className="text-yellow-500" />
-                        Media Gallery
+                        คลังรูปภาพ
                     </h2>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                         {images.map((url, i) => (
@@ -243,20 +243,20 @@ const ReadDestination = () => {
 
                 <h2 className="text-xl font-bold text-white flex items-center gap-3 mb-4 border-b border-gray-800 pb-3">
                     <Info size={24} className="text-blue-500" />
-                    Information Data
-                    <span className="px-2.5 py-1 rounded-lg bg-yellow-500/10 text-yellow-500 text-xs font-bold border border-yellow-500/20 tracking-wider">READ ONLY</span>
+                    ข้อมูลสถานที่
+                    <span className="px-2.5 py-1 rounded-lg bg-yellow-500/10 text-yellow-500 text-xs font-bold border border-yellow-500/20 tracking-wider">อ่านอย่างเดียว</span>
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                            <Building size={14} /> Destination Name
+                            <Building size={14} /> ชื่อสถานที่
                         </label>
                         <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{name || '-'}</div>
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                            <MapPin size={14} /> Address
+                            <MapPin size={14} /> ที่อยู่
                         </label>
                         <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{address || '-'}</div>
                     </div>
@@ -264,13 +264,13 @@ const ReadDestination = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-4 relative z-10">
                     {[
-                        ['Province', provinceName],
-                        ['Province ID', provinceId],
-                        ['District', districtName],
-                        ['District ID', districtId],
-                        ['Sub-district', subDistrictName],
-                        ['Sub-district ID', subDistrictId],
-                        ['Postcode', postcode],
+                        ['จังหวัด', provinceName],
+                        ['รหัสจังหวัด', provinceId],
+                        ['อำเภอ/เขต', districtName],
+                        ['รหัสอำเภอ/เขต', districtId],
+                        ['ตำบล/แขวง', subDistrictName],
+                        ['รหัสตำบล/แขวง', subDistrictId],
+                        ['รหัสไปรษณีย์', postcode],
                     ].map(([label, value]) => (
                         <div key={label}>
                             <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">{label}</label>
@@ -281,24 +281,24 @@ const ReadDestination = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-4 relative z-10">
                     <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Latitude</label>
-                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lat || 'N/A'}</div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">ละติจูด</label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lat || 'ไม่ระบุ'}</div>
                     </div>
                     <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Longitude</label>
-                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lng || 'N/A'}</div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">ลองจิจูด</label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lng || 'ไม่ระบุ'}</div>
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                            <Clock size={14} /> Opening Hours
+                            <Clock size={14} /> เวลาเปิดทำการ
                         </label>
-                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{openTime || 'N/A'}</div>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{openTime || 'ไม่ระบุ'}</div>
                     </div>
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-gray-800 relative z-10">
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <Info size={14} /> Description
+                        <Info size={14} /> รายละเอียด
                     </label>
                     <div className="p-6 bg-black/40 border border-gray-800 rounded-2xl text-gray-300 leading-relaxed whitespace-pre-wrap">
                         {desc || 'ไม่มีข้อมูลรายละเอียด...'}
@@ -308,7 +308,7 @@ const ReadDestination = () => {
                 {(feeRows.length > 0 || feeDetail) && (
                     <div className="mt-4 pt-4 border-t border-gray-800 relative z-10">
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                            <Ticket size={14} /> Admission fee from TAT
+                            <Ticket size={14} /> ค่าเข้าชมจาก TAT
                         </label>
                         <div className="p-5 bg-black/40 border border-gray-800 rounded-2xl">
                             {feeRows.length > 0 && (

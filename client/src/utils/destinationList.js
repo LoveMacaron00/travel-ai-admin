@@ -26,8 +26,8 @@ export const normalizeDestinationItems = ({ source, status, tatItems, adminItems
             const province = destination.location?.province?.name || '';
             return {
                 id: destination.placeId || destination.id || `tat-${index}`,
-                name: destination.name || 'Unknown',
-                province: province || 'Unknown',
+                name: destination.name || 'ไม่ทราบชื่อ',
+                province: province || 'ไม่ระบุจังหวัด',
                 image: firstImage(destination.thumbnailUrl)
                     || destination.sha?.detailThumbnail
                     || destination.sha?.thumbnailUrl

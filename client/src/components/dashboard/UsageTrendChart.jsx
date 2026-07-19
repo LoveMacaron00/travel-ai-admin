@@ -10,7 +10,7 @@ const toPath = (points, yField) => points
     .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point[yField]}`)
     .join(' ');
 
-const UsageTrendChart = ({ data, viewLabel = 'Destination views' }) => {
+const UsageTrendChart = ({ data, viewLabel = 'ยอดดูสถานที่' }) => {
     const [hoveredIndex, setHoveredIndex] = useState(null);
     const chart = useMemo(() => {
         const maxValue = Math.max(
@@ -46,7 +46,7 @@ const UsageTrendChart = ({ data, viewLabel = 'Destination views' }) => {
         <div
             className="relative h-72 w-full"
             role="img"
-            aria-label="Active users and destination views trend chart"
+            aria-label="กราฟแนวโน้มผู้ใช้และยอดดูสถานที่"
         >
             <svg className="h-full w-full overflow-visible" viewBox={`0 0 ${width} ${height}`}>
                 <defs>
@@ -126,7 +126,7 @@ const UsageTrendChart = ({ data, viewLabel = 'Destination views' }) => {
                             stroke="#FBBF24"
                             strokeWidth="2"
                         >
-                            <title>{`${point.label}: ${point.activeUsers} active users, ${point.destinationViews} ${viewLabel}`}</title>
+                            <title>{`${point.label}: ผู้ใช้ ${point.activeUsers} คน, ${point.destinationViews} ${viewLabel}`}</title>
                         </circle>
                     </g>
                 ))}
@@ -155,9 +155,9 @@ const UsageTrendChart = ({ data, viewLabel = 'Destination views' }) => {
                     style={{ left: `${(hovered.x / width) * 100}%` }}
                 >
                     <p className="font-bold text-white">{hovered.label}</p>
-                    <p className="mt-1 text-emerald-400">{hovered.activeUsers} active users</p>
+                    <p className="mt-1 text-emerald-400">ผู้ใช้ {hovered.activeUsers} คน</p>
                     <p className="mt-0.5 text-amber-400">{hovered.destinationViews} {viewLabel}</p>
-                    <p className="mt-0.5 text-gray-500">{hovered.uniqueDestinationViewers} unique viewers</p>
+                    <p className="mt-0.5 text-gray-500">ผู้ชมไม่ซ้ำ {hovered.uniqueDestinationViewers} คน</p>
                 </div>
             )}
         </div>

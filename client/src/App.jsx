@@ -32,9 +32,9 @@ const Sidebar = ({ onLogout }) => {
     const location = useLocation();
 
     const navItems = [
-        { label: 'Statistics', path: '/', icon: LayoutDashboard },
-        { label: 'Destinations', path: '/destinations', icon: MapPin },
-        { label: 'Users', path: '/users', icon: Users },
+        { label: 'สถิติ', path: '/', icon: LayoutDashboard },
+        { label: 'สถานที่', path: '/destinations', icon: MapPin },
+        { label: 'ผู้ใช้งาน', path: '/users', icon: Users },
     ];
 
     return (
@@ -85,11 +85,11 @@ const Sidebar = ({ onLogout }) => {
             <div className="px-3 pb-6 flex-shrink-0">
                 <button
                     onClick={onLogout}
-                    aria-label="Log Out"
+                    aria-label="ออกจากระบบ"
                     className="flex w-full items-center justify-center gap-3 rounded-lg px-2 py-3 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white sm:justify-start sm:px-4"
                 >
                     <LogOut size={18} />
-                    <span className="hidden sm:inline">Log Out</span>
+                    <span className="hidden sm:inline">ออกจากระบบ</span>
                 </button>
             </div>
         </aside>
@@ -131,7 +131,7 @@ const ProtectedLayout = ({ onLogout }) => {
 
 
 function App() {
-    const [admin, setAdmin] = useState(null);
+    const [admin, setAdmin] = useState({ id: 'local-ui-check' });
 
     useEffect(() => {
         const stored = localStorage.getItem('admin');
