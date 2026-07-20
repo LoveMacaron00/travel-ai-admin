@@ -224,8 +224,17 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     role chat_role NOT NULL,
     content TEXT NOT NULL,
     source_chunk_ids INT[] NOT NULL DEFAULT '{}', -- place_embeddings.id ที่ RAG ดึงมา
+    image_path TEXT, -- ชื่อไฟล์ private ของรูปที่ส่งเข้า AI Camera
+    image_mime_type VARCHAR(20),
+    image_caption TEXT,
+    edited_at TIMESTAMPTZ, -- มีค่าเมื่อผู้ใช้แก้ไขข้อความของตนเอง
+    reply_to_message_id INT REFERENCES chat_messages(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_reply_to_message_id
+ON chat_messages(reply_to_message_id)
+WHERE reply_to_message_id IS NOT NULL;
 
 -- -------------------------------------------------------------
 -- 7. Support tables

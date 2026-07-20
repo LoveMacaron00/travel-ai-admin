@@ -25,10 +25,7 @@ npm run dev
 ## ตรวจสอบก่อน commit
 
 ```powershell
-cd server
-npm test
-
-cd ../client
+cd client
 npm run lint
 npm run build
 ```

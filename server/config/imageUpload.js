@@ -8,8 +8,8 @@ const supportedMimeTypes = new Set([
 ]);
 
 const imageUpload = multer({
-    // Image scan ไม่ต้องเก็บไฟล์ต้นฉบับ จึงรับไว้ใน memory และจำกัดขนาด
-    // magic bytes จะถูกตรวจซ้ำใน imageAnalysisHelper ก่อนส่งต่อ provider
+    // รับภาพไว้ใน memory เพื่อวิเคราะห์ก่อน และบันทึกถาวรเมื่อ AI ตอบสำเร็จเท่านั้น
+    // magic bytes จะถูกตรวจซ้ำใน imageAnalysisHelper ก่อนส่งต่อ provider/จัดเก็บ
     storage: multer.memoryStorage(),
     limits: {
         files: 1,

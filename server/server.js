@@ -3,6 +3,7 @@
 const path = require('path');
 const { config, warnAboutMissingEnvironment } = require('./config/env');
 const { ensureAppUsageSchema } = require('./config/appUsageSchema');
+const { ensureChatMediaSchema } = require('./config/chatMediaSchema');
 
 const express = require('express');
 const cors = require('cors');
@@ -24,8 +25,8 @@ app.use(cors({
 app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 
-// ไฟล์ถาวร เช่น รูปโปรไฟล์/สถานที่ ต้องผ่าน auth ก่อน express.static
-// ส่วนรูป image scan ใช้ memory upload และไม่เข้ามาที่โฟลเดอร์นี้
+// ไฟล์ทั่วไป เช่น รูปโปรไฟล์/สถานที่ ผ่าน auth ก่อน express.static
+// ส่วนรูป AI Camera อยู่ในโฟลเดอร์ย่อยแต่ส่งผ่าน chat endpoint ที่ตรวจ ownership
 const uploadsDir = path.join(__dirname, 'uploads');
 
 app.use('/uploads', secureUploads, express.static(uploadsDir));
@@ -72,6 +73,7 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
     try {
         await ensureAppUsageSchema();
+        await ensureChatMediaSchema();
         return app.listen(config.port, () => {
             console.log(`เซิร์ฟเวอร์กำลังทำงานบนพอร์ต ${config.port}`);
         });

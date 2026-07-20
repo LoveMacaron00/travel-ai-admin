@@ -44,6 +44,9 @@
 | POST | `/api/trips` | `TripService.createTravelPlan` |
 | GET | `/api/trips/:id` | โหลดผลหลังสร้างแผนผ่าน `TripService.getTravelPlan` |
 | GET | `/api/chat/sessions/latest` | เปิด session แชทล่าสุด |
+| GET | `/api/chat/messages/:messageId/image` | โหลดรูป AI Camera แบบ private หลังตรวจว่า message เป็นของผู้ใช้ |
+| PATCH | `/api/chat/messages/:messageId` | แก้ไขข้อความ user แล้ว stream คำตอบ AI ใหม่มาแทนคู่เดิม |
+| DELETE | `/api/chat/messages/:messageId` | ลบข้อความ user, คำตอบ AI ที่จับคู่ และไฟล์ภาพที่แนบ |
 | POST | `/api/chat/sessions` | สร้าง session เมื่อยังไม่มี |
 | GET | `/api/chat/sessions/:sessionId/messages` | โหลดประวัติแชท |
 | POST | `/api/chat/sessions/:sessionId/messages` | ส่งข้อความและรับ SSE |

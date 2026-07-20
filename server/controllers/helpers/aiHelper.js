@@ -400,7 +400,14 @@ async function generateTripPlan(tripId, tripInput, res) {
 // ragChat()
 // ตอบคำถามเกี่ยวกับแผนเที่ยว ด้วย RAG + chat history
 // ส่งกลับไป Flutter พร้อมบันทึก source_chunk_ids
-async function ragChat(sessionId, tripId, userMessage, chatHistory, res) {
+async function ragChat(
+    sessionId,
+    tripId,
+    userMessage,
+    chatHistory,
+    res,
+    { existingUserMessageId = null } = {},
+) {
     // ดึง trip context
     const { rows: tripRows } = await query(
         'SELECT destination, province, interests FROM trips WHERE id = $1',
@@ -448,12 +455,78 @@ async function ragChat(sessionId, tripId, userMessage, chatHistory, res) {
             res.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
         }
 
-        // บันทึก user message + assistant answer
-        await query(
-            `INSERT INTO chat_messages (session_id, role, content, source_chunk_ids)
-             VALUES ($1, 'user', $2, '{}'), ($1, 'assistant', $3, $4)`,
-            [sessionId, userMessage, fullAnswer, sourceChunkIds]
-        );
+        let userMessageId;
+        let assistantMessageId;
+        let deletedAssistantMessageIds = [];
+
+        if (existingUserMessageId) {
+            // อัปเดต prompt, ลบคำตอบเดิม และเพิ่มคำตอบใหม่ใน statement เดียว
+            // จึงไม่ทิ้งบทสนทนาไว้ครึ่งทางหากบันทึกฐานข้อมูลล้มเหลว
+            const { rows } = await query(
+                `WITH updated_user AS (
+                    UPDATE chat_messages
+                    SET content = $2, edited_at = NOW()
+                    WHERE id = $5
+                      AND session_id = $1
+                      AND role = 'user'
+                      AND image_path IS NULL
+                    RETURNING id, created_at
+                 ), deleted_assistants AS (
+                    DELETE FROM chat_messages
+                    WHERE session_id = $1
+                      AND role = 'assistant'
+                      AND reply_to_message_id IN (SELECT id FROM updated_user)
+                    RETURNING id
+                 ), new_assistant AS (
+                    INSERT INTO chat_messages (
+                        session_id, role, content, source_chunk_ids,
+                        reply_to_message_id, created_at
+                    )
+                    SELECT $1, 'assistant', $3, $4, id, created_at
+                    FROM updated_user
+                    RETURNING id, reply_to_message_id
+                 )
+                 SELECT new_assistant.id AS assistant_message_id,
+                        new_assistant.reply_to_message_id AS user_message_id,
+                        COALESCE(
+                            (SELECT array_agg(id) FROM deleted_assistants),
+                            '{}'::int[]
+                        ) AS deleted_assistant_message_ids
+                 FROM new_assistant`,
+                [sessionId, userMessage, fullAnswer, sourceChunkIds, existingUserMessageId],
+            );
+            if (!rows[0]) throw new Error('Editable chat message no longer exists');
+            userMessageId = rows[0].user_message_id;
+            assistantMessageId = rows[0].assistant_message_id;
+            deletedAssistantMessageIds = rows[0].deleted_assistant_message_ids || [];
+        } else {
+            const { rows } = await query(
+                `WITH new_user AS (
+                    INSERT INTO chat_messages (
+                        session_id, role, content, source_chunk_ids
+                    )
+                    VALUES ($1, 'user', $2, '{}')
+                    RETURNING id
+                 ), new_assistant AS (
+                    INSERT INTO chat_messages (
+                        session_id, role, content, source_chunk_ids,
+                        reply_to_message_id
+                    )
+                    SELECT $1, 'assistant', $3, $4, id
+                    FROM new_user
+                    RETURNING id, reply_to_message_id
+                 )
+                 SELECT new_user.id AS user_message_id,
+                        new_assistant.id AS assistant_message_id
+                 FROM new_user
+                 JOIN new_assistant
+                   ON new_assistant.reply_to_message_id = new_user.id`,
+                [sessionId, userMessage, fullAnswer, sourceChunkIds],
+            );
+            if (!rows[0]) throw new Error('Chat messages could not be saved');
+            userMessageId = rows[0].user_message_id;
+            assistantMessageId = rows[0].assistant_message_id;
+        }
 
         const sources = places.map(place => ({
             id: place.id,
@@ -462,7 +535,14 @@ async function ragChat(sessionId, tripId, userMessage, chatHistory, res) {
             category: place.category,
             image_url: place.image_url,
         }));
-        res.write(`data: ${JSON.stringify({ type: 'done', sourceChunkIds, sources })}\n\n`);
+        res.write(`data: ${JSON.stringify({
+            type: 'done',
+            sourceChunkIds,
+            sources,
+            userMessageId,
+            assistantMessageId,
+            deletedAssistantMessageIds,
+        })}\n\n`);
     } catch (err) {
         console.error('[ai] ragChat error:', err.message);
         res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);

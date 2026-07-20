@@ -5,6 +5,12 @@ const { adminJwtSecret, userJwtSecret } = require('../config/jwtSecrets');
 const pool = require('../config/db');
 
 const secureUploads = async (req, res, next) => {
+    // รูป AI Camera ต้องผ่าน endpoint ที่ตรวจว่า message เป็นของ user เท่านั้น
+    // ห้าม express.static เปิดไฟล์จากโฟลเดอร์นี้แม้ request จะมี token ถูกต้อง
+    if (req.path === '/chat-images' || req.path.startsWith('/chat-images/')) {
+        return res.status(404).json({ message: 'ไม่พบไฟล์' });
+    }
+
     // รับ token จาก header เท่านั้น ป้องกัน JWT ติด browser history, referrer
     // และ access log จาก query string
     const authHeader = req.headers.authorization || '';

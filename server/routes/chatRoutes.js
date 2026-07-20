@@ -3,7 +3,15 @@
 const express = require('express');
 const router = express.Router();
 const {
-    createSession, sendMessage, analyzeImage, getMessages, getLatestSession, getSessionByTrip
+    analyzeImage,
+    createSession,
+    deleteMessage,
+    getLatestSession,
+    getMessageImage,
+    getMessages,
+    getSessionByTrip,
+    sendMessage,
+    updateMessage,
 } = require('../controllers/chatController');
 const { requireUserAuth } = require('../middleware/userAuth');
 const imageUpload = require('../config/imageUpload');
@@ -18,6 +26,9 @@ router.get('/sessions/latest', requireUserAuth, getLatestSession);
 router.post('/sessions/:sessionId/messages', requireUserAuth, sendMessage);
 router.post('/sessions/:sessionId/images', requireUserAuth, imageUpload.single('image'), analyzeImage);
 router.get('/sessions/:sessionId/messages', requireUserAuth, getMessages);
+router.get('/messages/:messageId/image', requireUserAuth, getMessageImage);
+router.patch('/messages/:messageId', requireUserAuth, updateMessage);
+router.delete('/messages/:messageId', requireUserAuth, deleteMessage);
 router.get('/trips/:tripId/session', requireUserAuth, getSessionByTrip);
 
 module.exports = router;

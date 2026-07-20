@@ -3,10 +3,45 @@ const {
     retrieveNearbyPlaces,
     formatPlacesContext,
 } = require('./ragHelper');
+const { resolveAppLanguage } = require('./appLanguage');
 
 const SCAN_MODES = new Set(['place', 'sign', 'food']);
 const T_OCR_MAX_FILE_SIZE = 1024 * 1024;
 const T_OCR_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
+const IMAGE_COPY = {
+    en: {
+        originalThai: 'Original Thai',
+        englishTranslation: 'English translation',
+        otherPossibilities: 'Other possibilities',
+        uncertain: 'The identification is uncertain. Try a clearer, closer photo or choose one of the alternatives.',
+        signTitle: 'Thai sign translation',
+        placeSections: ['What you are seeing', 'Cultural significance', 'Visitor etiquette'],
+        foodSections: ['About this dish', 'Cultural context', 'Typical ingredients', 'How it is served', 'Dietary note'],
+        unsupportedMode: 'Please choose place, sign, or food.',
+        emptyImage: 'Please choose a photo to analyze.',
+        invalidImage: 'The uploaded file is not a supported JPEG, PNG, or WebP image.',
+    },
+    th: {
+        originalThai: 'ข้อความภาษาไทยต้นฉบับ',
+        englishTranslation: 'คำแปลภาษาอังกฤษ',
+        otherPossibilities: 'ตัวเลือกอื่นที่เป็นไปได้',
+        uncertain: 'การระบุยังไม่แน่นอน กรุณาลองถ่ายภาพให้ชัดขึ้น ใกล้ขึ้น หรือเลือกจากตัวเลือกอื่น',
+        signTitle: 'คำแปลป้ายภาษาไทย',
+        placeSections: ['สิ่งที่เห็น', 'ความสำคัญทางวัฒนธรรม', 'มารยาทในการเข้าชม'],
+        foodSections: ['เกี่ยวกับอาหารจานนี้', 'บริบททางวัฒนธรรม', 'ส่วนประกอบทั่วไป', 'วิธีเสิร์ฟ', 'ข้อควรระวังด้านอาหาร'],
+        unsupportedMode: 'กรุณาเลือกโหมดสถานที่ ป้าย หรืออาหาร',
+        emptyImage: 'กรุณาเลือกรูปภาพที่ต้องการวิเคราะห์',
+        invalidImage: 'รองรับเฉพาะรูปภาพ JPEG, PNG หรือ WebP ที่ถูกต้อง',
+    },
+};
+
+const imageCopyFor = (languageCode) => IMAGE_COPY[resolveAppLanguage(languageCode)];
+
+const responseLanguageInstruction = (languageCode) => (
+    resolveAppLanguage(languageCode) === 'th'
+        ? 'Write all visitor-facing explanatory fields in natural Thai. Keep Thai proper names accurate and do not translate JSON property names.'
+        : 'Write all visitor-facing explanatory fields in clear, natural English for international visitors.'
+);
 
 // อย่าเชื่อ MIME จาก multipart เพียงอย่างเดียว เพราะ client เป็นผู้ส่งค่านี้มา
 const detectImageMimeType = (buffer) => {
@@ -230,28 +265,29 @@ const buildAnalysis = ({
     translatedText,
 });
 
-const analysisToAnswer = (analysis) => {
+const analysisToAnswer = (analysis, languageCode = 'th') => {
+    const copy = imageCopyFor(languageCode);
     const lines = [analysis.title];
     if (analysis.subtitle) lines.push(analysis.subtitle);
     if (analysis.originalText) {
-        lines.push(`Original Thai\n${analysis.originalText}`);
+        lines.push(`${copy.originalThai}\n${analysis.originalText}`);
     }
     if (analysis.translatedText) {
-        lines.push(`English translation\n${analysis.translatedText}`);
+        lines.push(`${copy.englishTranslation}\n${analysis.translatedText}`);
     }
     for (const section of analysis.sections) {
         lines.push(`${section.title}\n${section.body}`);
     }
     if (analysis.candidates.length > 1) {
         lines.push(
-            `Other possibilities\n${analysis.candidates
+            `${copy.otherPossibilities}\n${analysis.candidates
                 .slice(1, 3)
                 .map((candidate) => `${candidate.name} (${Math.round(candidate.score * 100)}%)`)
                 .join(', ')}`,
         );
     }
     if (analysis.confidence < 0.8) {
-        lines.push('The identification is uncertain. Try a clearer, closer photo or choose one of the alternatives.');
+        lines.push(copy.uncertain);
     }
     return lines.filter(Boolean).join('\n\n');
 };
@@ -387,7 +423,8 @@ async function classifyThaiFood(imageBuffer) {
     return candidates;
 }
 
-async function analyzePlace({ imageBuffer, mimeType, latitude, longitude }) {
+async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, languageCode }) {
+    const copy = imageCopyFor(languageCode);
     // พิกัดเป็น context ช่วยยืนยัน landmark ไม่ใช่หลักฐานว่าภาพคือสถานที่นั้นแน่นอน
     let nearbyPlaces = [];
     if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
@@ -403,9 +440,10 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude }) {
         : 'No verified nearby destination data was available.';
     const result = await generateGeminiJson({
         systemPrompt:
-            'You are a careful Thai cultural guide. Answer in clear English for international visitors. ' +
+            `You are a careful Thai cultural guide. ${responseLanguageInstruction(languageCode)} ` +
             'Do not claim an exact landmark unless visual evidence and the nearby destination context support it. ' +
-            'When uncertain, describe what is visible and say what additional photo would help.',
+            'When uncertain, describe what is visible and say what additional photo would help. ' +
+            'If matchedDestinationName is present, copy that destination name exactly from the verified context.',
         userPrompt:
             `Analyze this travel photo. GPS: ${latitude ?? 'unknown'}, ${longitude ?? 'unknown'}.\n\n` +
             `Verified nearby destination context:\n${placeContext}`,
@@ -424,39 +462,41 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude }) {
         confidence: result.confidence,
         provider: 'gemini',
         sections: [
-            { title: 'What you are seeing', body: result.summary },
-            { title: 'Cultural significance', body: result.culturalSignificance },
-            { title: 'Visitor etiquette', body: result.visitorEtiquette },
+            { title: copy.placeSections[0], body: result.summary },
+            { title: copy.placeSections[1], body: result.culturalSignificance },
+            { title: copy.placeSections[2], body: result.visitorEtiquette },
         ],
     });
     return {
         analysis,
-        answer: analysisToAnswer(analysis),
+        answer: analysisToAnswer(analysis, languageCode),
         sourceChunkIds: matched ? [matched.id] : [],
     };
 }
 
-async function analyzeSign({ imageBuffer, mimeType }) {
+async function analyzeSign({ imageBuffer, mimeType, languageCode }) {
+    const copy = imageCopyFor(languageCode);
     try {
         const originalText = await recognizeText(imageBuffer, mimeType);
         const translatedText = await translateThaiText(originalText);
         const analysis = buildAnalysis({
             mode: 'sign',
-            title: 'Thai sign translation',
+            title: copy.signTitle,
             confidence: 1,
             provider: 'aiforthai',
             originalText,
             translatedText,
         });
-        return { analysis, answer: analysisToAnswer(analysis), sourceChunkIds: [] };
+        return { analysis, answer: analysisToAnswer(analysis, languageCode), sourceChunkIds: [] };
     } catch (primaryError) {
         // Gemini เป็น fallback เพื่อให้ผู้ใช้ยังอ่านป้ายได้เมื่อ AI for Thai ล่ม
-        // หรือภาพไม่ใช่ JPEG ตามข้อจำกัดของ OCR
+        // หรือภาพไม่ตรงข้อจำกัดด้านชนิดและขนาดไฟล์ของ T-OCR
         console.warn('[image-analysis] AI for Thai sign flow failed:', primaryError.message);
         const result = await generateGeminiJson({
             systemPrompt:
                 'Read Thai text from travel signs and translate it into natural English. ' +
-                'Preserve place names and line breaks where useful. Do not invent unreadable text.',
+                'Preserve place names and line breaks where useful. Do not invent unreadable text. ' +
+                'Always return originalText in Thai and translatedText in English, regardless of the UI language.',
             userPrompt: 'Extract the visible Thai text and translate it to English.',
             schema: SIGN_SCHEMA,
             imageBuffer,
@@ -464,23 +504,24 @@ async function analyzeSign({ imageBuffer, mimeType }) {
         });
         const analysis = buildAnalysis({
             mode: 'sign',
-            title: 'Thai sign translation',
+            title: copy.signTitle,
             confidence: result.confidence,
             provider: 'gemini_fallback',
             originalText: result.originalText,
             translatedText: result.translatedText,
         });
-        return { analysis, answer: analysisToAnswer(analysis), sourceChunkIds: [] };
+        return { analysis, answer: analysisToAnswer(analysis, languageCode), sourceChunkIds: [] };
     }
 }
 
-async function explainFoodCandidate(candidates) {
+async function explainFoodCandidate(candidates, languageCode) {
     const names = candidates.map((candidate) =>
         `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
     ).join(', ');
     return generateGeminiJson({
         systemPrompt:
-            'You are a careful Thai food and culture guide. Answer in concise, natural English. ' +
+            `You are a careful Thai food and culture guide. ${responseLanguageInstruction(languageCode)} ` +
+            'Keep thaiName in Thai and englishName in English. ' +
             'Describe common ingredients only; never guarantee allergens, halal status, or exact recipe from an image.',
         userPrompt:
             `T-Food returned these possible dishes: ${names}. Explain the top candidate for an international visitor, ` +
@@ -489,13 +530,14 @@ async function explainFoodCandidate(candidates) {
     });
 }
 
-async function analyzeFood({ imageBuffer, mimeType }) {
+async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
+    const copy = imageCopyFor(languageCode);
     let candidates = [];
     let result;
     let provider = 'aiforthai+gemini';
     try {
         candidates = await classifyThaiFood(imageBuffer);
-        result = await explainFoodCandidate(candidates);
+        result = await explainFoodCandidate(candidates, languageCode);
         result.confidence = candidates[0].score;
         result.thaiName = candidates[0].name;
     } catch (primaryError) {
@@ -504,7 +546,8 @@ async function analyzeFood({ imageBuffer, mimeType }) {
         provider = 'gemini_fallback';
         result = await generateGeminiJson({
             systemPrompt:
-                'Identify Thai food carefully and explain it in concise English for international visitors. ' +
+                `Identify Thai food carefully. ${responseLanguageInstruction(languageCode)} ` +
+                'Keep thaiName in Thai and englishName in English. ' +
                 'Never guarantee allergens, halal status, or exact ingredients from appearance alone.',
             userPrompt: 'Identify this dish and explain its cultural context, typical ingredients, and how it is served.',
             schema: FOOD_SCHEMA,
@@ -525,14 +568,14 @@ async function analyzeFood({ imageBuffer, mimeType }) {
         candidates,
         provider,
         sections: [
-            { title: 'About this dish', body: result.summary },
-            { title: 'Cultural context', body: result.culturalSignificance },
-            { title: 'Typical ingredients', body: result.typicalIngredients },
-            { title: 'How it is served', body: result.servingNotes },
-            { title: 'Dietary note', body: result.dietaryCaution },
+            { title: copy.foodSections[0], body: result.summary },
+            { title: copy.foodSections[1], body: result.culturalSignificance },
+            { title: copy.foodSections[2], body: result.typicalIngredients },
+            { title: copy.foodSections[3], body: result.servingNotes },
+            { title: copy.foodSections[4], body: result.dietaryCaution },
         ],
     });
-    return { analysis, answer: analysisToAnswer(analysis), sourceChunkIds: [] };
+    return { analysis, answer: analysisToAnswer(analysis, languageCode), sourceChunkIds: [] };
 }
 
 async function analyzeTravelImage({
@@ -541,19 +584,22 @@ async function analyzeTravelImage({
     mimeType,
     latitude,
     longitude,
+    languageCode,
 }) {
+    const resolvedLanguageCode = resolveAppLanguage(languageCode);
+    const copy = imageCopyFor(resolvedLanguageCode);
     // จุดเข้าเดียวของทั้งสามโหมด: validate ไฟล์ก่อนเลือก pipeline ของ provider
     if (!SCAN_MODES.has(mode)) {
-        throw new ImageAnalysisError('Unsupported scan mode', 'Please choose place, sign, or food.', 400);
+        throw new ImageAnalysisError('Unsupported scan mode', copy.unsupportedMode, 400);
     }
     if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
-        throw new ImageAnalysisError('Image is empty', 'Please choose a photo to analyze.', 400);
+        throw new ImageAnalysisError('Image is empty', copy.emptyImage, 400);
     }
     const detectedMimeType = detectImageMimeType(imageBuffer);
     if (!detectedMimeType) {
         throw new ImageAnalysisError(
             'Image signature is invalid',
-            'The uploaded file is not a supported JPEG, PNG, or WebP image.',
+            copy.invalidImage,
             400,
         );
     }
@@ -564,19 +610,24 @@ async function analyzeTravelImage({
             mimeType: detectedMimeType,
             latitude,
             longitude,
+            languageCode: resolvedLanguageCode,
         });
     }
     if (mode === 'sign') {
-        return analyzeSign({ imageBuffer, mimeType: detectedMimeType });
+        return analyzeSign({
+            imageBuffer,
+            mimeType: detectedMimeType,
+            languageCode: resolvedLanguageCode,
+        });
     }
-    return analyzeFood({ imageBuffer, mimeType: detectedMimeType });
+    return analyzeFood({
+        imageBuffer,
+        mimeType: detectedMimeType,
+        languageCode: resolvedLanguageCode,
+    });
 }
 
 module.exports = {
-    ImageAnalysisError,
-    analysisToAnswer,
     analyzeTravelImage,
     detectImageMimeType,
-    extractOcrText,
-    recognizeText,
 };
