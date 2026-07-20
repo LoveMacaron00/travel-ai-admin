@@ -131,7 +131,7 @@ const ProtectedLayout = ({ onLogout }) => {
 
 
 function App() {
-    const [admin, setAdmin] = useState({ id: 'local-ui-check' });
+    const [admin, setAdmin] = useState(null);
 
     useEffect(() => {
         const stored = localStorage.getItem('admin');

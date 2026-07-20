@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Users, Shield, MessageSquare, Ban, Check, Search, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
 
@@ -8,6 +8,15 @@ const UserManager = () => {
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyText, setReplyText] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const filteredUsers = useMemo(() => {
+        const query = searchQuery.trim().toLocaleLowerCase('th');
+        if (!query) return users;
+
+        return users.filter((user) => [user.username, user.email]
+            .some((value) => String(value || '').toLocaleLowerCase('th').includes(query)));
+    }, [searchQuery, users]);
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -153,17 +162,19 @@ const UserManager = () => {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 md:gap-4">
                 {/* USER TABLE */}
                 <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col h-[500px]">
-                    <div className="p-3 md:p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900/80">
-                        <div>
+                    <div className="flex flex-col gap-3 border-b border-gray-800 bg-gray-900/80 p-3 sm:flex-row sm:items-center sm:justify-between md:p-4">
+                        <div className="min-w-0">
                             <h2 className="text-xl font-bold text-white">รายชื่อผู้ใช้งาน</h2>
                             <p className="text-sm text-gray-500 mt-1">จัดการบัญชีและสถานะผู้ใช้งาน</p>
                         </div>
-                        <div className="relative">
-                            <Search className="absolute left-3.5 top-1/2 text-gray-500" size={16} />
+                        <div className="relative w-full sm:w-64 sm:shrink-0">
+                            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
                             <input
                                 type="text"
                                 placeholder="ค้นหาผู้ใช้งาน..."
-                                className="pl-10 pr-4 py-2.5 bg-black/40 border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/50 w-64 shadow-inner"
+                                value={searchQuery}
+                                onChange={(event) => setSearchQuery(event.target.value)}
+                                className="w-full rounded-xl border border-gray-800 bg-black/40 py-2.5 pl-10 pr-4 text-sm text-white shadow-inner outline-none focus:border-yellow-500/50 focus:ring-2 focus:ring-yellow-500/50"
                             />
                         </div>
                     </div>
@@ -178,13 +189,13 @@ const UserManager = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-800/50">
-                                {users.length === 0 && !isLoading ? (
+                                {filteredUsers.length === 0 && !isLoading ? (
                                     <tr>
                                         <td colSpan="3" className="py-16 text-center text-gray-500">
-                                            ไม่พบผู้ใช้งาน
+                                            {searchQuery ? 'ไม่พบผู้ใช้งานที่ค้นหา' : 'ไม่พบผู้ใช้งาน'}
                                         </td>
                                     </tr>
-                                ) : users.map((user) => (
+                                ) : filteredUsers.map((user) => (
                                     <tr
                                         key={user.id}
                                         className=" group"

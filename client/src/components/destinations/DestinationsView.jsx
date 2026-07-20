@@ -347,10 +347,10 @@ const DestinationsView = ({
                                                     <button
                                                         onClick={() => handleSingleSyncTAT(item.id, item.name)}
                                                         disabled={syncingId === item.id}
-                                                        className="flex-1 py-2.5 bg-emerald-600 disabled:bg-gray-800 disabled:text-gray-500 text-white text-sm font-semibold rounded-xl text-center flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 disabled:shadow-none"
+                                                        className="flex min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-emerald-600 px-2 py-2.5 text-center text-sm font-semibold text-white shadow-lg shadow-emerald-500/10 disabled:bg-gray-800 disabled:text-gray-500 disabled:shadow-none"
                                                     >
                                                         <RefreshCw size={16} className={syncingId === item.id ? 'animate-spin' : ''} />
-                                                        {syncingId === item.id ? 'กำลังซิงก์' : 'ซิงก์และสร้าง Embedding'}
+                                                        {syncingId === item.id ? 'กำลังซิงก์' : 'ซิงก์ข้อมูล'}
                                                     </button>
                                                 </>
                                             ) : (

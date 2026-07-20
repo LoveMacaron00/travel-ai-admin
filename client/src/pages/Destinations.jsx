@@ -190,7 +190,7 @@ const Destinations = () => {
             : 'ทุกหมวดหมู่';
         const result = await showConfirmAlert({
             title: 'ซิงก์สถานที่จาก TAT API หรือไม่?',
-            text: `คุณต้องการเริ่มซิงก์สถานที่ทั้งหมด (หมวดหมู่: ${activeCategory}, คำค้น: "${debouncedSearch || 'ทั้งหมด'}") เข้าสู่ระบบและสร้าง Embedding ใช่หรือไม่? ระบบจะดำเนินการต่อในเบื้องหลัง`,
+            text: `คุณต้องการเริ่มซิงก์สถานที่ทั้งหมด (หมวดหมู่: ${activeCategory}, คำค้น: "${debouncedSearch || 'ทั้งหมด'}") เข้าสู่ระบบและสร้างข้อมูลค้นหาสำหรับ AI ใช่หรือไม่? ระบบจะดำเนินการต่อในเบื้องหลัง`,
             confirmButtonText: 'เริ่มซิงก์',
             cancelButtonText: 'ยกเลิก'
         });
@@ -215,7 +215,7 @@ const Destinations = () => {
     const handleSingleSyncTAT = async (tatPlaceId, name) => {
         const result = await showConfirmAlert({
             title: 'ซิงก์สถานที่นี้หรือไม่?',
-            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและสร้าง Embedding ใช่หรือไม่?`,
+            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและสร้างข้อมูลค้นหาสำหรับ AI ใช่หรือไม่?`,
             confirmButtonText: 'เริ่มซิงก์',
             cancelButtonText: 'ยกเลิก'
         });
@@ -225,7 +225,7 @@ const Destinations = () => {
         setSyncingId(tatPlaceId);
         try {
             await api.post(`/admin/sync/tat/${tatPlaceId}`);
-            await showSuccessAlert(`ซิงก์และสร้าง Embedding สำหรับ "${name}" สำเร็จแล้ว`);
+            await showSuccessAlert(`ซิงก์ข้อมูลสำหรับ "${name}" สำเร็จแล้ว`);
         } catch (err) {
             console.error('เกิดข้อผิดพลาดในการ Sync รายบุคคล:', err);
             await showErrorAlert(err.response?.data?.message || 'ซิงก์สถานที่ไม่สำเร็จ');

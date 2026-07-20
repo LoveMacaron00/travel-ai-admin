@@ -49,7 +49,7 @@ const ReadDestination = () => {
     const handleSync = async () => {
         const result = await showConfirmAlert({
             title: 'ซิงก์สถานที่นี้หรือไม่?',
-            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและสร้าง Embedding ใช่หรือไม่?`,
+            text: `ต้องการดึงข้อมูล "${name}" เข้าฐานข้อมูลและสร้างข้อมูลค้นหาสำหรับ AI ใช่หรือไม่?`,
             confirmButtonText: 'เริ่มซิงก์',
             cancelButtonText: 'ยกเลิก'
         });
@@ -59,7 +59,7 @@ const ReadDestination = () => {
         setSyncing(true);
         try {
             await api.post(`/admin/sync/tat/${id}`);
-            await showSuccessAlert(`ซิงก์และสร้าง Embedding สำหรับ "${name}" สำเร็จแล้ว`);
+            await showSuccessAlert(`ซิงก์ข้อมูลสำหรับ "${name}" สำเร็จแล้ว`);
             navigate('/destinations');
         } catch (err) {
             console.error('เกิดข้อผิดพลาดในการ Sync รายบุคคล:', err);
@@ -191,20 +191,20 @@ const ReadDestination = () => {
                     </div>
                 </div>
 
-                <div className="relative z-10 flex items-center gap-4">
+                <div className="relative z-10 flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                     <button
                         onClick={() => navigate('/destinations')}
-                        className="flex items-center justify-center gap-2 px-4 py-2 bg-white/5 text-white font-bold rounded-xl border border-gray-700"
+                        className="flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-700 bg-white/5 px-4 py-2 font-bold text-white sm:w-auto"
                     >
                         <ArrowLeft size={18} /> กลับไปหน้ารายการ
                     </button>
                     <button
                         onClick={handleSync}
                         disabled={syncing}
-                        className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none"
+                        className="flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 font-bold text-white shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 disabled:shadow-none sm:w-auto"
                     >
                         <RefreshCw size={18} className={syncing ? 'animate-spin' : ''} />
-                        {syncing ? 'กำลังซิงก์...' : 'ซิงก์และสร้าง Embedding'}
+                        {syncing ? 'กำลังซิงก์...' : 'ซิงก์ข้อมูล'}
                     </button>
                 </div>
             </div>
