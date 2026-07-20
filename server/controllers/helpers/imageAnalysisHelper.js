@@ -5,6 +5,8 @@ const {
 } = require('./ragHelper');
 
 const SCAN_MODES = new Set(['place', 'sign', 'food']);
+const T_OCR_MAX_FILE_SIZE = 1024 * 1024;
+const T_OCR_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
 
 // อย่าเชื่อ MIME จาก multipart เพียงอย่างเดียว เพราะ client เป็นผู้ส่งค่านี้มา
 const detectImageMimeType = (buffer) => {
@@ -255,12 +257,24 @@ const analysisToAnswer = (analysis) => {
 };
 
 const extractOcrText = (value) => {
-    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'string') return value.replace(/\f/g, '').trim();
     if (Array.isArray(value)) {
         return value.map(extractOcrText).filter(Boolean).join('\n').trim();
     }
     if (!value || typeof value !== 'object') return '';
-    for (const key of ['text', 'result', 'recognized_text', 'ocr_text', 'message']) {
+    // T-OCR คืน Original และ Spellcorrection; เลือกต้นฉบับก่อนเพื่อรักษาชื่อเฉพาะบนป้าย
+    // ส่วน key อื่นคงไว้รองรับ response รุ่นเก่าและ provider สำรอง
+    for (const key of [
+        'Original',
+        'original',
+        'text',
+        'result',
+        'recognized_text',
+        'ocr_text',
+        'message',
+        'Spellcorrection',
+        'spellcorrection',
+    ]) {
         const text = extractOcrText(value[key]);
         if (text) return text;
     }
@@ -271,21 +285,33 @@ async function recognizeText(imageBuffer, mimeType) {
     if (!config.aiForThai.ocrApiKey) {
         throw new ImageAnalysisError('OCR key is missing', 'Thai OCR is not configured.', 503);
     }
-    if (mimeType !== 'image/jpeg') {
+    if (!T_OCR_MIME_TYPES.has(mimeType)) {
         throw new ImageAnalysisError(
-            `OCR does not accept ${mimeType}`,
-            'Thai OCR currently requires a JPEG photo.',
+            `T-OCR does not accept ${mimeType}`,
+            'Thai OCR currently requires a JPEG or PNG photo.',
             400,
+        );
+    }
+    if (imageBuffer.length > T_OCR_MAX_FILE_SIZE) {
+        throw new ImageAnalysisError(
+            `T-OCR image exceeds ${T_OCR_MAX_FILE_SIZE} bytes`,
+            'Thai OCR currently requires a photo no larger than 1 MB.',
+            413,
         );
     }
 
     const form = new FormData();
-    form.append('file', new Blob([imageBuffer], { type: mimeType }), 'scan.jpg');
+    const extension = mimeType === 'image/png' ? 'png' : 'jpg';
+    form.append(
+        'uploadfile',
+        new Blob([imageBuffer], { type: mimeType }),
+        `scan.${extension}`,
+    );
     const response = await requestWithTimeout(config.aiForThai.ocrUrl, {
         method: 'POST',
         headers: { Apikey: config.aiForThai.ocrApiKey },
         body: form,
-    }, 'Thai OCR');
+    }, 'Thai T-OCR');
     const raw = await response.text();
     let payload = raw;
     try {
@@ -552,4 +578,5 @@ module.exports = {
     analyzeTravelImage,
     detectImageMimeType,
     extractOcrText,
+    recognizeText,
 };

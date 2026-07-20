@@ -47,7 +47,7 @@ const config = {
         ocrApiKey: process.env.AIFORTHAI_OCR_API_KEY,
         translateApiKey: process.env.AIFORTHAI_TRANSLATE_API_KEY,
         tfoodApiKey: process.env.AIFORTHAI_TFOOD_API_KEY,
-        ocrUrl: process.env.AIFORTHAI_OCR_URL || 'https://api.aiforthai.in.th/panyapradit-ocr',
+        ocrUrl: process.env.AIFORTHAI_OCR_URL || 'https://api.aiforthai.in.th/ocr',
         translateUrl: process.env.AIFORTHAI_TRANSLATE_URL || 'https://api.aiforthai.in.th/xiaofan-en-th/th2en',
         tfoodUrl: process.env.AIFORTHAI_TFOOD_URL || 'https://api.aiforthai.in.th/thaifood',
     },
