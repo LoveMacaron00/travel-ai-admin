@@ -8,6 +8,8 @@ const { resolveAppLanguage } = require('./appLanguage');
 const SCAN_MODES = new Set(['place', 'sign', 'food']);
 const T_OCR_MAX_FILE_SIZE = 1024 * 1024;
 const T_OCR_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
+const FOOD_VISION_VERIFY_THRESHOLD = 0.65;
+const FOOD_PLAUSIBLE_CANDIDATE_THRESHOLD = 0.5;
 const IMAGE_COPY = {
     en: {
         originalThai: 'Original Thai',
@@ -17,6 +19,8 @@ const IMAGE_COPY = {
         signTitle: 'Thai sign translation',
         placeSections: ['What you are seeing', 'Cultural significance', 'Visitor etiquette'],
         foodSections: ['About this dish', 'Cultural context', 'Typical ingredients', 'How it is served', 'Dietary note'],
+        foodUncertainTitle: 'Dish not identified confidently',
+        foodUncertainSubtitle: 'Try a clearer photo showing the whole dish and its main ingredients.',
         unsupportedMode: 'Please choose place, sign, or food.',
         emptyImage: 'Please choose a photo to analyze.',
         invalidImage: 'The uploaded file is not a supported JPEG, PNG, or WebP image.',
@@ -29,6 +33,8 @@ const IMAGE_COPY = {
         signTitle: 'คำแปลป้ายภาษาไทย',
         placeSections: ['สิ่งที่เห็น', 'ความสำคัญทางวัฒนธรรม', 'มารยาทในการเข้าชม'],
         foodSections: ['เกี่ยวกับอาหารจานนี้', 'บริบททางวัฒนธรรม', 'ส่วนประกอบทั่วไป', 'วิธีเสิร์ฟ', 'ข้อควรระวังด้านอาหาร'],
+        foodUncertainTitle: 'ยังระบุอาหารไม่ได้แน่ชัด',
+        foodUncertainSubtitle: 'ลองถ่ายให้เห็นอาหารทั้งจานและส่วนประกอบหลักชัดขึ้น',
         unsupportedMode: 'กรุณาเลือกโหมดสถานที่ ป้าย หรืออาหาร',
         emptyImage: 'กรุณาเลือกรูปภาพที่ต้องการวิเคราะห์',
         invalidImage: 'รองรับเฉพาะรูปภาพ JPEG, PNG หรือ WebP ที่ถูกต้อง',
@@ -230,7 +236,10 @@ async function generateGeminiJson({
             return parseGeminiJson(text);
         } catch (error) {
             lastError = error;
-            const retryable = error.statusCode === 429 || error.statusCode >= 500;
+            // แม้ HTTP 200 บางครั้ง provider อาจคืน content ว่างหรือ JSON ไม่ครบ
+            // error กลุ่มนี้ไม่มี statusCode และควรลองใหม่เช่นเดียวกับ 429/5xx
+            const retryable = !(error instanceof ImageAnalysisError) ||
+                error.statusCode === 429 || error.statusCode >= 500;
             if (!retryable || attempt === config.gemini.maxRetries) break;
             await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** attempt)));
         }
@@ -514,7 +523,25 @@ async function analyzeSign({ imageBuffer, mimeType, languageCode }) {
     }
 }
 
-async function explainFoodCandidate(candidates, languageCode) {
+const mergeFoodCandidates = (visionResult, candidates) => {
+    const visionName = String(visionResult.thaiName || '').trim();
+    const normalizedVisionName = visionName.toLowerCase();
+    const merged = visionName
+        ? [{ name: visionName, score: clampConfidence(visionResult.confidence) }]
+        : [];
+    for (const candidate of candidates) {
+        if (candidate.name.toLowerCase() === normalizedVisionName) continue;
+        merged.push(candidate);
+    }
+    return merged.slice(0, 3);
+};
+
+async function explainFoodCandidate(
+    candidates,
+    languageCode,
+    imageBuffer,
+    mimeType,
+) {
     const names = candidates.map((candidate) =>
         `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
     ).join(', ');
@@ -522,13 +549,56 @@ async function explainFoodCandidate(candidates, languageCode) {
         systemPrompt:
             `You are a careful Thai food and culture guide. ${responseLanguageInstruction(languageCode)} ` +
             'Keep thaiName in Thai and englishName in English. ' +
-            'Describe common ingredients only; never guarantee allergens, halal status, or exact recipe from an image.',
+            'Check that the visible dish is consistent with the classifier candidate before explaining it. ' +
+            'Describe common ingredients only. In dietaryCaution, mention only potential allergens supported by visible ' +
+            'ingredients or the typical recipe, explicitly say recipes vary by vendor, and never guarantee allergens, ' +
+            'halal status, or the exact recipe from appearance alone. Never claim rice noodles contain gluten; mention ' +
+            'possible gluten only when a sauce or another wheat-based ingredient may contain it.',
         userPrompt:
             `T-Food returned these possible dishes: ${names}. Explain the top candidate for an international visitor, ` +
             'while reflecting uncertainty when its score is below 0.8.',
         schema: FOOD_SCHEMA,
+        imageBuffer,
+        mimeType,
     });
 }
+
+async function verifyFoodWithVision(candidates, languageCode, imageBuffer, mimeType) {
+    const names = candidates.map((candidate) =>
+        `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
+    ).join(', ');
+    return generateGeminiJson({
+        systemPrompt:
+            `Independently identify the visible Thai dish. ${responseLanguageInstruction(languageCode)} ` +
+            'Treat classifier candidates as weak hints, not facts. Keep thaiName in Thai and englishName in English. ' +
+            'If the dish cannot be identified confidently, keep cultural and ingredient fields brief and do not invent history. ' +
+            'In dietaryCaution, mention only potential allergens supported by what is visible or a typical recipe, ' +
+            'state that recipes vary by vendor, and never guarantee exact ingredients, allergens, or halal status. ' +
+            'Never claim rice noodles contain gluten; mention possible gluten only for sauces or wheat-based ingredients.',
+        userPrompt:
+            `Inspect the image yourself and identify the dish. Weak T-Food suggestions: ${names}. ` +
+            'Return your own confidence based on the image.',
+        schema: FOOD_SCHEMA,
+        imageBuffer,
+        mimeType,
+    });
+}
+
+const uncertainFoodResult = ({ copy, candidates, confidence, provider, languageCode }) => {
+    const analysis = buildAnalysis({
+        mode: 'food',
+        title: copy.foodUncertainTitle,
+        subtitle: copy.foodUncertainSubtitle,
+        confidence,
+        candidates,
+        provider,
+    });
+    return {
+        analysis,
+        answer: analysisToAnswer(analysis, languageCode),
+        sourceChunkIds: [],
+    };
+};
 
 async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
     const copy = imageCopyFor(languageCode);
@@ -537,9 +607,55 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
     let provider = 'aiforthai+gemini';
     try {
         candidates = await classifyThaiFood(imageBuffer);
-        result = await explainFoodCandidate(candidates, languageCode);
-        result.confidence = candidates[0].score;
-        result.thaiName = candidates[0].name;
+        const tFoodConfidence = candidates[0].score;
+        if (tFoodConfidence >= FOOD_VISION_VERIFY_THRESHOLD) {
+            result = await explainFoodCandidate(
+                candidates,
+                languageCode,
+                imageBuffer,
+                mimeType,
+            );
+            const visionName = String(result.thaiName || '').trim().toLowerCase();
+            const tFoodName = candidates[0].name.trim().toLowerCase();
+            if (visionName === tFoodName) {
+                result.confidence = tFoodConfidence;
+                result.thaiName = candidates[0].name;
+            } else {
+                // แม้ T-Food คะแนนสูง แต่ถ้า vision เห็นต่าง ให้ใช้ผลที่เห็นภาพจริง
+                // และงดเรื่องราวหาก vision เองยังไม่มั่นใจ
+                provider = 'aiforthai+gemini_verification';
+                candidates = mergeFoodCandidates(result, candidates);
+                if (clampConfidence(result.confidence) < FOOD_VISION_VERIFY_THRESHOLD) {
+                    return uncertainFoodResult({
+                        copy,
+                        candidates,
+                        confidence: result.confidence,
+                        provider,
+                        languageCode,
+                    });
+                }
+            }
+        } else {
+            // คะแนนต่ำต้องให้ vision model เห็นภาพและตัดสินใหม่เอง
+            provider = 'aiforthai+gemini_verification';
+            result = await verifyFoodWithVision(
+                candidates,
+                languageCode,
+                imageBuffer,
+                mimeType,
+            );
+            candidates = mergeFoodCandidates(result, candidates);
+
+            if (clampConfidence(result.confidence) < FOOD_VISION_VERIFY_THRESHOLD) {
+                return uncertainFoodResult({
+                    copy,
+                    candidates,
+                    confidence: result.confidence,
+                    provider,
+                    languageCode,
+                });
+            }
+        }
     } catch (primaryError) {
         // หาก T-Food ไม่มีผลลัพธ์ ให้ vision model วิเคราะห์แทนและลดความแน่นอนตามผลจริง
         console.warn('[image-analysis] T-Food flow failed:', primaryError.message);
@@ -548,7 +664,9 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
             systemPrompt:
                 `Identify Thai food carefully. ${responseLanguageInstruction(languageCode)} ` +
                 'Keep thaiName in Thai and englishName in English. ' +
-                'Never guarantee allergens, halal status, or exact ingredients from appearance alone.',
+                'Mention only potential allergens supported by what is visible or a typical recipe, explicitly state ' +
+                'that recipes vary by vendor, and never guarantee allergens, halal status, or exact ingredients from appearance alone. ' +
+                'Never claim rice noodles contain gluten; mention possible gluten only for sauces or wheat-based ingredients.',
             userPrompt: 'Identify this dish and explain its cultural context, typical ingredients, and how it is served.',
             schema: FOOD_SCHEMA,
             imageBuffer,
@@ -556,6 +674,11 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
         });
         candidates = [{ name: result.thaiName, score: clampConfidence(result.confidence) }];
     }
+
+    // เมื่อยืนยันชื่อได้แล้ว ไม่แสดงตัวเลือกอ่อนมากที่มีคะแนนต่ำกว่า 50% ให้ผู้ใช้สับสน
+    candidates = candidates.filter((candidate, index) =>
+        index === 0 || candidate.score >= FOOD_PLAUSIBLE_CANDIDATE_THRESHOLD,
+    );
 
     const title = result.englishName
         ? `${result.thaiName} · ${result.englishName}`
