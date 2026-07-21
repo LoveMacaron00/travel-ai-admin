@@ -18,6 +18,7 @@ const IMAGE_MESSAGES = {
         missingImage: 'Please attach a photo.',
         sessionNotFound: 'Chat session not found.',
         imageNotFound: 'Chat image not found.',
+        rateLimited: 'AI usage limit reached. Please wait a moment and try again.',
         analysisFailed: 'The image could not be analyzed right now.',
         userContent: {
             place: 'Scanned a place photo',
@@ -30,6 +31,7 @@ const IMAGE_MESSAGES = {
         missingImage: 'กรุณาแนบรูปภาพ',
         sessionNotFound: 'ไม่พบ Chat session',
         imageNotFound: 'ไม่พบรูปภาพในประวัติแชท',
+        rateLimited: 'ถึงขีดจำกัดการใช้งาน AI กรุณารอสักครู่แล้วลองใหม่',
         analysisFailed: 'ไม่สามารถวิเคราะห์รูปภาพได้ในขณะนี้',
         userContent: {
             place: 'สแกนรูปสถานที่',
@@ -224,6 +226,12 @@ const analyzeImage = async (req, res) => {
             }
         }
         console.error('[chatController] analyzeImage:', err.message);
+        if (err.statusCode === 429) {
+            return res.status(429).json({
+                message: messages.rateLimited,
+                retry_after_seconds: err.retryAfterSeconds,
+            });
+        }
         const isLocalizedInputError = languageCode === 'th' && err.statusCode === 400;
         res.status(err.statusCode || 500).json({
             message: languageCode === 'th' && !isLocalizedInputError

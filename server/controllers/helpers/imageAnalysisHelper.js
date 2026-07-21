@@ -129,10 +129,11 @@ const FOOD_SCHEMA = {
 };
 
 class ImageAnalysisError extends Error {
-    constructor(message, publicMessage, statusCode = 502) {
+    constructor(message, publicMessage, statusCode = 502, retryAfterSeconds = null) {
         super(message);
         this.publicMessage = publicMessage;
         this.statusCode = statusCode;
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 }
 
@@ -142,6 +143,21 @@ const clampConfidence = (value) => {
     return Math.max(0, Math.min(1, parsed));
 };
 
+const parseRetryAfterSeconds = (response, errorPayload) => {
+    const headerSeconds = Number(response.headers.get('retry-after'));
+    if (Number.isFinite(headerSeconds) && headerSeconds > 0) {
+        return Math.ceil(headerSeconds);
+    }
+
+    const retryInfo = errorPayload?.error?.details?.find((detail) =>
+        typeof detail?.retryDelay === 'string',
+    );
+    const payloadSeconds = Number.parseFloat(retryInfo?.retryDelay || '');
+    return Number.isFinite(payloadSeconds) && payloadSeconds > 0
+        ? Math.ceil(payloadSeconds)
+        : null;
+};
+
 const requestWithTimeout = async (url, options, label) => {
     // provider ภายนอกทุกตัวต้องจบภายในเวลาเดียวกันและคืนข้อความที่ปลอดภัยต่อผู้ใช้
     const controller = new AbortController();
@@ -149,10 +165,20 @@ const requestWithTimeout = async (url, options, label) => {
     try {
         const response = await fetch(url, { ...options, signal: controller.signal });
         if (!response.ok) {
+            const rawError = await response.text();
+            let errorPayload = null;
+            try {
+                errorPayload = JSON.parse(rawError);
+            } catch {
+                // provider บางครั้งคืน error เป็นข้อความล้วน
+            }
+            const retryAfterSeconds = parseRetryAfterSeconds(response, errorPayload);
+            const providerStatus = errorPayload?.error?.status;
             throw new ImageAnalysisError(
-                `${label} returned HTTP ${response.status}`,
+                `${label} returned HTTP ${response.status}${providerStatus ? ` ${providerStatus}` : ''}`,
                 `${label} is temporarily unavailable. Please try again.`,
                 response.status === 429 ? 429 : 502,
+                retryAfterSeconds,
             );
         }
         return response;
@@ -236,10 +262,10 @@ async function generateGeminiJson({
             return parseGeminiJson(text);
         } catch (error) {
             lastError = error;
-            // แม้ HTTP 200 บางครั้ง provider อาจคืน content ว่างหรือ JSON ไม่ครบ
-            // error กลุ่มนี้ไม่มี statusCode และควรลองใหม่เช่นเดียวกับ 429/5xx
+            // HTTP 200 ที่ content ว่าง/JSON ไม่ครบ และ 5xx สามารถ retry ได้
+            // แต่ 429 ต้องคืนให้ client รอตาม quota window ไม่ยิงซ้ำถี่กว่าเดิม
             const retryable = !(error instanceof ImageAnalysisError) ||
-                error.statusCode === 429 || error.statusCode >= 500;
+                error.statusCode >= 500;
             if (!retryable || attempt === config.gemini.maxRetries) break;
             await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** attempt)));
         }
