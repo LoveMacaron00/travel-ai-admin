@@ -27,11 +27,13 @@ const deleteUploadedFiles = (imagePaths) => {
     }
 };
 
+// ฟังก์ชันสำหรับ normalize ข้อมูลรูปภาพจาก request body (array ของ string)
 const normalizeImageUrls = (images) => {
     if (!Array.isArray(images)) return [];
     return [...new Set(images.filter((image) => typeof image === 'string' && image.trim()).map((image) => image.trim()))];
 };
 
+// ฟังก์ชันสำหรับ normalize ข้อมูลรูปภาพจากฐานข้อมูล (JSON หรือ array)
 const normalizeStoredImages = (images) => {
     if (!Array.isArray(images)) return [];
     return images
@@ -45,6 +47,7 @@ const normalizeStoredImages = (images) => {
         .filter(Boolean);
 };
 
+// ฟังก์ชันสำหรับทำให้ค่า admission_fee เป็น object ที่มี key-value ที่ถูกต้อง
 const normalizeAdmissionFee = (fee) => {
     if (!fee || typeof fee !== 'object' || Array.isArray(fee)) return {};
     const result = {};
@@ -58,18 +61,21 @@ const normalizeAdmissionFee = (fee) => {
     return result;
 };
 
+// ฟังก์ชันสำหรับทำให้ค่า admission_fee เป็น JSON string สำหรับเก็บในฐานข้อมูล
 const nullableText = (value) => {
     if (value === null || value === undefined) return null;
     const text = String(value).trim();
     return text || null;
 };
 
+// ฟังก์ชันสำหรับทำให้ค่า location_id เป็น number หรือ null
 const nullableLocationId = (value) => {
     if (value === null || value === undefined || String(value).trim() === '') return null;
     const parsed = Number(value);
     return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
+// ฟังก์ชันสำหรับ normalize ข้อมูล location จาก request body
 const normalizeLocationInput = (data = {}) => {
     const location = data.location && typeof data.location === 'object' ? data.location : {};
     const province = location.province && typeof location.province === 'object' ? location.province : {};
@@ -90,11 +96,13 @@ const normalizeLocationInput = (data = {}) => {
     };
 };
 
+// ฟังก์ชันสำหรับหาภาพที่ถูกลบออกจากรายการภาพปัจจุบัน
 const getRemovedImages = (currentImages, nextImages) => {
     const nextSet = new Set(nextImages);
     return currentImages.filter((image) => image && !nextSet.has(image));
 };
 
+// ฟังก์ชันสำหรับตรวจสอบค่าละติจูดและลองจิจูด
 const validateCoordinates = (latitude, longitude) => {
     if (latitude !== undefined && latitude !== '' && latitude !== null) {
         const lat = parseFloat(latitude);
