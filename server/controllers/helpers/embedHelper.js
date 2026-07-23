@@ -10,6 +10,7 @@ const EMBED_DIMENSIONS = 1536;
 const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
 // taskType ต้องต่างกันระหว่างเอกสารกับคำค้นตามสัญญาของ embedding model
+// ขอเวกเตอร์ embedding จาก Gemini สำหรับข้อความและประเภทงานที่กำหนด
 async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
     if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
         throw new Error('ไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ (.env)');
@@ -39,6 +40,7 @@ async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
     return values;
 }
 
+// สร้างข้อความ chunks จากข้อมูลสถานที่เพื่อใช้ทำ embedding และค้นหา
 function buildChunks(dest) {
     // แยก facts คนละความหมายเพื่อให้ vector search จับชื่อ รายละเอียด
     // และบริบทตำแหน่งได้โดยไม่ต้อง embed เอกสารก้อนใหญ่ก้อนเดียว
@@ -80,6 +82,7 @@ function buildChunks(dest) {
     ];
 }
 
+// สร้างและบันทึก embedding ใหม่ของสถานที่หนึ่งแห่ง
 async function embedDestination(destinationId) {
     const { rows } = await query(
         `SELECT id, name, province, description, category, tags,
@@ -111,6 +114,7 @@ async function embedDestination(destinationId) {
     return true;
 }
 
+// สร้าง embedding ให้สถานที่ approved ทุกแห่งที่ยังไม่มีข้อมูล
 async function bulkEmbedMissing() {
     const { rows } = await query(
         `SELECT d.id FROM destinations d
@@ -133,6 +137,7 @@ async function bulkEmbedMissing() {
     return { success, failed };
 }
 
+// ลบ embedding เดิมของสถานที่เพื่อเตรียมสร้างใหม่
 async function clearDestinationEmbedding(destinationId) {
     await query('DELETE FROM place_embeddings WHERE destination_id = $1', [destinationId]);
 }

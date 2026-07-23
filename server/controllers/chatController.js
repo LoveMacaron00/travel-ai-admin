@@ -63,6 +63,7 @@ const MESSAGE_TEXT = {
     },
 };
 
+// ตรวจและ trim ข้อความ user ก่อนนำไปแก้ไขหรือส่งเข้า AI
 const validateEditableMessage = (value, languageCode = 'th') => {
     const text = MESSAGE_TEXT[languageCode] || MESSAGE_TEXT.th;
     const message = typeof value === 'string' ? value.trim() : '';
@@ -72,6 +73,7 @@ const validateEditableMessage = (value, languageCode = 'th') => {
 };
 
 // POST /api/chat/sessions — สร้าง session ใหม่สำหรับ trip
+// สร้าง chat session ใหม่ให้ผู้ใช้ที่ล็อกอินอยู่
 const createSession = async (req, res) => {
     try {
         const { trip_id } = req.body;
@@ -100,6 +102,7 @@ const createSession = async (req, res) => {
 };
 
 // POST /api/chat/sessions/:sessionId/messages — ส่งข้อความ + stream คำตอบ
+// บันทึกข้อความ user และ stream คำตอบ AI ผ่าน SSE
 const sendMessage = async (req, res) => {
     try {
         const { sessionId } = req.params;
@@ -140,6 +143,7 @@ const sendMessage = async (req, res) => {
 };
 
 // POST /api/chat/sessions/:sessionId/images — วิเคราะห์แล้วเก็บภาพเมื่อสำเร็จ
+// วิเคราะห์ภาพที่อัปโหลดด้วย AI แล้วบันทึกเป็นข้อความใน chat session
 const analyzeImage = async (req, res) => {
     const languageCode = resolveAppLanguage(req.get('Accept-Language'));
     const messages = IMAGE_MESSAGES[languageCode];
@@ -242,6 +246,7 @@ const analyzeImage = async (req, res) => {
 };
 
 // GET /api/chat/sessions/:sessionId/messages — ดึงประวัติ chat
+// คืนประวัติข้อความของ session เมื่อผู้ใช้เป็นเจ้าของ
 const getMessages = async (req, res) => {
     try {
         const { rows: sessionRows } = await pool.query(
@@ -271,6 +276,7 @@ const getMessages = async (req, res) => {
 };
 
 // PATCH /api/chat/messages/:messageId — แก้ไขได้เฉพาะข้อความของเจ้าของ session
+// แก้ไขข้อความ user แล้วสร้างคำตอบ AI ของข้อความนั้นใหม่
 const updateMessage = async (req, res) => {
     const languageCode = resolveAppLanguage(req.get('Accept-Language'));
     const messages = MESSAGE_TEXT[languageCode];
@@ -330,6 +336,7 @@ const updateMessage = async (req, res) => {
 };
 
 // DELETE /api/chat/messages/:messageId — ลบข้อความและไฟล์ภาพของเจ้าของเท่านั้น
+// ลบข้อความ user พร้อมคำตอบและไฟล์ภาพที่ผูกอยู่
 const deleteMessage = async (req, res) => {
     const languageCode = resolveAppLanguage(req.get('Accept-Language'));
     const messages = MESSAGE_TEXT[languageCode];
@@ -393,6 +400,7 @@ const deleteMessage = async (req, res) => {
 };
 
 // GET /api/chat/messages/:messageId/image — ส่งรูปเฉพาะเมื่อ message เป็นของผู้ใช้
+// ส่งไฟล์ภาพจากข้อความเมื่อผู้ใช้เป็นเจ้าของ session
 const getMessageImage = async (req, res) => {
     const languageCode = resolveAppLanguage(req.get('Accept-Language'));
     const messages = IMAGE_MESSAGES[languageCode];
@@ -433,6 +441,7 @@ const getMessageImage = async (req, res) => {
 };
 
 // GET /api/chat/sessions/latest — session แชททั่วไปล่าสุดของ user
+// คืน chat session ล่าสุดของผู้ใช้ หรือ 404 เมื่อยังไม่มี
 const getLatestSession = async (req, res) => {
     try {
         const { rows } = await pool.query(
@@ -450,6 +459,7 @@ const getLatestSession = async (req, res) => {
 };
 
 // GET /api/chat/trips/:tripId/session — ดึง session ล่าสุดของ trip
+// คืน chat session ที่ผูกกับ trip ของผู้ใช้
 const getSessionByTrip = async (req, res) => {
     try {
         const userId = req.user?.id || null;

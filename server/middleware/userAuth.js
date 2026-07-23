@@ -3,6 +3,7 @@
 const jwt = require('jsonwebtoken');
 const { userJwtSecret } = require('../config/jwtSecrets');
 
+// บังคับให้ request มี JWT ผู้ใช้ที่ตรวจสอบได้ก่อนเข้าถึง route
 const requireUserAuth = (req, res, next) => {
     const authHeader = req.headers.authorization || '';
     if (!authHeader.startsWith('Bearer ')) {
@@ -16,6 +17,7 @@ const requireUserAuth = (req, res, next) => {
     }
 };
 
+// อ่าน JWT ผู้ใช้ถ้ามี แต่ยังอนุญาตให้ guest ใช้งานเมื่อไม่มีหรือ token ใช้ไม่ได้
 const optionalUserAuth = (req, res, next) => {
     const authHeader = req.headers.authorization || '';
     if (authHeader.startsWith('Bearer ')) {

@@ -41,8 +41,10 @@ const IMAGE_COPY = {
     },
 };
 
+// เลือกชุดข้อความตอบกลับสำหรับการวิเคราะห์ภาพตามภาษา
 const imageCopyFor = (languageCode) => IMAGE_COPY[resolveAppLanguage(languageCode)];
 
+// สร้างคำสั่งภาษาเพื่อบังคับให้ Gemini ตอบในภาษาที่ร้องขอ
 const responseLanguageInstruction = (languageCode) => (
     resolveAppLanguage(languageCode) === 'th'
         ? 'Write all visitor-facing explanatory fields in natural Thai. Keep Thai proper names accurate and do not translate JSON property names.'
@@ -50,6 +52,7 @@ const responseLanguageInstruction = (languageCode) => (
 );
 
 // อย่าเชื่อ MIME จาก multipart เพียงอย่างเดียว เพราะ client เป็นผู้ส่งค่านี้มา
+// ตรวจ MIME type จาก magic bytes ของไฟล์ภาพ ไม่เชื่อ header เพียงอย่างเดียว
 const detectImageMimeType = (buffer) => {
     if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
     if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
@@ -128,6 +131,7 @@ const FOOD_SCHEMA = {
     },
 };
 
+// Error เฉพาะทางที่แนบ HTTP status และข้อมูล provider สำหรับส่งกลับ client
 class ImageAnalysisError extends Error {
     constructor(message, publicMessage, statusCode = 502, retryAfterSeconds = null) {
         super(message);
@@ -137,12 +141,14 @@ class ImageAnalysisError extends Error {
     }
 }
 
+// จำกัดค่าความมั่นใจให้อยู่ระหว่าง 0 ถึง 1
 const clampConfidence = (value) => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return 0;
     return Math.max(0, Math.min(1, parsed));
 };
 
+// อ่านเวลาที่ควรรอก่อน retry จาก response ของผู้ให้บริการ
 const parseRetryAfterSeconds = (response, errorPayload) => {
     const headerSeconds = Number(response.headers.get('retry-after'));
     if (Number.isFinite(headerSeconds) && headerSeconds > 0) {
@@ -158,6 +164,7 @@ const parseRetryAfterSeconds = (response, errorPayload) => {
         : null;
 };
 
+// ส่ง HTTP request พร้อม timeout และแปลงข้อผิดพลาดเป็น ImageAnalysisError
 const requestWithTimeout = async (url, options, label) => {
     // provider ภายนอกทุกตัวต้องจบภายในเวลาเดียวกันและคืนข้อความที่ปลอดภัยต่อผู้ใช้
     const controller = new AbortController();
@@ -194,6 +201,7 @@ const requestWithTimeout = async (url, options, label) => {
     }
 };
 
+// แกะ JSON ที่ Gemini อาจส่งพร้อม markdown code fence
 const parseGeminiJson = (text) => {
     const cleaned = String(text || '').replace(/```json|```/gi, '').trim();
     const firstBrace = cleaned.indexOf('{');
@@ -204,6 +212,7 @@ const parseGeminiJson = (text) => {
     return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
 };
 
+// ขอผลวิเคราะห์ JSON จาก Gemini พร้อมการตรวจ status และ retry
 async function generateGeminiJson({
     systemPrompt,
     userPrompt,
@@ -300,6 +309,7 @@ const buildAnalysis = ({
     translatedText,
 });
 
+// แปลงผลวิเคราะห์เชิงโครงสร้างเป็นข้อความตอบกลับสำหรับแชท
 const analysisToAnswer = (analysis, languageCode = 'th') => {
     const copy = imageCopyFor(languageCode);
     const lines = [analysis.title];
@@ -327,6 +337,7 @@ const analysisToAnswer = (analysis, languageCode = 'th') => {
     return lines.filter(Boolean).join('\n\n');
 };
 
+// ดึงข้อความ OCR จากรูปแบบ response หลายชนิดของ AI for Thai
 const extractOcrText = (value) => {
     if (typeof value === 'string') return value.replace(/\f/g, '').trim();
     if (Array.isArray(value)) {
@@ -352,6 +363,7 @@ const extractOcrText = (value) => {
     return '';
 };
 
+// ส่งภาพไป OCR ของ AI for Thai และคืนข้อความที่อ่านได้
 async function recognizeText(imageBuffer, mimeType) {
     if (!config.aiForThai.ocrApiKey) {
         throw new ImageAnalysisError('OCR key is missing', 'Thai OCR is not configured.', 503);
@@ -401,6 +413,7 @@ async function recognizeText(imageBuffer, mimeType) {
     return text;
 }
 
+// แปลข้อความไทยเป็นอังกฤษผ่าน AI for Thai เมื่อมีข้อความให้แปล
 async function translateThaiText(text) {
     if (!config.aiForThai.translateApiKey) {
         throw new ImageAnalysisError('Translation key is missing', 'Translation is not configured.', 503);
@@ -425,6 +438,7 @@ async function translateThaiText(text) {
     return translatedText;
 }
 
+// ส่งภาพไปจำแนกอาหารไทยผ่าน AI for Thai
 async function classifyThaiFood(imageBuffer) {
     if (!config.aiForThai.tfoodApiKey) {
         throw new ImageAnalysisError('T-Food key is missing', 'Thai food recognition is not configured.', 503);
@@ -458,6 +472,7 @@ async function classifyThaiFood(imageBuffer) {
     return candidates;
 }
 
+// วิเคราะห์สถานที่จากภาพและพิกัดด้วย Gemini
 async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, languageCode }) {
     const copy = imageCopyFor(languageCode);
     // พิกัดเป็น context ช่วยยืนยัน landmark ไม่ใช่หลักฐานว่าภาพคือสถานที่นั้นแน่นอน
@@ -509,6 +524,7 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, langua
     };
 }
 
+// อ่านและอธิบายป้ายจากภาพด้วย OCR และ Gemini
 async function analyzeSign({ imageBuffer, mimeType, languageCode }) {
     const copy = imageCopyFor(languageCode);
     try {
@@ -549,6 +565,7 @@ async function analyzeSign({ imageBuffer, mimeType, languageCode }) {
     }
 }
 
+// รวมชื่ออาหารที่มาจาก vision และ service จำแนกอาหารโดยไม่ให้ซ้ำ
 const mergeFoodCandidates = (visionResult, candidates) => {
     const visionName = String(visionResult.thaiName || '').trim();
     const normalizedVisionName = visionName.toLowerCase();
@@ -562,6 +579,7 @@ const mergeFoodCandidates = (visionResult, candidates) => {
     return merged.slice(0, 3);
 };
 
+// ขอคำอธิบายอาหารผู้สมัครจาก Gemini ตามภาพและภาษาที่เลือก
 async function explainFoodCandidate(
     candidates,
     languageCode,
@@ -589,6 +607,7 @@ async function explainFoodCandidate(
     });
 }
 
+// ให้ Gemini ยืนยันหรือจัดอันดับรายชื่ออาหารที่ผู้ให้บริการเสนอ
 async function verifyFoodWithVision(candidates, languageCode, imageBuffer, mimeType) {
     const names = candidates.map((candidate) =>
         `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
@@ -610,6 +629,7 @@ async function verifyFoodWithVision(candidates, languageCode, imageBuffer, mimeT
     });
 }
 
+// สร้างผลลัพธ์มาตรฐานเมื่อระบบระบุอาหารได้ไม่มั่นใจ
 const uncertainFoodResult = ({ copy, candidates, confidence, provider, languageCode }) => {
     const analysis = buildAnalysis({
         mode: 'food',
@@ -626,6 +646,7 @@ const uncertainFoodResult = ({ copy, candidates, confidence, provider, languageC
     };
 };
 
+// วิเคราะห์อาหารจากหลายผู้ให้บริการและคืนผลที่มั่นใจที่สุด
 async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
     const copy = imageCopyFor(languageCode);
     let candidates = [];
@@ -727,6 +748,7 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
     return { analysis, answer: analysisToAnswer(analysis, languageCode), sourceChunkIds: [] };
 }
 
+// เลือกกระบวนการวิเคราะห์ภาพตามโหมด place, sign หรือ food
 async function analyzeTravelImage({
     mode,
     imageBuffer,

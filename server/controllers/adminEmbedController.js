@@ -18,8 +18,10 @@ const CATEGORY_MAP = {
     'บริการนักท่องเที่ยว': 'service',
     'กิจกรรม': 'activity',
 };
+// แปลง category จาก TAT เป็นหมวดมาตรฐานของระบบ
 const mapCategory = c => CATEGORY_MAP[c] ?? 'general';
 
+// ดึงสถานที่หนึ่งหน้าจาก TAT API ตามตัวกรองที่กำหนด
 async function fetchTATPage(page, limit = 100, keyword = '', province = '', placeCategory = '', languageCode = 'th') {
     if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
         throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
@@ -38,6 +40,7 @@ async function fetchTATPage(page, limit = 100, keyword = '', province = '', plac
     return res.json();
 }
 
+// ดึงรายละเอียดสถานที่ TAT หนึ่งแห่งตามภาษา
 async function fetchTATPlaceDetail(tatPlaceId, languageCode = 'th') {
     if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
         throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
@@ -50,6 +53,7 @@ async function fetchTATPlaceDetail(tatPlaceId, languageCode = 'th') {
     return payload.data || payload.result || payload;
 }
 
+// เพิ่มหรืออัปเดตคำแปลของสถานที่จาก payload TAT
 async function upsertDestinationTranslation(destinationId, languageCode, place) {
     const translation = buildTATTranslation(place);
     if (!translation) return false;
@@ -92,6 +96,7 @@ async function upsertDestinationTranslation(destinationId, languageCode, place) 
     return true;
 }
 
+// เพิ่มหรืออัปเดตสถานที่ TAT และข้อมูลร่วมในตารางหลัก
 async function upsertTATPlace(place) {
     // รวบรวมรูปภาพจากทุก field ที่เป็นไปได้
     let allImageUrls = [
@@ -218,6 +223,7 @@ async function upsertTATPlace(place) {
     return rows[0];
 }
 
+// sync สถานที่ TAT ทุกหน้าตามตัวเลือกและสรุปผลการทำงาน
 async function syncAllTATPlaces(options = {}) {
     const { province = '', keyword = '', placeCategory = '', maxPages = 50, hydrateDetails = false } = options;
     let page = 1;
@@ -282,6 +288,7 @@ async function syncAllTATPlaces(options = {}) {
     return summary;
 }
 
+// sync รายละเอียดภาษาไทยและอังกฤษของสถานที่ TAT หนึ่งแห่ง
 async function syncOneTATPlace(tatPlaceId) {
     const thaiPlace = await fetchTATPlaceDetail(tatPlaceId, 'th');
     const row = await upsertTATPlace(thaiPlace);
@@ -298,6 +305,7 @@ async function syncOneTATPlace(tatPlaceId) {
     return { ...row, languages };
 }
 
+// เติมคำแปลภาษาอังกฤษให้สถานที่ TAT ที่ยังไม่มีคำแปล
 async function syncMissingTATTranslations() {
     const { rows } = await query(
         `SELECT d.id, d.tat_place_id
@@ -335,6 +343,7 @@ async function syncMissingTATTranslations() {
 }
 
 // POST /api/admin/embed/bulk
+// สั่งสร้าง embedding ให้สถานที่ที่ยังขาดผ่าน admin API
 const bulkEmbed = async (req, res) => {
     try {
         res.json({ message: 'bulk embed เริ่มทำงาน (background)' });
@@ -348,6 +357,7 @@ const bulkEmbed = async (req, res) => {
 };
 
 // POST /api/admin/embed/:id
+// สั่งสร้าง embedding ใหม่ให้สถานที่หนึ่งแห่งผ่าน admin API
 const embedOne = async (req, res) => {
     try {
         const ok = await embedDestination(parseInt(req.params.id));
@@ -359,6 +369,7 @@ const embedOne = async (req, res) => {
 };
 
 // POST /api/admin/sync/tat
+// เริ่มงาน sync สถานที่ TAT ทั้งหมดผ่าน admin API
 const syncTAT = async (req, res) => {
     try {
         const { province, keyword, placeCategory } = req.body;
@@ -372,6 +383,7 @@ const syncTAT = async (req, res) => {
 };
 
 // POST /api/admin/sync/tat/:tatPlaceId
+// เริ่มงาน sync สถานที่ TAT หนึ่งแห่งผ่าน admin API
 const syncOneTAT = async (req, res) => {
     try {
         const row = await syncOneTATPlace(req.params.tatPlaceId);
@@ -382,6 +394,7 @@ const syncOneTAT = async (req, res) => {
 };
 
 // POST /api/admin/sync/tat/translations
+// เริ่มงานเติมคำแปล TAT ที่ขาดผ่าน admin API
 const syncTATTranslations = async (_req, res) => {
     try {
         const summary = await syncMissingTATTranslations();

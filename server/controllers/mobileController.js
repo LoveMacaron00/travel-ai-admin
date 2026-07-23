@@ -3,20 +3,25 @@
 const pool = require('../config/db');
 const { resolveTatLanguage } = require('./helpers/tatLanguage');
 
+// อ่านภาษาที่ผู้ใช้ร้องขอจาก Accept-Language
 const requestLanguage = (req) => resolveTatLanguage(
     typeof req.get === 'function'
         ? req.get('Accept-Language')
         : req.headers?.['accept-language'],
 );
 
+// เลือกข้อความตอบกลับภาษาไทยหรืออังกฤษตามภาษาของ request
 const localizedMessage = (language, thai, english) =>
     language === 'en' ? english : thai;
 
+// แจ้ง cache ว่า response แตกต่างกันตาม Accept-Language
 const addLanguageVaryHeader = (res) => {
     if (typeof res.vary === 'function') res.vary('Accept-Language');
 };
 
+// สร้าง controller สำหรับ mobile โดยรับ database เพื่อทดสอบหรือสลับ dependency ได้
 const createMobileControllers = (database) => {
+    // คืนรายการสถานที่ approved พร้อมคำแปลตามภาษาที่ร้องขอ
     const getDestinations = async (req, res) => {
         const language = requestLanguage(req);
         try {
@@ -111,6 +116,7 @@ const createMobileControllers = (database) => {
         }
     };
 
+    // คืนรายละเอียดสถานที่ approved หนึ่งแห่งพร้อมคำแปลตามภาษา
     const getDestinationDetail = async (req, res) => {
         const language = requestLanguage(req);
         try {

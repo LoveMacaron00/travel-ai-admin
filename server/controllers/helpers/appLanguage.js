@@ -2,6 +2,7 @@ const SUPPORTED_APP_LANGUAGES = new Set(['en', 'th']);
 
 // Accept-Language อาจมี region, quality value และหลายภาษา เช่น th-TH,en;q=0.9
 // เลือกภาษาที่แอปรองรับตัวแรก และใช้ภาษาไทยเป็นค่าเริ่มต้นของแอป
+// เลือกภาษา th/en ตัวแรกที่รองรับจาก HTTP Accept-Language
 const resolveAppLanguage = (acceptLanguage) => {
     const requestedLanguages = String(acceptLanguage || '')
         .split(',')

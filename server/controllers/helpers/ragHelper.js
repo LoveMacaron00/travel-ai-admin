@@ -6,6 +6,7 @@ const { getEmbedding } = require('./embedHelper');
 const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
 // Semantic retrieval สำหรับคำถามที่ไม่มีพิกัด พร้อม filter จังหวัด/หมวดหมู่
+// ค้นหาสถานที่ที่เกี่ยวข้องกับข้อความด้วย similarity ของ embedding
 async function retrieveRelevantPlaces(queryText, options = {}) {
     const {
         province = null,
@@ -69,6 +70,7 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
 }
 
 // เมื่อมี GPS ให้ค้นด้วย Haversine ก่อน เพื่อไม่ให้การสร้างแผนผูกกับ embedding API
+// ค้นหาสถานที่ approved ที่อยู่ใกล้พิกัดตามลำดับระยะทาง
 async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
     const lat = Number(latitude);
     const lng = Number(longitude);
@@ -98,6 +100,7 @@ async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
 }
 
 // ส่งเฉพาะ facts ที่ผ่าน formatter เข้า prompt เพื่อลด HTML และ schema ของ TAT ที่แกว่ง
+// แปลงผลลัพธ์สถานที่เป็น context ข้อความสำหรับ prompt ของ AI
 function formatPlacesContext(places) {
     if (places.length === 0) return 'ไม่พบสถานที่ที่เกี่ยวข้องในฐานข้อมูล';
 

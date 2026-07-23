@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const { parsePositiveInteger } = require('./helpers/numberHelper');
 
+// สร้าง handler บันทึกการเปิดดูสถานที่หนึ่งครั้งต่อ activity session
 const createRecordDestinationView = (database) => async (req, res) => {
     try {
         const destinationId = parsePositiveInteger(req.params.id);

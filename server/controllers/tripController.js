@@ -4,6 +4,7 @@ const pool = require('../config/db');
 const { generateTripPlan } = require('./helpers/aiHelper');
 
 // POST /api/trips — สร้าง trip ใหม่แล้ว stream แผน
+// สร้างแผนท่องเที่ยวด้วย AI และบันทึกเป็น trip ของผู้ใช้
 const createTrip = async (req, res) => {
     let tripId;
     try {
@@ -50,6 +51,7 @@ const createTrip = async (req, res) => {
 };
 
 // GET /api/trips — ดึงประวัติแผนเที่ยวของ user
+// คืนประวัติแผนท่องเที่ยวของผู้ใช้ที่ล็อกอินอยู่
 const getUserTrips = async (req, res) => {
     try {
         const userId = req.user?.id;
@@ -72,6 +74,7 @@ const getUserTrips = async (req, res) => {
 };
 
 // GET /api/trips/:id — ดึงแผนเที่ยวตาม ID
+// คืนแผนท่องเที่ยวหนึ่งรายการเมื่อเป็นเจ้าของรายการนั้น
 const getTripById = async (req, res) => {
     try {
         const { rows } = await pool.query(

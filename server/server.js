@@ -13,7 +13,7 @@ const { secureUploads } = require('./middleware/secureUploads');
 
 const app = express();
 
-// Middleware ส่วนกลางต้องมาก่อน routes เพื่อให้ policy เหมือนกันทุก endpoint
+// Middleware ส่วนกลาง
 app.use(morgan('dev'));
 app.use(cors({
     origin: config.allowedOrigins,
@@ -26,10 +26,9 @@ app.use(express.json({ limit: '2mb' }));
 // ไฟล์ทั่วไป เช่น รูปโปรไฟล์/สถานที่ ผ่าน auth ก่อน express.static
 // ส่วนรูป AI Camera อยู่ในโฟลเดอร์ย่อยแต่ส่งผ่าน chat endpoint ที่ตรวจ ownership
 const uploadsDir = path.join(__dirname, 'uploads');
-
 app.use('/uploads', secureUploads, express.static(uploadsDir));
 
-
+// ตรวจสอบ environment variables ที่จำเป็น
 warnAboutMissingEnvironment();
 
 // แบ่ง route ตามผู้ใช้: admin, mobile public และ mobile ที่ต้อง login
@@ -62,18 +61,10 @@ app.use('/api/activity', activityRoutes);
 app.get('/', (req, res) => res.send('Smart Travel API กำลังทำงาน'));
 
 // แปลง error จาก middleware (โดยเฉพาะ Multer) เป็น JSON รูปเดียวกัน
-app.use((err, req, res, next) => {
-    if (err?.name === 'MulterError') return res.status(400).json({ message: err.message });
-    if (err) return res.status(400).json({ message: err.message || 'คำขอไม่ถูกต้อง' });
-    next();
+app.use((err, _req, res, _next) => {
+    res.status(400).json({ message: err.message || 'คำขอไม่ถูกต้อง' });
 });
 
-const startServer = () => app.listen(config.port, () => {
+app.listen(config.port, () => {
     console.log(`เซิร์ฟเวอร์กำลังทำงานบนพอร์ต ${config.port}`);
 });
-
-if (require.main === module) {
-    startServer();
-}
-
-module.exports = { app, startServer };

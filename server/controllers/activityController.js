@@ -1,11 +1,12 @@
 const pool = require('../config/db');
 const { parsePositiveInteger } = require('./helpers/numberHelper');
 
+// session id ต้องเป็นจำนวนเต็มบวกก่อนนำไปค้นหาหรืออัปเดตในฐานข้อมูล
 const parseSessionId = parsePositiveInteger;
 
 /**
- * ต่ออายุ activity session ทุกหนึ่งนาทีขณะที่แอปอยู่ foreground
- * ถ้า session เดิมจบไปแล้วหรือไม่ใช่ของผู้ใช้ จะสร้าง session ใหม่ให้เอง
+ * รับ heartbeat จากแอปขณะอยู่ foreground
+ * อัปเดต session เดิมที่เป็นของผู้ใช้ หรือสร้าง session ใหม่เมื่อไม่มี/ปิดไปแล้ว
  */
 const heartbeat = async (req, res) => {
     try {
@@ -43,7 +44,10 @@ const heartbeat = async (req, res) => {
     }
 };
 
-/** ปิด session เมื่อแอปออกจาก foreground หรือผู้ใช้ logout */
+/**
+ * ปิด activity session เมื่อแอปออกจาก foreground หรือผู้ใช้ logout
+ * จำกัดการปิดไว้เฉพาะ session ที่เป็นของผู้ใช้คนปัจจุบันและยังไม่ถูกปิด
+ */
 const endSession = async (req, res) => {
     try {
         const sessionId = parseSessionId(req.body?.sessionId);

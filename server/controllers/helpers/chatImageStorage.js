@@ -9,11 +9,13 @@ const extensionByMimeType = {
     'image/webp': '.webp',
 };
 
+// ยอมรับเฉพาะชื่อไฟล์เดี่ยวเพื่อป้องกัน path traversal
 const safeStoredFileName = (fileName) => {
     const value = String(fileName || '');
     return value && path.basename(value) === value ? value : null;
 };
 
+// บันทึกภาพแชทด้วยชื่อสุ่มและคืนชื่อไฟล์สำหรับเก็บในฐานข้อมูล
 const saveChatImage = async (imageBuffer, mimeType) => {
     const extension = extensionByMimeType[mimeType];
     if (!Buffer.isBuffer(imageBuffer) || !extension) {
@@ -26,6 +28,7 @@ const saveChatImage = async (imageBuffer, mimeType) => {
     return fileName;
 };
 
+// ลบภาพแชทที่ระบุ โดยไม่ถือว่าไฟล์ที่หายไปเป็นข้อผิดพลาด
 const deleteChatImage = async (fileName) => {
     const safeFileName = safeStoredFileName(fileName);
     if (!safeFileName) return;
@@ -36,6 +39,7 @@ const deleteChatImage = async (fileName) => {
     }
 };
 
+// คืน path เต็มของภาพแชทเมื่อชื่อไฟล์ปลอดภัย
 const absoluteChatImagePath = (fileName) => {
     const safeFileName = safeStoredFileName(fileName);
     return safeFileName ? path.join(chatImagesDir, safeFileName) : null;

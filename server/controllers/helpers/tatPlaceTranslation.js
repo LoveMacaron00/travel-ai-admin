@@ -1,3 +1,4 @@
+// คืนข้อความที่ไม่ว่างค่าแรกจาก field หลายรูปแบบของข้อมูล TAT
 const firstValue = (...values) => {
     for (const value of values) {
         if (value !== null && value !== undefined && String(value).trim()) {
@@ -7,6 +8,7 @@ const firstValue = (...values) => {
     return null;
 };
 
+// คืนจำนวนเต็มไม่ติดลบค่าแรกจาก field หลายรูปแบบของข้อมูล TAT
 const firstInteger = (...values) => {
     for (const value of values) {
         if (value === null || value === undefined || String(value).trim() === '') continue;
@@ -16,6 +18,7 @@ const firstInteger = (...values) => {
     return null;
 };
 
+// แยกข้อมูลที่อยู่จาก payload TAT ให้เป็นโครงสร้างเดียวกัน
 const getLocationParts = (place = {}) => {
     const provinceId = firstInteger(
         place.location?.province?.provinceId,
@@ -72,6 +75,7 @@ const getLocationParts = (place = {}) => {
     };
 };
 
+// แปลง payload TAT เป็นข้อมูลข้อความสำหรับบันทึกใน destination_translations
 const buildTATTranslation = (place = {}) => {
     const name = firstValue(place.name, place.placeName, place.title);
     if (!name) return null;

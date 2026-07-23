@@ -6,12 +6,14 @@ const pool = require('../config/db');
 const { embedDestination, clearDestinationEmbedding } = require('./helpers/embedHelper');
 
 const PLACE_STATUSES = ['pending', 'approved', 'rejected'];
+// แปลงสถานะสถานที่ให้เหลือค่าที่ระบบรองรับ
 const normalizePlaceStatus = (status) => {
     const cleanStatus = String(status || 'approved').trim().toLowerCase();
     return PLACE_STATUSES.includes(cleanStatus) ? cleanStatus : 'approved';
 };
 
 // ลบไฟล์จริงจาก /uploads (เฉพาะไฟล์ที่อยู่ใน /uploads เท่านั้น)
+// ลบไฟล์รูปที่ไม่ถูกอ้างอิงแล้วจากโฟลเดอร์ upload
 const deleteUploadedFiles = (imagePaths) => {
     for (const imgPath of imagePaths) {
         if (!imgPath) continue;
@@ -28,12 +30,14 @@ const deleteUploadedFiles = (imagePaths) => {
 };
 
 // ฟังก์ชันสำหรับ normalize ข้อมูลรูปภาพจาก request body (array ของ string)
+// แปลง input URL รูปให้เป็นรายการข้อความที่ไม่ว่างและไม่ซ้ำ
 const normalizeImageUrls = (images) => {
     if (!Array.isArray(images)) return [];
     return [...new Set(images.filter((image) => typeof image === 'string' && image.trim()).map((image) => image.trim()))];
 };
 
 // ฟังก์ชันสำหรับ normalize ข้อมูลรูปภาพจากฐานข้อมูล (JSON หรือ array)
+// แปลงค่ารูปที่เก็บในฐานข้อมูลเป็น array ที่ใช้งานได้เสมอ
 const normalizeStoredImages = (images) => {
     if (!Array.isArray(images)) return [];
     return images
@@ -48,6 +52,7 @@ const normalizeStoredImages = (images) => {
 };
 
 // ฟังก์ชันสำหรับทำให้ค่า admission_fee เป็น object ที่มี key-value ที่ถูกต้อง
+// ทำให้ข้อมูลค่าเข้าชมอยู่ในรูปแบบ object ที่ปลอดภัยต่อการบันทึก
 const normalizeAdmissionFee = (fee) => {
     if (!fee || typeof fee !== 'object' || Array.isArray(fee)) return {};
     const result = {};
@@ -62,6 +67,7 @@ const normalizeAdmissionFee = (fee) => {
 };
 
 // ฟังก์ชันสำหรับทำให้ค่า admission_fee เป็น JSON string สำหรับเก็บในฐานข้อมูล
+// คืนข้อความที่ trim แล้ว หรือ null เมื่อไม่มีค่า
 const nullableText = (value) => {
     if (value === null || value === undefined) return null;
     const text = String(value).trim();
@@ -69,6 +75,7 @@ const nullableText = (value) => {
 };
 
 // ฟังก์ชันสำหรับทำให้ค่า location_id เป็น number หรือ null
+// แปลงรหัสพื้นที่เป็นจำนวนเต็มไม่ติดลบ หรือ null
 const nullableLocationId = (value) => {
     if (value === null || value === undefined || String(value).trim() === '') return null;
     const parsed = Number(value);
@@ -76,6 +83,7 @@ const nullableLocationId = (value) => {
 };
 
 // ฟังก์ชันสำหรับ normalize ข้อมูล location จาก request body
+// จัดรูปแบบ field ที่อยู่จาก request ก่อนส่งเข้า query
 const normalizeLocationInput = (data = {}) => {
     const location = data.location && typeof data.location === 'object' ? data.location : {};
     const province = location.province && typeof location.province === 'object' ? location.province : {};
@@ -97,12 +105,14 @@ const normalizeLocationInput = (data = {}) => {
 };
 
 // ฟังก์ชันสำหรับหาภาพที่ถูกลบออกจากรายการภาพปัจจุบัน
+// หารูปเก่าที่ถูกนำออกจากรายการใหม่
 const getRemovedImages = (currentImages, nextImages) => {
     const nextSet = new Set(nextImages);
     return currentImages.filter((image) => image && !nextSet.has(image));
 };
 
 // ฟังก์ชันสำหรับตรวจสอบค่าละติจูดและลองจิจูด
+// ตรวจละติจูดและลองจิจูดให้อยู่ในขอบเขตพิกัดโลก
 const validateCoordinates = (latitude, longitude) => {
     if (latitude !== undefined && latitude !== '' && latitude !== null) {
         const lat = parseFloat(latitude);
@@ -123,6 +133,7 @@ const validateCoordinates = (latitude, longitude) => {
  * ดึงรายการสถานที่ทั้งหมด (รองรับตัวกรอง)
  * GET /api/destinations
  */
+// ส่งรายการสถานที่ทั้งหมดสำหรับหน้า admin พร้อมตัวกรองและ pagination
 const getAllDestinations = async (req, res) => {
     try {
         const { province, status, search } = req.query;
@@ -169,6 +180,7 @@ const getAllDestinations = async (req, res) => {
  * ดึงข้อมูลสถานที่ตาม ID พร้อมรูปภาพ
  * GET /api/destinations/:id
  */
+// ส่งรายละเอียดสถานที่หนึ่งแห่งสำหรับหน้าแก้ไขของ admin
 const getDestinationById = async (req, res) => {
     try {
         const destId = parseInt(req.params.id, 10);
@@ -214,6 +226,7 @@ const getDestinationById = async (req, res) => {
  * สร้างสถานที่ใหม่
  * POST /api/destinations
  */
+// ตรวจข้อมูลและสร้างสถานที่ใหม่จากฟอร์ม admin
 const createDestination = async (req, res) => {
     try {
         if (!req.body.name || !req.body.name.trim()) {
@@ -304,6 +317,7 @@ const createDestination = async (req, res) => {
  * อัปเดตข้อมูลสถานที่
  * PUT /api/destinations/:id
  */
+// อัปเดตสถานที่และลบไฟล์รูปที่ไม่ได้ใช้งานแล้ว
 const updateDestination = async (req, res) => {
     try {
         const destId = parseInt(req.params.id, 10);
@@ -427,6 +441,7 @@ const updateDestination = async (req, res) => {
  * ลบสถานที่
  * DELETE /api/destinations/:id
  */
+// ลบสถานที่และไฟล์รูปที่เกี่ยวข้องเมื่อไม่มีรายการอ้างอิง
 const deleteDestination = async (req, res) => {
     try {
         const destId = parseInt(req.params.id, 10);

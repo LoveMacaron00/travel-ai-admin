@@ -17,8 +17,10 @@ const GEMINI_HEADERS = {
     'x-goog-api-key': GEMINI_API_KEY,
 };
 
+// หน่วงเวลาแบบ async สำหรับการ retry request ไปยัง Gemini
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// คัดเฉพาะรูปแบบการเดินทางที่ระบบรองรับจาก input ผู้ใช้
 const getAllowedTransportModes = (modes) => {
     const allowed = Array.isArray(modes)
         ? modes
@@ -28,6 +30,7 @@ const getAllowedTransportModes = (modes) => {
     return allowed.length > 0 ? [...new Set(allowed)] : ['car'];
 };
 
+// ปรับ transport mode ของแผน AI ให้ตรงกับตัวเลือกที่อนุญาต
 const normalizePlanTransportModes = (planData, allowedModes) => {
     // model อาจตอบ mode นอกตัวเลือกของผู้ใช้ จึงบังคับ schema เชิงธุรกิจอีกชั้น
     for (const day of planData.days || []) {
@@ -199,6 +202,7 @@ async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode 
 }
 
 // แผนเที่ยวขอเป็น response เดียวเพื่อไม่ต้องต่อ JSON ที่ถูกแบ่งเป็น SSE หลายชิ้น
+// ขอ JSON ที่ซ่อมรูปแบบแล้วจาก Gemini พร้อม retry เมื่อเกิดข้อผิดพลาดชั่วคราว
 async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
     const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent`;
     const body = {
@@ -250,6 +254,7 @@ async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
 }
 
 // สร้างแผนแล้ว stream สถานะกลับ Flutter ก่อนบันทึก JSON ที่ normalize ลงฐานข้อมูล
+// สร้างแผนท่องเที่ยวด้วย Gemini แล้วส่งความคืบหน้าผ่าน SSE
 async function generateTripPlan(tripId, tripInput, res) {
     const allowedTransportModes = getAllowedTransportModes(tripInput.transport_modes);
 
@@ -400,6 +405,7 @@ async function generateTripPlan(tripId, tripInput, res) {
 // ragChat()
 // ตอบคำถามเกี่ยวกับแผนเที่ยว ด้วย RAG + chat history
 // ส่งกลับไป Flutter พร้อมบันทึก source_chunk_ids
+// สร้างคำตอบแชทจากบริบทสถานที่ RAG และ stream ผลลัพธ์ให้ผู้ใช้
 async function ragChat(
     sessionId,
     tripId,

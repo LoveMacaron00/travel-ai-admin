@@ -1,7 +1,9 @@
 // server/controllers/helpers/tatPlaceFormatter.js
 
+// ลบ HTML และช่องว่างส่วนเกินออกจากข้อความที่มาจาก TAT
 const stripHtml = (value = '') => String(value).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 
+// คืนข้อความสะอาดที่ไม่ว่างค่าแรกจากชุดข้อมูลสำรอง
 const firstText = (...values) => {
     for (const value of values) {
         if (value === null || value === undefined) continue;
@@ -11,8 +13,10 @@ const firstText = (...values) => {
     return '';
 };
 
+// เลือก payload ดิบของ TAT หากมี หรือใช้ข้อมูลสถานที่ปัจจุบัน
 const getRaw = (place = {}) => place.tat_raw || place;
 
+// ดึงข้อมูลค่าเข้าชมจากข้อความอธิบายเมื่อ API ไม่ส่ง field ค่าธรรมเนียม
 const extractFeeFromDescription = (place = {}) => {
     const raw = getRaw(place);
     const text = firstText(
@@ -39,6 +43,7 @@ const extractFeeFromDescription = (place = {}) => {
     return matches.join(', ');
 };
 
+// จัดรูปแบบจำนวนเงินโดยเก็บทศนิยมเฉพาะเมื่อจำเป็น
 const formatMoney = (value) => {
     if (value === null || value === undefined || value === '') return '';
     const number = Number(value);
@@ -46,6 +51,7 @@ const formatMoney = (value) => {
     return Number.isInteger(number) ? String(number) : number.toFixed(2);
 };
 
+// สร้างข้อความเวลาเปิด-ปิดจากรายการรายวันหรือเวลา fallback
 const formatOpeningHours = (openingHours, fallbackOpen, fallbackClose) => {
     if (Array.isArray(openingHours) && openingHours.length > 0) {
         const rows = openingHours
@@ -73,6 +79,7 @@ const formatOpeningHours = (openingHours, fallbackOpen, fallbackClose) => {
     return '';
 };
 
+// รวมค่าเข้าชมเป็นข้อความสำหรับแสดงผล พร้อม fallback จากคำบรรยาย
 const buildFeeText = (place = {}) => {
     const raw = getRaw(place);
     const fee = raw.information?.fee || raw.fee || {};
@@ -88,11 +95,13 @@ const buildFeeText = (place = {}) => {
     return parts.join(', ') || extractFeeFromDescription(place);
 };
 
+// เลือกเบอร์โทรติดต่อจากข้อมูลสถานที่และ payload ดิบ
 const buildContactText = (place = {}) => {
     const raw = getRaw(place);
     return firstText(place.mobile, raw.mobile, raw.telephone);
 };
 
+// สร้างคำอธิบายสถานที่แบบตัดความยาวสูงสุดที่กำหนด
 const buildDetailText = (place = {}, maxLength = 800) => {
     const raw = getRaw(place);
     const detail = firstText(
@@ -104,6 +113,7 @@ const buildDetailText = (place = {}, maxLength = 800) => {
     return detail.length > maxLength ? `${detail.slice(0, maxLength)}...` : detail;
 };
 
+// สร้างข้อความเวลาเปิด-ปิดสำหรับสถานที่หนึ่งแห่ง
 const buildOpeningHoursText = (place = {}) => {
     const raw = getRaw(place);
     return formatOpeningHours(
@@ -113,6 +123,7 @@ const buildOpeningHoursText = (place = {}) => {
     );
 };
 
+// รวบรวม facts ที่พร้อมใช้แสดงผลจากข้อมูลสถานที่
 const buildPlaceFacts = (place = {}) => ({
     openingHoursText: buildOpeningHoursText(place),
     feeText: buildFeeText(place),

@@ -9,6 +9,7 @@ const { adminJwtSecret } = require('../config/jwtSecrets');
  * เข้าสู่ระบบแอดมิน
  * POST /api/auth/login
  */
+// ตรวจข้อมูลผู้ดูแลระบบและออก JWT สำหรับใช้งาน admin API
 const login = async (req, res) => {
     try {
         const { email, password } = req.body;

@@ -9,6 +9,7 @@ const { parsePositiveInteger } = require('./helpers/numberHelper');
 
 const destinationColors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
+// เติมเปอร์เซ็นต์เทียบอันดับสูงสุดและสีสำหรับแสดงอันดับสถานที่
 const withRankStats = (destinations) => {
     const maxViewer = Math.max(...destinations.map((destination) => destination.viewer), 1);
 
@@ -19,6 +20,7 @@ const withRankStats = (destinations) => {
     }));
 };
 
+// คำนวณตัวเลขสรุปการใช้งานและการเปิดดูสถานที่ตามช่วงเวลา
 const getSummary = async (range, timeZone) => {
     const { rows } = await pool.query(
         `WITH month_bounds AS (
@@ -96,6 +98,7 @@ const getSummary = async (range, timeZone) => {
     };
 };
 
+// หาเวลาหนึ่งชั่วโมงที่เริ่ม session มากที่สุดในช่วงที่เลือก
 const getPeakUsageTime = async (range, timeZone) => {
     const { rows } = await pool.query(
         `SELECT
@@ -111,6 +114,7 @@ const getPeakUsageTime = async (range, timeZone) => {
     return formatPeakUsageTime(rows[0]?.hour);
 };
 
+// สร้างข้อมูลกราฟการใช้งานและยอดดูราย time bucket
 const getTrendData = async (range, timeZone) => {
     // SQL fragment ทุกค่ามาจาก analyticsRanges ที่กำหนดใน source เท่านั้น
     // ไม่รับ unit/interval ตรงจาก query string เพื่อป้องกัน SQL injection
@@ -161,6 +165,7 @@ const getTrendData = async (range, timeZone) => {
     }));
 };
 
+// จัดอันดับห้าสถานที่ approved ที่ถูกเปิดดูมากที่สุดในช่วงที่เลือก
 const getTopDestinations = async (range) => {
     const { rows } = await pool.query(
         `SELECT
@@ -195,6 +200,7 @@ const getTopDestinations = async (range) => {
     return withRankStats(destinations);
 };
 
+// สร้างข้อมูลกราฟยอดดูสำหรับสถานที่หนึ่งแห่ง
 const getDestinationTrendData = async (range, timeZone, destinationId) => {
     const { rows } = await pool.query(
         `WITH settings AS (
@@ -231,6 +237,7 @@ const getDestinationTrendData = async (range, timeZone, destinationId) => {
 };
 
 /** GET /api/analytics/destinations/:id/trend?range=24h|7d|30d|90d */
+// ส่งแนวโน้มยอดดูของสถานที่ตาม id ให้ dashboard admin
 const getDestinationTrend = async (req, res) => {
     try {
         const destinationId = parsePositiveInteger(req.params.id);
@@ -264,6 +271,7 @@ const getDestinationTrend = async (req, res) => {
 };
 
 /** GET /api/analytics/overview?range=24h|7d|30d|90d */
+// ส่งข้อมูลภาพรวมทั้งหมดที่หน้า dashboard analytics ต้องใช้
 const getOverview = async (req, res) => {
     try {
         const range = getAnalyticsRange(req.query.range);

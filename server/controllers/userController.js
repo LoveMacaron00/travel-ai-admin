@@ -7,6 +7,7 @@ const { userJwtSecret } = require('../config/jwtSecrets');
 
 const PUBLIC_COLUMNS = 'id, email, username, profile_image_url, interests, is_banned, created_at';
 
+// ส่งรายชื่อผู้ใช้สำหรับหน้าจัดการของ admin
 const getAllUsers = async (req, res) => {
     try {
         const { rows } = await pool.query(
@@ -19,6 +20,7 @@ const getAllUsers = async (req, res) => {
     }
 };
 
+// สมัครบัญชีผู้ใช้ใหม่และออก JWT สำหรับแอปมือถือ
 const registerUser = async (req, res) => {
     try {
         const email = req.body.email?.trim().toLowerCase();
@@ -74,6 +76,7 @@ const registerUser = async (req, res) => {
     }
 };
 
+// ตรวจ credential ของผู้ใช้และออก JWT เมื่อเข้าสู่ระบบสำเร็จ
 const loginUser = async (req, res) => {
     try {
         const email = req.body.email?.trim().toLowerCase();
@@ -137,6 +140,7 @@ const loginUser = async (req, res) => {
     }
 };
 
+// สลับสถานะระงับบัญชีผู้ใช้ตาม id ที่ admin ระบุ
 const toggleBanUser = async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -172,6 +176,7 @@ const toggleBanUser = async (req, res) => {
     }
 };
 
+// อัปเดตข้อมูลโปรไฟล์ของผู้ใช้ที่ล็อกอินอยู่
 const updateUserProfile = async (req, res) => {
     try {
         const userId = req.user.id;
@@ -231,6 +236,7 @@ const updateUserProfile = async (req, res) => {
     }
 };
 
+// บันทึก URL รูปโปรไฟล์ใหม่ของผู้ใช้ที่ล็อกอินอยู่
 const uploadProfileImage = async (req, res) => {
     try {
         if (!req.file) {

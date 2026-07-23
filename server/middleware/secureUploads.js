@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { adminJwtSecret, userJwtSecret } = require('../config/jwtSecrets');
 const pool = require('../config/db');
 
+// อนุญาตให้เข้าถึงไฟล์ upload เฉพาะ admin หรือผู้ใช้ที่ยังไม่ถูกระงับ
 const secureUploads = async (req, res, next) => {
     // รูป AI Camera ต้องผ่าน endpoint ที่ตรวจว่า message เป็นของ user เท่านั้น
     // ห้าม express.static เปิดไฟล์จากโฟลเดอร์นี้แม้ request จะมี token ถูกต้อง

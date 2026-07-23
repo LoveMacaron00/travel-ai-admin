@@ -3,11 +3,13 @@ const dotenv = require('dotenv');
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+// แปลงค่า environment เป็นตัวเลข หรือคืนค่า fallback หากค่าไม่ถูกต้อง
 const asNumber = (value, fallback) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+// ตัด slash ท้าย URL เพื่อให้ต่อ path เพิ่มได้โดยไม่เกิด //
 const withoutTrailingSlash = (value) => value.replace(/\/+$/, '');
 
 // อ่าน process.env เพียงไฟล์เดียว เพื่อให้ชื่อ ค่า default และการแปลง type
@@ -70,6 +72,7 @@ const requiredEnvironmentVariables = [
     ['TATDATAAPI', config.tat.apiKey],
 ];
 
+// แจ้งตัวแปรสำคัญที่ยังไม่ได้กำหนด โดยไม่หยุด server ใน development
 const warnAboutMissingEnvironment = () => {
     // development แจ้งเตือนเพื่อให้เปิดบาง feature ได้ตามคีย์ที่มี
     // ส่วน secret ที่กระทบ auth จะถูกตรวจแบบ fail-fast ใน jwtSecrets.js

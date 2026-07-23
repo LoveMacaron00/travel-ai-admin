@@ -3,6 +3,7 @@
 const jwt = require('jsonwebtoken');
 const { adminJwtSecret } = require('../config/jwtSecrets');
 
+// ตรวจ JWT ของผู้ดูแลระบบและแนบข้อมูล token ลง req.admin
 const requireAdminAuth = (req, res, next) => {
     const authHeader = req.headers.authorization || '';
     if (!authHeader.startsWith('Bearer ')) {

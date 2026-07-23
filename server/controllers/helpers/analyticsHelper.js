@@ -37,13 +37,16 @@ const analyticsRanges = Object.freeze({
     },
 });
 
+// คืนค่าช่วงเวลาสถิติที่รองรับ โดยใช้ 30 วันเมื่อ query ไม่ถูกต้อง
 const getAnalyticsRange = (value) => analyticsRanges[value] ?? analyticsRanges['30d'];
 
+// คำนวณเปอร์เซ็นต์การเปลี่ยนแปลง โดยแยกกรณีฐานเดิมเป็นศูนย์
 const calculateGrowth = (current, previous) => {
     if (previous === 0) return current === 0 ? 0 : null;
     return Number((((current - previous) / previous) * 100).toFixed(1));
 };
 
+// แปลงชั่วโมง 0-23 เป็นข้อความช่วงเวลาหนึ่งชั่วโมง
 const formatPeakUsageTime = (hour) => {
     if (!Number.isInteger(hour)) return null;
     const endHour = (hour + 1) % 24;

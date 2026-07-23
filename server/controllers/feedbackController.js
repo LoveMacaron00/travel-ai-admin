@@ -2,6 +2,7 @@
 
 const pool = require('../config/db');
 
+// ส่งรายการ feedback ทั้งหมดสำหรับหน้าจัดการของ admin
 const getAllFeedback = async (req, res) => {
     try {
         const { rows } = await pool.query(
@@ -18,6 +19,7 @@ const getAllFeedback = async (req, res) => {
     }
 };
 
+// อัปเดตสถานะหรือข้อความตอบกลับของ feedback รายการหนึ่ง
 const updateFeedback = async (req, res) => {
     try {
         const { status, admin_reply } = req.body;

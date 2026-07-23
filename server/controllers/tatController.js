@@ -5,10 +5,12 @@ const { tatHeadersFor } = require('./helpers/tatLanguage');
 const TAT_API_KEY = config.tat.apiKey;
 const TAT_API_BASE = config.tat.apiBaseUrl;
 
+// สร้าง header ตามภาษาใน request เพื่อเรียก TAT API
 const requestTatHeaders = (req) =>
     tatHeadersFor(TAT_API_KEY, req.get('Accept-Language'));
 
 // ตรวจสอบความถูกต้องของ API Key ใน Environment ก่อนเรียกใช้งาน
+// ตรวจว่ามี TAT API key ก่อนส่ง request ไปยังผู้ให้บริการ
 const checkEnvConfig = (res) => {
     if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
         res.status(503).json({ message: "ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)" });
@@ -19,6 +21,7 @@ const checkEnvConfig = (res) => {
 
  // ค้นหาสถานที่จาก TAT API
  // GET /api/v2/places
+// ค้นหาสถานที่จาก TAT API แล้วส่งผลลัพธ์กลับให้ admin
 const searchPlaces = async (req, res) => {
     if (!checkEnvConfig(res)) return;
     try {
@@ -46,6 +49,7 @@ const searchPlaces = async (req, res) => {
 
  // ดูรายละเอียดสถานที่จาก TAT API ตาม ID
  // GET /api/v2/places/:id
+// ดึงรายละเอียดสถานที่หนึ่งแห่งจาก TAT API
 const getPlaceById = async (req, res) => {
     if (!checkEnvConfig(res)) return;
     try {

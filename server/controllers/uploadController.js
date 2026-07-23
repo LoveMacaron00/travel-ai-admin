@@ -1,5 +1,6 @@
 // server/controllers/uploadController.js
 
+// แปลงไฟล์ที่ Multer รับไว้เป็น URL สำหรับบันทึกกับสถานที่
 const uploadImages = (req, res) => {
     // ตรวจสอบว่ามีไฟล์ที่อัปโหลดหรือไม่
     if (!req.files || req.files.length === 0) {
