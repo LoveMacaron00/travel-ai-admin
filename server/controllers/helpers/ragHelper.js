@@ -32,7 +32,16 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
             d.district,
             d.sub_district,
             d.postcode,
-            d.image_url,
+            COALESCE(
+                d.image_url,
+                (
+                    SELECT di.image_url
+                    FROM destination_images di
+                    WHERE di.destination_id = d.id
+                    ORDER BY di.id ASC
+                    LIMIT 1
+                )
+            ) AS image_url,
             d.opening_time,
             d.closing_time,
             d.opening_hours,
@@ -80,7 +89,17 @@ async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
         `SELECT
             d.id, d.name, d.province, d.description, d.category, d.tags,
             d.latitude, d.longitude, d.address, d.district,
-            d.sub_district, d.postcode, d.image_url,
+            d.sub_district, d.postcode,
+            COALESCE(
+                d.image_url,
+                (
+                    SELECT di.image_url
+                    FROM destination_images di
+                    WHERE di.destination_id = d.id
+                    ORDER BY di.id ASC
+                    LIMIT 1
+                )
+            ) AS image_url,
             d.opening_time, d.closing_time, d.opening_hours,
             d.tat_raw,
             (6371 * acos(LEAST(1, GREATEST(-1,
@@ -97,6 +116,63 @@ async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
         [lat, lng, limit],
     );
     return rows;
+}
+
+// ค้นสถานที่ approved จากชื่อที่ AI ระบุ รองรับชื่อหลักและชื่อแปล
+async function findDestinationByNames(names) {
+    const normalizedNames = [...new Set(
+        names
+            .flatMap((name) => {
+                const value = String(name || '').trim();
+                if (!value) return [];
+                const parentheticalNames = [...value.matchAll(/\(([^)]+)\)/g)]
+                    .map((match) => match[1]);
+                return [
+                    value,
+                    value.replace(/\s*\([^)]*\)\s*/g, ' ').trim(),
+                    ...parentheticalNames,
+                ];
+            })
+            .map((name) => name.toLowerCase().replace(/\s+/g, ' ').trim())
+            .filter(Boolean),
+    )];
+    if (normalizedNames.length === 0) return null;
+
+    const { rows } = await query(
+        `SELECT
+            d.id,
+            d.name,
+            COALESCE(
+                d.image_url,
+                (
+                    SELECT di.image_url
+                    FROM destination_images di
+                    WHERE di.destination_id = d.id
+                    ORDER BY di.id ASC
+                    LIMIT 1
+                )
+            ) AS image_url
+         FROM destinations d
+         WHERE d.status = 'approved'
+           AND (
+                LOWER(REGEXP_REPLACE(BTRIM(d.name), '\\s+', ' ', 'g')) = ANY($1::text[])
+                OR EXISTS (
+                    SELECT 1
+                    FROM destination_translations dt
+                    WHERE dt.destination_id = d.id
+                      AND LOWER(REGEXP_REPLACE(BTRIM(dt.name), '\\s+', ' ', 'g')) = ANY($1::text[])
+                )
+           )
+         ORDER BY
+            array_position(
+                $1::text[],
+                LOWER(REGEXP_REPLACE(BTRIM(d.name), '\\s+', ' ', 'g'))
+            ) NULLS LAST,
+            d.id DESC
+         LIMIT 1`,
+        [normalizedNames],
+    );
+    return rows[0] || null;
 }
 
 // ส่งเฉพาะ facts ที่ผ่าน formatter เข้า prompt เพื่อลด HTML และ schema ของ TAT ที่แกว่ง
@@ -121,4 +197,9 @@ function formatPlacesContext(places) {
     }).join('\n\n---\n\n');
 }
 
-module.exports = { retrieveRelevantPlaces, retrieveNearbyPlaces, formatPlacesContext };
+module.exports = {
+    findDestinationByNames,
+    formatPlacesContext,
+    retrieveNearbyPlaces,
+    retrieveRelevantPlaces,
+};

@@ -1,7 +1,8 @@
 const { config } = require('../../config/env');
 const {
-    retrieveNearbyPlaces,
+    findDestinationByNames,
     formatPlacesContext,
+    retrieveNearbyPlaces,
 } = require('./ragHelper');
 const { resolveAppLanguage } = require('./appLanguage');
 
@@ -502,9 +503,15 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, langua
         mimeType,
     });
 
-    const matched = nearbyPlaces.find((place) =>
+    let matched = nearbyPlaces.find((place) =>
         String(place.name).toLowerCase() === String(result.matchedDestinationName || '').toLowerCase(),
     );
+    if (!matched && clampConfidence(result.confidence) >= 0.8) {
+        matched = await findDestinationByNames([
+            result.matchedDestinationName,
+            result.title,
+        ]);
+    }
     const analysis = buildAnalysis({
         mode: 'place',
         title: result.title,
@@ -521,6 +528,7 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, langua
         analysis,
         answer: analysisToAnswer(analysis, languageCode),
         sourceChunkIds: matched ? [matched.id] : [],
+        illustrationUrl: matched?.image_url || null,
     };
 }
 

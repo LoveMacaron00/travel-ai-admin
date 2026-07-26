@@ -189,10 +189,9 @@ const analyzeImage = async (req, res) => {
              ), new_assistant AS (
                 INSERT INTO chat_messages (
                     session_id, role, content, source_chunk_ids,
-                    reply_to_message_id, image_path,
-                    image_mime_type, image_caption
+                    reply_to_message_id, image_url
                 )
-                SELECT $1, 'assistant', $5, $6, id, $3, $4, $5
+                SELECT $1, 'assistant', $5, $6, id, $7
                 FROM new_user
                 RETURNING id, reply_to_message_id
              )
@@ -208,6 +207,7 @@ const analyzeImage = async (req, res) => {
                 detectedMimeType,
                 result.answer,
                 result.sourceChunkIds || [],
+                result.illustrationUrl || null,
             ],
         );
         imageCommitted = true;
@@ -222,9 +222,7 @@ const analyzeImage = async (req, res) => {
             image_url: userMessageId
                 ? `/api/chat/messages/${userMessageId}/image`
                 : null,
-            assistant_image_url: assistantMessageId
-                ? `/api/chat/messages/${assistantMessageId}/image`
-                : null,
+            assistant_image_url: result.illustrationUrl || null,
         });
     } catch (err) {
         if (storedImageFileName && !imageCommitted) {
@@ -263,11 +261,14 @@ const getMessages = async (req, res) => {
             `SELECT id, role, content, source_chunk_ids, image_caption,
                     reply_to_message_id,
                     edited_at, created_at,
-                    CASE
-                        WHEN image_path IS NOT NULL
-                        THEN '/api/chat/messages/' || id || '/image'
-                        ELSE NULL
-                    END AS image_url
+                    COALESCE(
+                        image_url,
+                        CASE
+                            WHEN image_path IS NOT NULL
+                            THEN '/api/chat/messages/' || id || '/image'
+                            ELSE NULL
+                        END
+                    ) AS image_url
              FROM chat_messages
              WHERE session_id = $1
              ORDER BY created_at ASC, id ASC`,

@@ -224,7 +224,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     role chat_role NOT NULL,
     content TEXT NOT NULL,
     source_chunk_ids INT[] NOT NULL DEFAULT '{}', -- place_embeddings.id ที่ RAG ดึงมา
-    image_path TEXT, -- ชื่อไฟล์ private ที่แนบกับข้อความ user หรือ assistant
+    image_path TEXT, -- ชื่อไฟล์ private ของรูปที่ผู้ใช้ส่งเข้า AI Camera
+    image_url TEXT, -- URL รูปประกอบจากสถานที่ที่ AI จับคู่ได้
     image_mime_type VARCHAR(20),
     image_caption TEXT,
     edited_at TIMESTAMPTZ, -- มีค่าเมื่อผู้ใช้แก้ไขข้อความของตนเอง
