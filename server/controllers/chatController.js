@@ -189,9 +189,10 @@ const analyzeImage = async (req, res) => {
              ), new_assistant AS (
                 INSERT INTO chat_messages (
                     session_id, role, content, source_chunk_ids,
-                    reply_to_message_id
+                    reply_to_message_id, image_path,
+                    image_mime_type, image_caption
                 )
-                SELECT $1, 'assistant', $5, $6, id
+                SELECT $1, 'assistant', $5, $6, id, $3, $4, $5
                 FROM new_user
                 RETURNING id, reply_to_message_id
              )
@@ -211,14 +212,18 @@ const analyzeImage = async (req, res) => {
         );
         imageCommitted = true;
         const userMessageId = insertedRows[0]?.user_message_id;
+        const assistantMessageId = insertedRows[0]?.assistant_message_id;
 
         res.json({
             answer: result.answer,
             analysis: result.analysis,
             user_message_id: userMessageId || null,
-            assistant_message_id: insertedRows[0]?.assistant_message_id || null,
+            assistant_message_id: assistantMessageId || null,
             image_url: userMessageId
                 ? `/api/chat/messages/${userMessageId}/image`
+                : null,
+            assistant_image_url: assistantMessageId
+                ? `/api/chat/messages/${assistantMessageId}/image`
                 : null,
         });
     } catch (err) {
@@ -399,7 +404,7 @@ const deleteMessage = async (req, res) => {
     }
 };
 
-// GET /api/chat/messages/:messageId/image — ส่งรูปเฉพาะเมื่อ message เป็นของผู้ใช้
+// GET /api/chat/messages/:messageId/image — ส่งรูปเมื่อ session เป็นของผู้ใช้
 // ส่งไฟล์ภาพจากข้อความเมื่อผู้ใช้เป็นเจ้าของ session
 const getMessageImage = async (req, res) => {
     const languageCode = resolveAppLanguage(req.get('Accept-Language'));
