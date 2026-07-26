@@ -145,7 +145,7 @@ const getAllDestinations = async (req, res) => {
 
         if (province && typeof province === 'string' && province.trim()) {
             const cleanProvince = province.trim();
-            if (/^[a-zA-Z0-9ก-๙\s\.-]+$/.test(cleanProvince)) {
+            if (/^[a-zA-Z0-9ก-๙\s.-]+$/.test(cleanProvince)) {
                 params.push(cleanProvince);
                 conditions.push(`province = $${params.length}`);
             }

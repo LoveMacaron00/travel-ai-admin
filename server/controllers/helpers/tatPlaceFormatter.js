@@ -133,11 +133,5 @@ const buildPlaceFacts = (place = {}) => ({
 
 module.exports = {
     stripHtml,
-    formatOpeningHours,
-    buildFeeText,
-    extractFeeFromDescription,
-    buildContactText,
-    buildDetailText,
-    buildOpeningHoursText,
     buildPlaceFacts,
 };

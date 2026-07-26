@@ -54,7 +54,6 @@ const formatPeakUsageTime = (hour) => {
 };
 
 module.exports = {
-    analyticsRanges,
     calculateGrowth,
     formatPeakUsageTime,
     getAnalyticsRange,

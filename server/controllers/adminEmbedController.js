@@ -410,8 +410,4 @@ module.exports = {
     syncTAT,
     syncOneTAT,
     syncTATTranslations,
-    fetchTATPlaceDetail,
-    syncAllTATPlaces,
-    syncOneTATPlace,
-    syncMissingTATTranslations,
 };

@@ -301,9 +301,4 @@ const getOverview = async (req, res) => {
 module.exports = {
     getOverview,
     getDestinationTrend,
-    getDestinationTrendData,
-    getPeakUsageTime,
-    getSummary,
-    getTopDestinations,
-    getTrendData,
 };

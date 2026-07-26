@@ -62,4 +62,4 @@ const createRecordDestinationView = (database) => async (req, res) => {
  */
 const recordDestinationView = createRecordDestinationView(pool);
 
-module.exports = { createRecordDestinationView, recordDestinationView };
+module.exports = { recordDestinationView };

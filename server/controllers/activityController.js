@@ -68,4 +68,4 @@ const endSession = async (req, res) => {
     }
 };
 
-module.exports = { heartbeat, endSession, parseSessionId };
+module.exports = { heartbeat, endSession };

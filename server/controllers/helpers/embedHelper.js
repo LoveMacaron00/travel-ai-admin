@@ -142,4 +142,4 @@ async function clearDestinationEmbedding(destinationId) {
     await query('DELETE FROM place_embeddings WHERE destination_id = $1', [destinationId]);
 }
 
-module.exports = { getEmbedding, embedDestination, bulkEmbedMissing, clearDestinationEmbedding, buildChunks };
+module.exports = { getEmbedding, embedDestination, bulkEmbedMissing, clearDestinationEmbedding };

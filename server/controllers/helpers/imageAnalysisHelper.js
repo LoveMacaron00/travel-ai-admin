@@ -760,7 +760,6 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
 async function analyzeTravelImage({
     mode,
     imageBuffer,
-    mimeType,
     latitude,
     longitude,
     languageCode,

@@ -262,6 +262,4 @@ const { getDestinations, getDestinationDetail } = createMobileControllers(pool);
 module.exports = {
     getDestinations,
     getDestinationDetail,
-    createMobileControllers,
-    requestLanguage,
 };

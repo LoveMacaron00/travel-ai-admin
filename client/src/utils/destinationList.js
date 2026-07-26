@@ -18,7 +18,7 @@ const firstImage = (value) => {
     return '';
 };
 
-export const normalizeStatus = (status) => String(status || '').toLowerCase();
+const normalizeStatus = (status) => String(status || '').toLowerCase();
 
 export const normalizeDestinationItems = ({ source, status, tatItems, adminItems }) => {
     let items = source === 'tat'

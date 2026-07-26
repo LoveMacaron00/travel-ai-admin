@@ -17,17 +17,4 @@ const requireUserAuth = (req, res, next) => {
     }
 };
 
-// อ่าน JWT ผู้ใช้ถ้ามี แต่ยังอนุญาตให้ guest ใช้งานเมื่อไม่มีหรือ token ใช้ไม่ได้
-const optionalUserAuth = (req, res, next) => {
-    const authHeader = req.headers.authorization || '';
-    if (authHeader.startsWith('Bearer ')) {
-        try {
-            req.user = jwt.verify(authHeader.slice(7).trim(), userJwtSecret);
-        } catch {
-            // endpoint แบบ optional auth ทำงานต่อในฐานะ guest เมื่อ token ใช้ไม่ได้
-        }
-    }
-    next();
-};
-
-module.exports = { requireUserAuth, optionalUserAuth };
+module.exports = { requireUserAuth };

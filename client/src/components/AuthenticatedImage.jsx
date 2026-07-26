@@ -67,5 +67,4 @@ const AuthenticatedImage = ({ src, alt = '', onError, ...props }) => {
     );
 };
 
-export { useAuthenticatedImageUrl };
 export default AuthenticatedImage;
