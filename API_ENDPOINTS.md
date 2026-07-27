@@ -1,6 +1,6 @@
 # API endpoint inventory
 
-อัปเดตล่าสุด: 2026-07-17
+อัปเดตล่าสุด: 2026-07-27
 
 เอกสารนี้เทียบ route ที่ backend เปิดกับ caller ใน `client/src` และ
 `travel-ai-app/lib` เพื่อแยก endpoint ที่ใช้งานจริงออกจาก endpoint สำหรับงานดูแลระบบ
