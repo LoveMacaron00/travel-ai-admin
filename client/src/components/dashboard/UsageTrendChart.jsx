@@ -44,7 +44,7 @@ const UsageTrendChart = ({ data, viewLabel = 'ยอดดูสถานที�
 
     return (
         <div
-            className="relative h-72 w-full"
+            className="relative h-64 w-full"
             role="img"
             aria-label="กราฟแนวโน้มผู้ใช้และยอดดูสถานที่"
         >

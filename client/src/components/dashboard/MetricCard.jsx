@@ -13,9 +13,9 @@ const MetricCard = ({ icon: Icon, label, value, detail, tone, growth }) => {
     const growthIsPositive = hasGrowth && growth >= 0;
 
     return (
-        <article className="relative overflow-hidden rounded-xl border border-gray-800 bg-gray-900 p-4 shadow-xl">
+        <article className="relative overflow-hidden rounded-xl border border-gray-800 bg-gray-900 p-3 shadow-xl">
             <div className="flex items-start justify-between gap-3">
-                <div className={`rounded-lg p-2.5 ring-1 ${toneClasses[tone]}`}>
+                <div className={`rounded-lg p-2 ring-1 ${toneClasses[tone]}`}>
                     <Icon aria-hidden="true" size={18} />
                 </div>
                 {hasGrowth && (
@@ -33,9 +33,9 @@ const MetricCard = ({ icon: Icon, label, value, detail, tone, growth }) => {
                     </span>
                 )}
             </div>
-            <p className="mt-4 text-sm font-semibold text-gray-400">{label}</p>
+            <p className="mt-3 text-sm font-semibold text-gray-400">{label}</p>
             <p className="mt-1 text-2xl font-extrabold tracking-tight text-white md:text-3xl">{value}</p>
-            <p className="mt-2 min-h-5 text-xs leading-5 text-gray-500">{detail}</p>
+            <p className="mt-1 min-h-5 text-xs leading-5 text-gray-500">{detail}</p>
         </article>
     );
 };

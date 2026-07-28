@@ -174,25 +174,25 @@ const AddDestination = () => {
     };
 
     return (
-        <div className="p-3 md:p-4 w-full space-y-4">
+        <div className="w-full space-y-3 p-3">
             {/* Header Section */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-3 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
                 <div className="absolute bottom-0 left-10 w-40 h-40 bg-blue-500/5 rounded-full blur-2xl -mb-10 pointer-events-none" />
 
                 <div className="relative z-10">
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2 mb-2">
                         <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase border border-yellow-500/20">โหมดเพิ่มข้อมูล</span>
                     </div>
-                    <h1 className="text-2xl font-bold text-white tracking-tight">
+                    <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
                         เพิ่มสถานที่ใหม่
                     </h1>
-                    <p className="text-gray-400 mt-2 text-sm">
+                    <p className="text-gray-400 mt-1 text-sm">
                         กรอกข้อมูล ตำแหน่ง และรูปภาพเพื่อสร้างสถานที่ใหม่
                     </p>
                 </div>
 
-                <div className="relative z-10 flex items-center gap-4">
+                <div className="relative z-10 flex items-center gap-2">
                     <button
                         onClick={() => navigate('/destinations')}
                         className="px-4 py-2 bg-white/5 text-white font-bold rounded-xl border border-gray-700"
@@ -210,15 +210,15 @@ const AddDestination = () => {
             </div>
 
             {/* Media Gallery — Multi-image Upload */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl">
-                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-xl">
+                <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
                     <ImagePlus size={24} className="text-yellow-500" />
                     คลังรูปภาพ
                 </h2>
 
                 {/* Drag & Drop Zone */}
                 <div
-                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer ${dragOver ? 'border-yellow-500 bg-yellow-500/5' : 'border-gray-700'}`}
+                    className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer ${dragOver ? 'border-yellow-500 bg-yellow-500/5' : 'border-gray-700'}`}
                     onClick={() => fileInputRef.current?.click()}
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                     onDragLeave={() => setDragOver(false)}
@@ -233,7 +233,7 @@ const AddDestination = () => {
                         onChange={handleFileSelect}
                     />
                     {uploading ? (
-                        <div className="flex flex-col items-center gap-4">
+                        <div className="flex flex-col items-center gap-3">
                             <div className="w-10 h-10 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin" />
                             <p className="text-yellow-500 font-medium animate-pulse">กำลังอัปโหลดไฟล์รูปภาพ...</p>
                         </div>
@@ -250,7 +250,7 @@ const AddDestination = () => {
 
                 {/* Image Previews */}
                 {images.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-8">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mt-4">
                         {images.map((url, i) => (
                             <div key={i} className="relative aspect-square rounded-xl overflow-hidden shadow-md border border-gray-800">
                                 <button
@@ -289,56 +289,56 @@ const AddDestination = () => {
             </div>
 
             {/* Form */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl">
-                <h2 className="text-lg font-bold text-white mb-4 border-b border-gray-800 pb-3">ข้อมูลสถานที่</h2>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-xl">
+                <h2 className="text-lg font-bold text-white mb-3 border-b border-gray-800 pb-3">ข้อมูลสถานที่</h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">ชื่อสถานที่</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all" placeholder="กรอกชื่อสถานที่"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all" placeholder="กรอกชื่อสถานที่"
                             value={form.name} onChange={e => handleChange('name', e.target.value)} />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">ที่อยู่</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all" placeholder="เช่น 169 ถนนลงหาดบางแสน"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all" placeholder="เช่น 169 ถนนลงหาดบางแสน"
                             value={form.address} onChange={e => handleChange('address', e.target.value)} />
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">จังหวัด</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น ชลบุรี"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น ชลบุรี"
                             value={form.province} onChange={e => handleChange('province', e.target.value)} />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">รหัสจังหวัด</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 464" inputMode="numeric"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 464" inputMode="numeric"
                             value={form.province_id} onChange={e => handleChange('province_id', e.target.value)} />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">อำเภอ/เขต</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น เมืองชลบุรี"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น เมืองชลบุรี"
                             value={form.district} onChange={e => handleChange('district', e.target.value)} />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">รหัสอำเภอ/เขต</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 2001" inputMode="numeric"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 2001" inputMode="numeric"
                             value={form.district_id} onChange={e => handleChange('district_id', e.target.value)} />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">ตำบล/แขวง</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น แสนสุข"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น แสนสุข"
                             value={form.sub_district} onChange={e => handleChange('sub_district', e.target.value)} />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">รหัสตำบล/แขวง</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 200104" inputMode="numeric"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 200104" inputMode="numeric"
                             value={form.sub_district_id} onChange={e => handleChange('sub_district_id', e.target.value)} />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">รหัสไปรษณีย์</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 20000" inputMode="numeric"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 20000" inputMode="numeric"
                             value={form.postcode} onChange={e => handleChange('postcode', e.target.value)} />
                     </div>
                 </div>
@@ -346,7 +346,7 @@ const AddDestination = () => {
                 {/* Rich Text Editor */}
                 <div className="mb-8">
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">รายละเอียด</label>
-                    <div className="bg-black/40 border border-gray-700 rounded-xl overflow-hidden [&_.ql-toolbar]:border-none [&_.ql-toolbar]:border-b [&_.ql-toolbar]:border-gray-700 [&_.ql-container]:border-none [&_.ql-editor]:min-h-[200px] [&_.ql-editor]:text-gray-300">
+                    <div className="bg-black/40 border border-gray-700 rounded-xl overflow-hidden [&_.ql-toolbar]:border-none [&_.ql-toolbar]:border-b [&_.ql-toolbar]:border-gray-700 [&_.ql-container]:border-none [&_.ql-editor]:min-h-[160px] [&_.ql-editor]:text-gray-300">
                         <ReactQuill
                             theme="snow"
                             value={form.description}
@@ -357,10 +357,10 @@ const AddDestination = () => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-4">
                         {/* Coordinates */}
-                        <div className="p-5 bg-gray-800/50 rounded-2xl border border-gray-700/50">
+                        <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700/50">
                             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 block">พิกัดสถานที่</label>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -376,7 +376,7 @@ const AddDestination = () => {
                             </div>
                         </div>
 
-                        <div className="p-5 bg-gray-800/50 rounded-2xl border border-gray-700/50">
+                        <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700/50">
                             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 block">ค่าเข้าชม</label>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -403,7 +403,7 @@ const AddDestination = () => {
                         </div>
 
                         {/* Status */}
-                        <div className="flex flex-col gap-6">
+                        <div className="flex flex-col gap-4">
                             <div>
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">สถานะ</label>
                                 <select className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 appearance-none" value={form.status} onChange={e => handleChange('status', e.target.value)}>
@@ -416,7 +416,7 @@ const AddDestination = () => {
                     </div>
 
                     {/* Leaflet Map & Search */}
-                    <div className="relative flex flex-col gap-4">
+                    <div className="relative flex flex-col gap-3">
                         {/* Search Box */}
                         <div className="relative z-[1001]">
                             <div className="flex gap-2">
@@ -458,9 +458,9 @@ const AddDestination = () => {
                         </div>
 
                         {/* Placeholder when map is fixed */}
-                        {mapExpanded && <div className="h-full min-h-[250px] rounded-2xl border-2 border-dashed border-gray-700/50 bg-gray-800/20" />}
+                        {mapExpanded && <div className="h-full min-h-[220px] rounded-2xl border-2 border-dashed border-gray-700/50 bg-gray-800/20" />}
 
-                        <div className={mapExpanded ? "fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm p-4 md:p-12 flex flex-col" : "relative group h-full min-h-[250px]"}>
+                        <div className={mapExpanded ? "fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm p-4 md:p-12 flex flex-col" : "relative group h-full min-h-[220px]"}>
                             {mapExpanded && (
                                 <div className="flex justify-between items-center mb-4 text-white">
                                     <h3 className="text-xl font-bold flex items-center gap-2"><MapPin className="text-yellow-500" /> เลือกตำแหน่ง</h3>

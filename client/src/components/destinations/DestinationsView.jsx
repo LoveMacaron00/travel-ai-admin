@@ -27,14 +27,14 @@ const DestinationsView = ({
     handlePageChange
 }) => {
     return (
-        <div className="p-3 md:p-4 w-full space-y-3 md:space-y-4">
+        <div className="w-full space-y-3 p-3">
             {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-3 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
                 <div className="absolute bottom-0 left-10 w-40 h-40 bg-blue-500/5 rounded-full blur-2xl -mb-10 pointer-events-none" />
 
                 <div className="relative z-10">
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2 mb-2">
                         <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">จัดการสถานที่</span>
                     </div>
                     <h1 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
@@ -44,7 +44,7 @@ const DestinationsView = ({
                         จัดการสถานที่ท่องเที่ยวจาก TAT API และสถานที่ที่ผู้ดูแลระบบเพิ่มเอง
                     </p>
                     {sourceTotalCount > 0 && (
-                        <div className="flex items-center gap-2 mt-4">
+                        <div className="flex items-center gap-2 mt-2">
                             <span className="bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-700">
                                 ทั้งหมด: {sourceTotalCount.toLocaleString()} แห่ง
                             </span>
@@ -66,7 +66,7 @@ const DestinationsView = ({
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="ค้นหาสถานที่..."
-                            className="pl-10 pr-4 py-3 w-full sm:w-72 bg-black/40 border border-gray-700 focus:border-yellow-500/50 focus:ring-2 focus:ring-yellow-500/20 rounded-xl text-sm text-white shadow-inner outline-none"
+                            className="pl-10 pr-4 py-2.5 w-full sm:w-72 bg-black/40 border border-gray-700 focus:border-yellow-500/50 focus:ring-2 focus:ring-yellow-500/20 rounded-xl text-sm text-white shadow-inner outline-none"
                         />
                     </form>
 
@@ -74,7 +74,7 @@ const DestinationsView = ({
                         <button
                             onClick={handleBulkSyncTAT}
                             disabled={bulkSyncing}
-                            className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none disabled:transform-none"
+                            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none disabled:transform-none"
                         >
                             <RefreshCw size={18} className={bulkSyncing ? 'animate-spin' : ''} />
                             {bulkSyncing ? 'กำลังซิงก์...' : 'ซิงก์ TAT เข้าฐานข้อมูล'}
@@ -84,7 +84,7 @@ const DestinationsView = ({
                     {filters.source === 'admin' && (
                         <button
                             onClick={() => navigate('/destinations/add')}
-                            className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.3)]"
+                            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.3)]"
                         >
                             <Plus size={18} />
                             เพิ่มสถานที่
@@ -93,11 +93,11 @@ const DestinationsView = ({
                 </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row gap-3 md:gap-4">
+            <div className="flex flex-col lg:flex-row gap-3">
                 {/* Filters Sidebar */}
-                <div className="lg:w-56 shrink-0 space-y-3 md:space-y-4">
-                    <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl sticky top-4">
-                        <div className="flex justify-between items-center mb-6">
+                <div className="lg:w-56 shrink-0 space-y-3">
+                    <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-xl sticky top-3">
+                        <div className="flex justify-between items-center mb-3">
                             <h3 className="font-bold text-white flex items-center gap-2">
                                 <Filter size={18} className="text-yellow-500" />
                                 ตัวกรอง
@@ -147,7 +147,7 @@ const DestinationsView = ({
 
                         {/* Category Filter (TAT API only) */}
                         {filters.source === 'tat' && (
-                            <div className="mt-8 pt-6 border-t border-gray-800 space-y-3">
+                            <div className="mt-5 pt-4 border-t border-gray-800 space-y-2">
                                 <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">หมวดหมู่</p>
 
                                 {placeCategories.map((cat) => (
@@ -175,7 +175,7 @@ const DestinationsView = ({
 
                         {/* Status Filter (Admin Added only) */}
                         {filters.source === 'admin' && (
-                        <div className="mt-8 pt-6 border-t border-gray-800 space-y-3">
+                        <div className="mt-5 pt-4 border-t border-gray-800 space-y-2">
                             <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">สถานะ</p>
 
                             {[
@@ -209,7 +209,7 @@ const DestinationsView = ({
                 </div>
 
                 {/* Main Content Area */}
-                <div className="flex-1 space-y-6">
+                <div className="flex-1 space-y-3">
                     <div className="flex items-center justify-between">
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <LayoutGrid size={20} className="text-gray-400" />
@@ -218,7 +218,7 @@ const DestinationsView = ({
                     </div>
 
                     {loading ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                             {Array.from({ length: 6 }).map((_, i) => (
                                 <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                                     <div className="h-40 bg-gray-800" />
@@ -234,13 +234,13 @@ const DestinationsView = ({
                             ))}
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                             {allItems.map((item, i) => (
                                 <div
                                     key={`${item.source}-${item.id}-${i}`}
                                     className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden group flex flex-col"
                                 >
-                                    <div className="h-40 bg-gray-800 relative overflow-hidden">
+                                    <div className="h-36 bg-gray-800 relative overflow-hidden">
                                         {item.image ? (
                                             <AuthenticatedImage
                                                 src={item.image}
@@ -295,7 +295,7 @@ const DestinationsView = ({
                                     </div>
 
                                     <div className="p-3 flex-1 flex flex-col">
-                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
                                             <p className="text-xs text-gray-400 flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/5">
                                                 <MapPin size={12} className="text-gray-500" />
                                                 <span className="truncate max-w-[120px]">{item.province || 'ไม่ระบุ'}</span>
@@ -317,7 +317,7 @@ const DestinationsView = ({
                                         </div>
 
                                         {item.tags?.length > 0 && (
-                                            <div className="flex gap-1.5 flex-wrap mb-4">
+                                            <div className="flex gap-1.5 flex-wrap mb-3">
                                                 {item.tags.slice(0, 3).map((tag, idx) => (
                                                     <span
                                                         key={idx}
@@ -334,12 +334,12 @@ const DestinationsView = ({
                                             </div>
                                         )}
 
-                                        <div className="mt-auto pt-4 flex gap-3">
+                                        <div className="mt-auto pt-3 flex gap-2">
                                             {item.source === 'tat_api' ? (
                                                 <>
                                                     <button
                                                         onClick={() => navigate(`/destinations/read-tat/${item.id}`, { state: { introduction: item.introduction } })}
-                                                        className="flex-1 py-2.5 bg-white/5 text-white text-sm font-semibold rounded-xl border border-gray-700 text-center flex items-center justify-center gap-2"
+                                                        className="flex-1 py-2 bg-white/5 text-white text-sm font-semibold rounded-xl border border-gray-700 text-center flex items-center justify-center gap-2"
                                                     >
                                                         <Eye size={16} />
                                                         ดูข้อมูล
@@ -347,7 +347,7 @@ const DestinationsView = ({
                                                     <button
                                                         onClick={() => handleSingleSyncTAT(item.id, item.name)}
                                                         disabled={syncingId === item.id}
-                                                        className="flex min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-emerald-600 px-2 py-2.5 text-center text-sm font-semibold text-white shadow-lg shadow-emerald-500/10 disabled:bg-gray-800 disabled:text-gray-500 disabled:shadow-none"
+                                                        className="flex min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-emerald-600 px-2 py-2 text-center text-sm font-semibold text-white shadow-lg shadow-emerald-500/10 disabled:bg-gray-800 disabled:text-gray-500 disabled:shadow-none"
                                                     >
                                                         <RefreshCw size={16} className={syncingId === item.id ? 'animate-spin' : ''} />
                                                         {syncingId === item.id ? 'กำลังซิงก์' : 'ซิงก์ข้อมูล'}
@@ -357,13 +357,13 @@ const DestinationsView = ({
                                                 <>
                                                     <button
                                                         onClick={() => navigate(`/destinations/edit/${item.id}`)}
-                                                        className="flex-1 py-2.5 bg-yellow-500 text-white text-sm font-semibold rounded-xl text-center shadow-lg shadow-yellow-500/20"
+                                                        className="flex-1 py-2 bg-yellow-500 text-white text-sm font-semibold rounded-xl text-center shadow-lg shadow-yellow-500/20"
                                                     >
                                                         แก้ไข
                                                     </button>
                                                     <button
                                                         onClick={() => handleDelete(item.id)}
-                                                        className="flex-1 py-2.5 bg-red-500/10 text-red-500 text-sm font-semibold rounded-xl text-center border border-red-500/20"
+                                                        className="flex-1 py-2 bg-red-500/10 text-red-500 text-sm font-semibold rounded-xl text-center border border-red-500/20"
                                                     >
                                                         ลบ
                                                     </button>
@@ -390,7 +390,7 @@ const DestinationsView = ({
 
                     {/* Pagination */}
                     {filters.source === 'tat' && totalPages > 1 && (
-                        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 shadow-lg">
+                        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 shadow-lg">
                             <p className="text-sm text-gray-400">
                                 หน้า <span className="text-white font-medium">{visiblePage}</span> จาก <span className="text-white font-medium">{visibleTotalPages}</span>
                             </p>

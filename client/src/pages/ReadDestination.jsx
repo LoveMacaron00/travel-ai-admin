@@ -172,20 +172,20 @@ const ReadDestination = () => {
     const images = [...new Set(allImages.filter(url => typeof url === 'string' && url.trim().length > 0))];
 
     return (
-        <div className="p-3 md:p-4 w-full space-y-4">
+        <div className="w-full space-y-3 p-3">
             {/* Header Section */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-3 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
                 <div className="absolute bottom-0 left-10 w-40 h-40 bg-blue-500/5 rounded-full blur-2xl -mb-10 pointer-events-none" />
 
                 <div className="relative z-10">
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2 mb-2">
                         <span className="px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs font-bold tracking-widest uppercase border border-blue-500/20">รายละเอียดสถานที่</span>
                     </div>
-                    <h1 className="text-2xl font-bold text-white tracking-tight">
+                    <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
                         {name || 'กำลังโหลด...'}
                     </h1>
-                    <div className="flex items-center gap-2 text-gray-400 mt-2 text-sm font-medium">
+                    <div className="flex items-center gap-2 text-gray-400 mt-1 text-sm font-medium">
                         <MapPin size={16} className="text-yellow-500" />
                         {headerLocation}
                     </div>
@@ -211,12 +211,12 @@ const ReadDestination = () => {
 
             {/* Images Gallery */}
             {images.length > 0 && (
-                <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl">
-                    <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-6">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-xl">
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-3">
                         <ImageIcon size={20} className="text-yellow-500" />
                         คลังรูปภาพ
                     </h2>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                         {images.map((url, i) => (
                             <button
                                 key={i}
@@ -236,33 +236,33 @@ const ReadDestination = () => {
             )}
 
             {/* Main Info Card */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-xl relative overflow-hidden">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-8 opacity-[0.02] pointer-events-none">
                     <Map size={120} className="text-white" />
                 </div>
 
-                <h2 className="text-xl font-bold text-white flex items-center gap-3 mb-4 border-b border-gray-800 pb-3">
+                <h2 className="text-lg font-bold text-white flex items-center gap-3 mb-3 border-b border-gray-800 pb-3">
                     <Info size={24} className="text-blue-500" />
                     ข้อมูลสถานที่
                     <span className="px-2.5 py-1 rounded-lg bg-yellow-500/10 text-yellow-500 text-xs font-bold border border-yellow-500/20 tracking-wider">อ่านอย่างเดียว</span>
                 </h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 relative z-10">
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
                             <Building size={14} /> ชื่อสถานที่
                         </label>
-                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{name || '-'}</div>
+                        <div className="p-3 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{name || '-'}</div>
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
                             <MapPin size={14} /> ที่อยู่
                         </label>
-                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{address || '-'}</div>
+                        <div className="p-3 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{address || '-'}</div>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-4 relative z-10">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-3 relative z-10">
                     {[
                         ['จังหวัด', provinceName],
                         ['รหัสจังหวัด', provinceId],
@@ -274,43 +274,43 @@ const ReadDestination = () => {
                     ].map(([label, value]) => (
                         <div key={label}>
                             <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">{label}</label>
-                            <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{value !== '' && value != null ? value : '-'}</div>
+                            <div className="p-3 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{value !== '' && value != null ? value : '-'}</div>
                         </div>
                     ))}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-4 relative z-10">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 mt-3 relative z-10">
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">ละติจูด</label>
-                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lat || 'ไม่ระบุ'}</div>
+                        <div className="p-3 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lat || 'ไม่ระบุ'}</div>
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">ลองจิจูด</label>
-                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lng || 'ไม่ระบุ'}</div>
+                        <div className="p-3 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium font-mono text-sm">{lng || 'ไม่ระบุ'}</div>
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
                             <Clock size={14} /> เวลาเปิดทำการ
                         </label>
-                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{openTime || 'ไม่ระบุ'}</div>
+                        <div className="p-3 bg-black/40 border border-gray-800 rounded-xl text-gray-300 font-medium">{openTime || 'ไม่ระบุ'}</div>
                     </div>
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-gray-800 relative z-10">
+                <div className="mt-3 pt-3 border-t border-gray-800 relative z-10">
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                         <Info size={14} /> รายละเอียด
                     </label>
-                    <div className="p-6 bg-black/40 border border-gray-800 rounded-2xl text-gray-300 leading-relaxed whitespace-pre-wrap">
+                    <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-gray-300 leading-relaxed whitespace-pre-wrap">
                         {desc || 'ไม่มีข้อมูลรายละเอียด...'}
                     </div>
                 </div>
 
                 {(feeRows.length > 0 || feeDetail) && (
-                    <div className="mt-4 pt-4 border-t border-gray-800 relative z-10">
+                    <div className="mt-3 pt-3 border-t border-gray-800 relative z-10">
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                             <Ticket size={14} /> ค่าเข้าชมจาก TAT
                         </label>
-                        <div className="p-5 bg-black/40 border border-gray-800 rounded-2xl">
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl">
                             {feeRows.length > 0 && (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     {feeRows.map((row) => (

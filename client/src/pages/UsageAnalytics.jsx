@@ -192,10 +192,10 @@ const UsageAnalytics = () => {
         : 'ยอดดูสถานที่';
 
     return (
-        <main className="w-full space-y-4 p-3 md:p-4">
-            <section className="relative overflow-hidden rounded-xl border border-gray-800 bg-gradient-to-r from-gray-900 to-gray-800 p-4 shadow-xl">
+        <main className="w-full space-y-3 p-3">
+            <section className="relative overflow-hidden rounded-xl border border-gray-800 bg-gradient-to-r from-gray-900 to-gray-800 p-3 shadow-xl">
                 <div className="pointer-events-none absolute -mr-20 -mt-20 right-0 top-0 h-64 w-64 rounded-full bg-yellow-500/10 blur-3xl" />
-                <div className="relative z-10 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+                <div className="relative z-10 flex flex-col justify-between gap-3 md:flex-row md:items-end">
                     <div>
                         <h1 className="text-xl font-extrabold tracking-tight text-white md:text-2xl">สถิติการใช้งาน</h1>
                         <p className="mt-2 max-w-xl text-sm leading-relaxed text-gray-400">
@@ -234,7 +234,7 @@ const UsageAnalytics = () => {
                 </div>
             )}
 
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="สรุปการใช้งาน">
+            <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="สรุปการใช้งาน">
                 <MetricCard
                     icon={Activity}
                     label="ผู้ใช้ที่ใช้งานขณะนี้"
@@ -266,9 +266,9 @@ const UsageAnalytics = () => {
                 />
             </section>
 
-            <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <section className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                 <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-xl lg:col-span-2">
-                    <div className="flex flex-col items-start justify-between gap-3 border-b border-gray-800 p-4 sm:flex-row sm:items-center">
+                    <div className="flex flex-col items-start justify-between gap-3 border-b border-gray-800 p-3 sm:flex-row sm:items-center">
                         <div>
                             <h2 className="flex items-center gap-2 text-lg font-bold text-white">
                                 <TrendingUp className="text-emerald-500" size={20} />
@@ -307,7 +307,7 @@ const UsageAnalytics = () => {
                             ))}
                         </div>
                     </div>
-                    <div className={`p-4 transition-opacity ${isRefreshing || destinationTrendLoading ? 'opacity-50' : 'opacity-100'}`}>
+                    <div className={`p-3 transition-opacity ${isRefreshing || destinationTrendLoading ? 'opacity-50' : 'opacity-100'}`}>
                         <UsageTrendChart data={chartData} viewLabel={viewLabel} />
                         <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-gray-500">
                             <span className="inline-flex items-center gap-2">
@@ -326,7 +326,7 @@ const UsageAnalytics = () => {
                 </div>
 
                 <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-xl">
-                    <div className="border-b border-gray-800 p-4">
+                    <div className="border-b border-gray-800 p-3">
                         <h2 className="flex items-center gap-2 text-lg font-bold text-white">
                             <BarChart3 className="text-blue-500" size={20} />
                             สถานที่ยอดนิยม
@@ -335,7 +335,7 @@ const UsageAnalytics = () => {
                             จัดอันดับตามยอดดูรายละเอียดในช่วง {periodLabel}
                         </p>
                     </div>
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1 p-3">
                         {stats.topDestinations.length > 0 ? stats.topDestinations.map((destination, index) => (
                             <button
                                 type="button"

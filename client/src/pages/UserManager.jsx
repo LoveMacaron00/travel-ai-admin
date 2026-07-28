@@ -77,21 +77,21 @@ const UserManager = () => {
     };
 
     return (
-        <div className="p-3 md:p-4 w-full space-y-3 md:space-y-4">
+        <div className="w-full space-y-3 p-3">
 
             {/* HEADER */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 bg-gradient-to-r from-gray-900 to-gray-800 p-3 rounded-xl border border-gray-800 shadow-xl relative overflow-hidden">
                 {/* Decorative background element */}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
 
                 <div className="relative z-10">
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2 mb-2">
                         <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold tracking-widest uppercase">ผู้ดูแลระบบ Homiie</span>
                     </div>
                     <h1 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
                         จัดการผู้ใช้งาน
                     </h1>
-                    <p className="text-gray-400 mt-2 text-base max-w-xl leading-relaxed">
+                    <p className="text-gray-400 mt-1 text-sm max-w-xl leading-relaxed">
                         ตรวจสอบกิจกรรม จัดการสิทธิ์การใช้งาน และตอบกลับความคิดเห็นของผู้ใช้ในที่เดียว
                     </p>
                 </div>
@@ -99,7 +99,7 @@ const UserManager = () => {
                 <button
                     onClick={fetchData}
                     disabled={isLoading}
-                    className="relative z-10 flex items-center gap-2 px-5 py-2.5 bg-white/5 border border-gray-700 rounded-xl text-sm font-medium text-gray-300 disabled:opacity-50"
+                    className="relative z-10 flex items-center gap-2 px-4 py-2 bg-white/5 border border-gray-700 rounded-xl text-sm font-medium text-gray-300 disabled:opacity-50"
                 >
                     <RefreshCw size={16} className={isLoading ? "text-yellow-400" : "text-yellow-400"} />
                     รีเฟรชข้อมูล
@@ -107,13 +107,13 @@ const UserManager = () => {
             </div>
 
             {/* STAT CARDS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-                <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-lg group relative overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-lg group relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-[0.03]">
                         <Users size={40} className="text-blue-500" />
                     </div>
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20 shadow-[0_0_20px_rgba(59,130,246,0.1)]">
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20 shadow-[0_0_20px_rgba(59,130,246,0.1)]">
                             <Users size={16} />
                         </div>
                         <p className="font-semibold text-gray-400">ผู้ใช้ทั้งหมด</p>
@@ -123,12 +123,12 @@ const UserManager = () => {
                     </div>
                 </div>
 
-                <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-lg group relative overflow-hidden">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-lg group relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-[0.03]">
                         <Shield size={40} className="text-red-500" />
                     </div>
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2.5 rounded-lg bg-red-500/10 text-red-400 ring-1 ring-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 rounded-lg bg-red-500/10 text-red-400 ring-1 ring-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
                             <Shield size={16} />
                         </div>
                         <p className="font-semibold text-gray-400">ถูกระงับ</p>
@@ -140,12 +140,12 @@ const UserManager = () => {
                     </div>
                 </div>
 
-                <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 shadow-lg group relative overflow-hidden">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-lg group relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-[0.03]">
                         <MessageSquare size={40} className="text-emerald-500" />
                     </div>
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
                             <MessageSquare size={16} />
                         </div>
                         <p className="font-semibold text-gray-400">ความคิดเห็น</p>
@@ -159,10 +159,10 @@ const UserManager = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 md:gap-4">
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
                 {/* USER TABLE */}
-                <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col h-[500px]">
-                    <div className="flex flex-col gap-3 border-b border-gray-800 bg-gray-900/80 p-3 sm:flex-row sm:items-center sm:justify-between md:p-4">
+                <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col h-[420px] xl:h-[calc(100vh-300px)] xl:min-h-[360px] xl:max-h-[560px]">
+                    <div className="flex flex-col gap-3 border-b border-gray-800 bg-gray-900/80 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                             <h2 className="text-xl font-bold text-white">รายชื่อผู้ใช้งาน</h2>
                             <p className="text-sm text-gray-500 mt-1">จัดการบัญชีและสถานะผู้ใช้งาน</p>
@@ -249,15 +249,15 @@ const UserManager = () => {
                 </div>
 
                 {/* FEEDBACK SECTION */}
-                <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col h-[500px]">
-                    <div className="p-3 md:p-4 border-b border-gray-800 bg-gray-900/80">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col h-[420px] xl:h-[calc(100vh-300px)] xl:min-h-[360px] xl:max-h-[560px]">
+                    <div className="p-3 border-b border-gray-800 bg-gray-900/80">
                         <div className="flex justify-between items-center mb-1">
                             <h2 className="text-xl font-bold text-white">ความคิดเห็นจากผู้ใช้</h2>
                         </div>
                         <p className="text-sm text-gray-500">ความคิดเห็นและคำถามล่าสุด</p>
                     </div>
 
-                    <div className="overflow-y-auto flex-1 p-3 md:p-4 space-y-3 custom-scrollbar bg-gray-900/30">
+                    <div className="overflow-y-auto flex-1 p-3 space-y-3 custom-scrollbar bg-gray-900/30">
                         {feedbacks.length === 0 && !isLoading ? (
                             <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
                                 <MessageSquare size={40} className="opacity-20" />
