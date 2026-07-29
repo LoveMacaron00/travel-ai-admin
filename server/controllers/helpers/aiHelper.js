@@ -20,7 +20,7 @@ const GEMINI_HEADERS = {
 // หน่วงเวลาแบบ async สำหรับการ retry request ไปยัง Gemini
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// คัดเฉพาะรูปแบบการเดินทางที่ระบบรองรับจาก input ผู้ใช้
+// คัดเฉพาะรูปแบบการเดินทางที่ระบบรองรับจากข้อมูลนำเข้าของผู้ใช้
 const getAllowedTransportModes = (modes) => {
     const allowed = Array.isArray(modes)
         ? modes
@@ -378,14 +378,14 @@ async function generateTripPlan(tripId, tripInput, res) {
             }
         }
 
-        // save trip_plans
+        // บันทึกแผนการเดินทางลง trip_plans
         await query(
             `INSERT INTO trip_plans (trip_id, plan_data, markdown_cache)
              VALUES ($1, $2, $3)`,
             [tripId, JSON.stringify(planData), fullText]
         );
 
-        // update trip status → done
+        // อัปเดตสถานะการเดินทางเป็นเสร็จสิ้น
         await query(`UPDATE trips SET status = 'done' WHERE id = $1`, [tripId]);
 
         res.write(`data: ${JSON.stringify({ type: 'done', tripId })}\n\n`);
@@ -402,7 +402,7 @@ async function generateTripPlan(tripId, tripInput, res) {
     }
 }
 
-// ragChat()
+// ฟังก์ชันแชทที่ใช้การค้นคืนข้อมูล ragChat()
 // ตอบคำถามเกี่ยวกับแผนเที่ยว ด้วย RAG + chat history
 // ส่งกลับไป Flutter พร้อมบันทึก source_chunk_ids
 // สร้างคำตอบแชทจากบริบทสถานที่ RAG และ stream ผลลัพธ์ให้ผู้ใช้

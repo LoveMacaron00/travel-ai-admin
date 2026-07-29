@@ -35,7 +35,7 @@ const EditDestination = () => {
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
     // -----------------------
-    // Fetch existing data
+    // ดึงข้อมูลที่มีอยู่
     // -----------------------
     useEffect(() => {
         const fetchDestination = async () => {
@@ -65,7 +65,7 @@ const EditDestination = () => {
                     admission_foreigner_adult: fee.foreignerAdult ?? '',
                     admission_foreigner_child: fee.foreignerChild ?? '',
                 });
-                // Collect existing images
+                // รวบรวมรูปภาพที่มีอยู่
                 const existingImages = [];
                 if (data.image_url) existingImages.push(data.image_url);
                 if (data.images?.length > 0) {
@@ -102,7 +102,7 @@ const EditDestination = () => {
     };
 
     // -----------------------
-    // Map helpers
+    // ฟังก์ชันช่วยจัดการแผนที่
     // -----------------------
     const lat = form ? parseFloat(form.latitude) : NaN;
     const lng = form ? parseFloat(form.longitude) : NaN;
@@ -146,7 +146,7 @@ const EditDestination = () => {
     };
 
     // -----------------------
-    // Image Upload
+    // การอัปโหลดรูปภาพ
     // -----------------------
     const uploadFiles = useCallback(async (files) => {
         if (files.length === 0) return;
@@ -186,7 +186,7 @@ const EditDestination = () => {
     };
 
     // -----------------------
-    // Submit
+    // การส่งข้อมูล
     // -----------------------
     const handleSubmit = async () => {
         if (!form.name) {

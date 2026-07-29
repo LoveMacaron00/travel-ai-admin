@@ -27,7 +27,7 @@ const RouteFallback = () => (
 );
 
 
-// Sidebar Component
+// คอมโพเนนต์แถบด้านข้าง
 const Sidebar = ({ onLogout }) => {
     const location = useLocation();
 
@@ -97,7 +97,7 @@ const Sidebar = ({ onLogout }) => {
 };
 
 
-// Protected Layout
+// เลย์เอาต์ที่ต้องยืนยันตัวตน
 const ProtectedLayout = ({ onLogout }) => {
     return (
         <div className="flex h-screen" style={{ background: '#1a1a2e' }}>

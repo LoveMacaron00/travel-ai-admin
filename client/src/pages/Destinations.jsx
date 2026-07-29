@@ -41,7 +41,7 @@ const Destinations = () => {
     const visiblePage = filters.source === 'tat' ? page : 1;
 
     // -----------------------
-    // Debounced search
+    // หน่วงการค้นหาเพื่อลดจำนวนคำขอ
     // -----------------------
     useEffect(() => {
         clearTimeout(debounceRef.current);
@@ -52,7 +52,7 @@ const Destinations = () => {
     }, [search]);
 
     // -----------------------
-    // Fetch All Data (parallel)
+    // ดึงข้อมูลทั้งหมดพร้อมกัน
     // -----------------------
     const fetchData = useCallback(async (keyword, pageNum, source, placeCategory) => {
         requestIdRef.current += 1;
@@ -125,7 +125,7 @@ const Destinations = () => {
     }, []);
 
     // -----------------------
-    // Load Data on search/page change
+    // โหลดข้อมูลเมื่อคำค้นหาหรือหน้าเปลี่ยน
     // -----------------------
     useEffect(() => {
         setPage(1);
@@ -143,7 +143,7 @@ const Destinations = () => {
     }, []);
 
     // -----------------------
-    // Search submit
+    // ส่งคำค้นหา
     // -----------------------
     const handleSearch = (e) => {
         e.preventDefault();
@@ -152,7 +152,7 @@ const Destinations = () => {
     };
 
     // -----------------------
-    // Pagination
+    // การแบ่งหน้า
     // -----------------------
     const handlePageChange = (newPage) => {
         if (newPage < 1 || newPage > totalPages) return;
@@ -162,7 +162,7 @@ const Destinations = () => {
     };
 
     // -----------------------
-    // Delete Admin Destination
+    // ลบสถานที่ของผู้ดูแลระบบ
     // -----------------------
     const handleDelete = async (id) => {
         const result = await showConfirmAlert({
@@ -249,7 +249,7 @@ const Destinations = () => {
     const pageNumbers = getVisiblePageNumbers(page, totalPages);
 
     // -----------------------
-    // UI
+    // ส่วนติดต่อผู้ใช้
     // -----------------------
 
     return (

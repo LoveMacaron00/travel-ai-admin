@@ -59,7 +59,7 @@ const AddDestination = () => {
     };
 
     // -----------------------
-    // Map helpers
+    // ฟังก์ชันช่วยจัดการแผนที่
     // -----------------------
     const lat = parseFloat(form.latitude);
     const lng = parseFloat(form.longitude);
@@ -103,7 +103,7 @@ const AddDestination = () => {
     };
 
     // -----------------------
-    // Image Upload
+    // การอัปโหลดรูปภาพ
     // -----------------------
     const uploadFiles = useCallback(async (files) => {
         if (files.length === 0) return;
@@ -143,7 +143,7 @@ const AddDestination = () => {
     };
 
     // -----------------------
-    // Submit
+    // การส่งข้อมูล
     // -----------------------
     const handleSubmit = async () => {
         if (!form.name) {

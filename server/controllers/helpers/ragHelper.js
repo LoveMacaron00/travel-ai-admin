@@ -17,7 +17,7 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
     // embed คำถาม
     const queryVector = await getEmbedding(queryText, 'RETRIEVAL_QUERY');
 
-    // vector search + filter
+    // ค้นหาเวกเตอร์และกรองผลลัพธ์
     const { rows } = await query(
         `SELECT
             d.id,

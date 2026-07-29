@@ -3,7 +3,7 @@ const dotenv = require('dotenv');
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-// แปลงค่า environment เป็นตัวเลข หรือคืนค่า fallback หากค่าไม่ถูกต้อง
+// แปลงค่าตัวแปรสภาพแวดล้อมเป็นตัวเลข หรือคืนค่าทดแทนหากค่าไม่ถูกต้อง
 const asNumber = (value, fallback) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;

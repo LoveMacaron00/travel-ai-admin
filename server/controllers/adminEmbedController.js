@@ -126,7 +126,7 @@ async function upsertTATPlace(place) {
         images.unshift({ url: mainImageUrl, is_cover: true });
     }
 
-    // Deduplicate images by url
+    // ตัดรูปภาพที่มี URL ซ้ำกัน
     const uniqueImages = [];
     const seenUrls = new Set();
     for (const img of images) {

@@ -72,7 +72,7 @@ const ReadDestination = () => {
     if (loading) return <div className="p-6 text-gray-400">กำลังโหลดข้อมูล...</div>;
     if (!place) return <div className="p-6 text-gray-400">ไม่พบข้อมูลสถานที่</div>;
 
-    // Helper to safely extract name
+    // ฟังก์ชันช่วยดึงชื่ออย่างปลอดภัย
     const extractName = (val) => {
         if (!val) return '';
         if (typeof val === 'string') return val;
@@ -142,10 +142,10 @@ const ReadDestination = () => {
     ].filter(Boolean);
     const feeDetail = fee.detail || '';
 
-    // Combine all possible image URLs from TAT API or DB
+    // รวม URL รูปภาพที่เป็นไปได้ทั้งหมดจาก TAT API หรือฐานข้อมูล
     let allImages = [];
 
-    // If it's a DB synced item, it might have `images` array of objects {url: ...}
+    // รายการที่ซิงก์จากฐานข้อมูลอาจมีอาร์เรย์ `images` ซึ่งเก็บออบเจ็กต์ {url: ...}
     if (place.images && Array.isArray(place.images)) {
         if (typeof place.images[0] === 'object') {
             allImages.push(...place.images.map(img => img.image_url || img.url));
@@ -154,7 +154,7 @@ const ReadDestination = () => {
         }
     }
 
-    // Add fields commonly found in TAT API
+    // เพิ่มฟิลด์ที่มักพบใน TAT API
     if (place.thumbnailUrl) allImages.push(place.thumbnailUrl);
     if (place.image_url) allImages.push(place.image_url);
     if (place.desktopImageUrls) allImages.push(...place.desktopImageUrls);
@@ -168,7 +168,7 @@ const ReadDestination = () => {
         allImages.push(...shaImgs);
     }
 
-    // Clean and deduplicate
+    // ล้างค่าและตัดรายการซ้ำ
     const images = [...new Set(allImages.filter(url => typeof url === 'string' && url.trim().length > 0))];
 
     return (

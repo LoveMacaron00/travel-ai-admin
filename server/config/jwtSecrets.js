@@ -12,8 +12,8 @@ const WEAK_SECRETS = new Set([
 
 /**
  * ตรวจ JWT secret ตอนเริ่ม process เพียงจุดเดียว
- * production จะ fail fast ส่วน development ใช้ fallback เพื่อให้เริ่มระบบได้
- * แต่จะแจ้งเตือนชัดเจนว่าไม่ควรนำค่า fallback ไป deploy
+ * ระบบใช้งานจริงจะหยุดทันทีเมื่อเกิดข้อผิดพลาด ส่วนระบบพัฒนาใช้ค่าทดแทนเพื่อให้เริ่มระบบได้
+ * แต่จะแจ้งเตือนชัดเจนว่าไม่ควรนำค่าทดแทนไปเผยแพร่ใช้งาน
  */
 const resolveJwtSecret = ({ environmentName, configuredValue, developmentFallback }) => {
     let value = configuredValue;

@@ -1,7 +1,7 @@
 import { Search, Plus, MapPin, Eye, Tag, ChevronLeft, ChevronRight, Filter, Compass, LayoutGrid, RefreshCw } from 'lucide-react';
 import AuthenticatedImage from '../AuthenticatedImage';
 
-// View ล้วนของหน้าสถานที่ รับ state/commands จาก page controller เพื่อแยก rendering ออกจาก data flow
+// ส่วนแสดงผลของหน้าสถานที่ รับสถานะและคำสั่งจากตัวควบคุมหน้าเพื่อแยกการวาดหน้าจอออกจากการไหลของข้อมูล
 const DestinationsView = ({
     navigate,
     sourceTotalCount,
