@@ -8,6 +8,7 @@ const { recordDestinationView } = require('../controllers/destinationViewControl
 const { requireUserAuth } = require('../middleware/userAuth');
 
 router.get('/media', proxyImage);
+router.get('/provinces', mobileController.getProvinces);
 router.get('/destinations', mobileController.getDestinations);
 router.post('/destinations/:id/view', requireUserAuth, recordDestinationView);
 router.get('/destinations/:id', mobileController.getDestinationDetail);

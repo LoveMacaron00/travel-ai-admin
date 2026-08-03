@@ -267,7 +267,12 @@ async function generateTripPlan(tripId, tripInput, res) {
     ].join(' ');
 
     let places;
-    if (tripInput.start_latitude != null && tripInput.start_longitude != null) {
+    if (tripInput.province) {
+        places = await retrieveRelevantPlaces(ragQuery, {
+            province: tripInput.province,
+            limit: 15,
+        });
+    } else if (tripInput.start_latitude != null && tripInput.start_longitude != null) {
         places = await retrieveNearbyPlaces(
             tripInput.start_latitude,
             tripInput.start_longitude,
@@ -275,7 +280,7 @@ async function generateTripPlan(tripId, tripInput, res) {
         );
     } else {
         places = await retrieveRelevantPlaces(ragQuery, {
-            province: tripInput.province || null,
+            province: null,
             limit: 15,
         });
     }

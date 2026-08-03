@@ -42,6 +42,7 @@ const createMobileControllers = (database) => {
                         CASE WHEN $1 = 'th' THEN d.province ELSE preferred.province END,
                         d.province
                     ) AS province,
+                    d.province AS province_value,
                     COALESCE(
                         CASE WHEN $1 = 'th' THEN d.district ELSE preferred.district END,
                         d.district
@@ -91,6 +92,7 @@ const createMobileControllers = (database) => {
                     city: province,
                     location,
                     province,
+                    provinceValue: row.province_value || province,
                     district: row.district || '',
                     sub_district: row.sub_district || '',
                     description: row.description || '',
@@ -111,6 +113,53 @@ const createMobileControllers = (database) => {
                     language,
                     'เกิดข้อผิดพลาดในการดึงข้อมูลสถานที่',
                     'Unable to load destinations',
+                ),
+            });
+        }
+    };
+
+    // คืนเฉพาะจังหวัดที่มีสถานที่ approved เพื่อใช้เป็นตัวเลือกสร้างแผน
+    // value เป็นชื่อจังหวัดหลักใน DB สำหรับ filter ส่วน label แปลตามภาษาหน้าจอ
+    const getProvinces = async (req, res) => {
+        const language = requestLanguage(req);
+        try {
+            const { rows } = await database.query(
+                `SELECT
+                    d.province AS value,
+                    COALESCE(
+                        MAX(CASE WHEN $1 = 'en' THEN preferred.province END),
+                        d.province
+                    ) AS label,
+                    COUNT(DISTINCT d.id)::int AS destination_count
+                 FROM destinations d
+                 LEFT JOIN destination_translations preferred
+                    ON preferred.destination_id = d.id
+                   AND preferred.language_code = $1
+                 WHERE d.status = 'approved'
+                   AND d.latitude IS NOT NULL
+                   AND d.longitude IS NOT NULL
+                   AND NULLIF(BTRIM(d.province), '') IS NOT NULL
+                 GROUP BY d.province
+                 ORDER BY label ASC`,
+                [language],
+            );
+
+            addLanguageVaryHeader(res);
+            res.json({
+                data: rows.map(row => ({
+                    value: row.value,
+                    label: row.label || row.value,
+                    destinationCount: Number(row.destination_count) || 0,
+                })),
+                language,
+            });
+        } catch (err) {
+            console.error('[mobileController] provinces error:', err);
+            res.status(500).json({
+                message: localizedMessage(
+                    language,
+                    'เกิดข้อผิดพลาดในการดึงข้อมูลจังหวัด',
+                    'Unable to load provinces',
                 ),
             });
         }
@@ -254,12 +303,14 @@ const createMobileControllers = (database) => {
         }
     };
 
-    return { getDestinations, getDestinationDetail };
+    return { getDestinations, getProvinces, getDestinationDetail };
 };
 
-const { getDestinations, getDestinationDetail } = createMobileControllers(pool);
+const { getDestinations, getProvinces, getDestinationDetail } = createMobileControllers(pool);
 
 module.exports = {
+    createMobileControllers,
     getDestinations,
+    getProvinces,
     getDestinationDetail,
 };
