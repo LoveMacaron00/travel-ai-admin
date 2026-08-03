@@ -23,18 +23,12 @@ const normalizeStoredPlan = (planData, places) => {
 
 // POST /api/trips — สร้าง trip ใหม่แล้ว stream แผน
 // สร้างแผนท่องเที่ยวด้วย AI และบันทึกเป็น trip ของผู้ใช้
-const createTrip = async (req, res) => {
+const createTripHandler = ({ database = pool, planGenerator = generateTripPlan } = {}) => async (req, res) => {
     let tripId;
     try {
-        const { destination } = req.body;
-
-        if (!destination && (!req.body.start_latitude || !req.body.start_longitude)) {
-            return res.status(400).json({ message: 'กรุณาระบุจุดหมายหรืออนุญาตตำแหน่งปัจจุบัน' });
-        }
-
         const userId = req.user?.id || null;
 
-        const { rows } = await pool.query(
+        const { rows } = await database.query(
             `INSERT INTO trips
                 (user_id, destination, province, days, budget, currency,
                  travel_style, group_type, interests, status)
@@ -55,18 +49,20 @@ const createTrip = async (req, res) => {
         tripId = rows[0].id;
 
         // stream แผนเที่ยวกลับไปเลย
-        await generateTripPlan(tripId, req.body, res);
+        await planGenerator(tripId, req.body, res);
 
     } catch (err) {
         console.error('[tripController] createTrip:', err.message);
         if (tripId != null) {
-            await pool.query(`UPDATE trips SET status = 'failed' WHERE id = $1`, [tripId]).catch(() => {});
+            await database.query(`UPDATE trips SET status = 'failed' WHERE id = $1`, [tripId]).catch(() => {});
         }
         if (!res.headersSent) {
             res.status(500).json({ message: 'เกิดข้อผิดพลาดในการสร้างแผนเที่ยว' });
         }
     }
 };
+
+const createTrip = createTripHandler();
 
 // GET /api/trips — ดึงประวัติแผนเที่ยวของ user
 // คืนประวัติแผนท่องเที่ยวของผู้ใช้ที่ล็อกอินอยู่
@@ -114,4 +110,4 @@ const getTripById = async (req, res) => {
     }
 };
 
-module.exports = { createTrip, getUserTrips, getTripById };
+module.exports = { createTrip, createTripHandler, getUserTrips, getTripById };
