@@ -19,7 +19,7 @@ const config = {
     port: asNumber(process.env.PORT, 5000),
     allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173')
         .split(',')
-        .map((origin) => origin.trim())
+        .map((origin) => withoutTrailingSlash(origin.trim()))
         .filter(Boolean),
     database: {
         host: process.env.DB_HOST || 'localhost',
@@ -30,6 +30,17 @@ const config = {
     },
     analytics: {
         timeZone: process.env.ANALYTICS_TIME_ZONE || 'Asia/Bangkok',
+    },
+    mediaProxy: {
+        allowedHosts: (
+            process.env.MEDIA_PROXY_HOSTS
+            || 'dmc.tatdataapi.io,cdn.pixabay.com,images.unsplash.com'
+        )
+            .split(',')
+            .map((host) => host.trim().toLowerCase())
+            .filter(Boolean),
+        timeoutMs: Math.max(1000, asNumber(process.env.MEDIA_PROXY_TIMEOUT_MS, 10000)),
+        maxBytes: Math.max(1024, asNumber(process.env.MEDIA_PROXY_MAX_BYTES, 12 * 1024 * 1024)),
     },
     jwt: {
         adminSecret: process.env.ADMIN_JWT_SECRET,

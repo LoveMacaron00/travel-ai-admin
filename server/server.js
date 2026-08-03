@@ -7,6 +7,7 @@ const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const morgan = require('morgan');
+const { createCorsOptions } = require('./config/corsOptions');
 const { requireAdminAuth } = require('./middleware/adminAuth');
 const { secureUploads } = require('./middleware/secureUploads');
 
@@ -15,10 +16,7 @@ const app = express();
 
 // Middleware ส่วนกลาง
 app.use(morgan('dev'));
-app.use(cors({
-    origin: config.allowedOrigins,
-    credentials: true
-}));
+app.use(cors(createCorsOptions(config)));
 
 app.use(compression());
 app.use(express.json({ limit: '2mb' }));
