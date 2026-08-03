@@ -2,6 +2,24 @@
 
 const pool = require('../config/db');
 const { generateTripPlan } = require('./helpers/aiHelper');
+const {
+    normalizePlanPlaces,
+    sanitizePlaceholderPlanImages,
+} = require('./helpers/planPlaceNormalizer');
+
+const getApprovedPlanPlaces = async () => {
+    const { rows } = await pool.query(
+        `SELECT id, name, image_url, latitude, longitude
+         FROM destinations
+         WHERE status = 'approved'`,
+    );
+    return rows;
+};
+
+const normalizeStoredPlan = (planData, places) => {
+    normalizePlanPlaces(planData, places);
+    sanitizePlaceholderPlanImages(planData);
+};
 
 // POST /api/trips — สร้าง trip ใหม่แล้ว stream แผน
 // สร้างแผนท่องเที่ยวด้วย AI และบันทึกเป็น trip ของผู้ใช้
@@ -66,6 +84,8 @@ const getUserTrips = async (req, res) => {
              LIMIT 20`,
             [userId]
         );
+        const places = await getApprovedPlanPlaces();
+        for (const trip of rows) normalizeStoredPlan(trip.plan_data, places);
         res.json(rows);
     } catch (err) {
         console.error('[tripController] getUserTrips:', err.message);
@@ -86,6 +106,7 @@ const getTripById = async (req, res) => {
         );
         const trip = rows[0] || null;
         if (!trip) return res.status(404).json({ message: 'ไม่พบแผนเที่ยว' });
+        normalizeStoredPlan(trip.plan_data, await getApprovedPlanPlaces());
         res.json(trip);
     } catch (err) {
         console.error('[tripController] getTripById:', err.message);

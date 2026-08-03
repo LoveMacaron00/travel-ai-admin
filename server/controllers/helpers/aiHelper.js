@@ -4,6 +4,7 @@ const pool = require('../../config/db');
 const query = pool.query.bind(pool);
 const { jsonrepair } = require('jsonrepair');
 const { retrieveRelevantPlaces, retrieveNearbyPlaces, formatPlacesContext } = require('./ragHelper');
+const { normalizePlanPlaces } = require('./planPlaceNormalizer');
 const { config } = require('../../config/env');
 const GEMINI_API_KEY = config.gemini.apiKey;
 const GEMINI_API_BASE = config.gemini.apiBaseUrl;
@@ -285,6 +286,12 @@ async function generateTripPlan(tripId, tripInput, res) {
         `คุณคือผู้เชี่ยวชาญวางแผนการท่องเที่ยวในประเทศไทย
     ตอบเป็นภาษาไทยเสมอ และตอบในรูปแบบ JSON ที่กำหนดเท่านั้น ห้ามมีข้อความอื่นนอก JSON
 
+    ข้อบังคับสำคัญ:
+    - ทุก stop ต้องเลือกจากข้อมูลสถานที่ในฐานข้อมูลด้านล่างเท่านั้น
+    - ห้ามเพิ่มชื่อสถานที่จากความรู้ของโมเดล ห้ามเดาสถานที่ และห้ามสร้าง URL รูปภาพเอง
+    - ต้องคัดลอก destinationId, ชื่อ, พิกัด และ imageUrl จากข้อมูลฐานข้อมูลตรงตัว
+    - ถ้าข้อมูลมีน้อย ให้สร้างแผนจากรายการที่มีเท่านั้น ห้ามเติมสถานที่อื่นให้ครบจำนวนวัน
+
     ข้อมูลสถานที่จากฐานข้อมูล:
     ${placesContext}`;
 
@@ -302,6 +309,7 @@ async function generateTripPlan(tripId, tripInput, res) {
     - สถานที่ที่ผู้ใช้ลบและห้ามเสนอซ้ำ: ${(tripInput.excluded_places || []).join(', ') || 'ไม่มี'}
 
     เลือกสถานที่จากฐานข้อมูลเท่านั้น ให้เหมาะกับความสนใจและงบประมาณ จัดลำดับจากจุดเริ่ม GPS เพื่อลดการย้อนเส้นทาง
+    ห้ามเสนอหรือสร้าง stop ที่ไม่มีอยู่ในข้อมูลสถานที่จากฐานข้อมูล แม้จำนวนสถานที่จะไม่พอกับจำนวนวัน
     ถ้าเป็นเครื่องบิน รถไฟ หรือเรือ ให้แยกช่วงไปสถานี/สนามบิน/ท่าเรือ ช่วงขนส่งหลัก และช่วงต่อไปยังจุดหมาย
     ค่าใช้จ่ายทั้งหมดเป็นค่าประมาณต่อทริป และทุก stop ต้องมี latitude/longitude ที่ใช้งานบนแผนที่ได้
 
@@ -338,6 +346,12 @@ async function generateTripPlan(tripId, tripInput, res) {
     res.flushHeaders();
 
     try {
+        if (places.length === 0) {
+            const noDatabasePlaces = new Error('No database destinations were retrieved for this plan');
+            noDatabasePlaces.code = 'NO_DATABASE_PLACES';
+            throw noDatabasePlaces;
+        }
+
         let fullText = '';
         let planData;
 
@@ -366,6 +380,14 @@ async function generateTripPlan(tripId, tripInput, res) {
                     );
                 }
                 normalizePlanTransportModes(planData, allowedTransportModes);
+                normalizePlanPlaces(planData, places);
+                if (planData.days.length === 0) {
+                    const noVerifiedStops = new Error(
+                        'The generated plan contained no database-backed destinations',
+                    );
+                    noVerifiedStops.code = 'NO_DATABASE_PLACES';
+                    throw noVerifiedStops;
+                }
                 break;
             } catch (parseError) {
                 console.warn(
@@ -393,9 +415,11 @@ async function generateTripPlan(tripId, tripInput, res) {
         console.error('[ai] generateTripPlan error:', err.message);
         await query(`UPDATE trips SET status = 'failed' WHERE id = $1`, [tripId]);
         const transient = err instanceof SyntaxError || err.statusCode === 429 || err.statusCode >= 500;
-        const message = transient
-            ? 'The AI travel planner is temporarily busy. Please try again in a moment.'
-            : 'The travel plan could not be generated. Please review your details and try again.';
+        const message = err.code === 'NO_DATABASE_PLACES'
+            ? 'ไม่พบสถานที่จากฐานข้อมูลเพียงพอสำหรับสร้างแผน กรุณาเพิ่มหรือนำเข้าข้อมูลสถานที่ก่อน'
+            : transient
+                ? 'The AI travel planner is temporarily busy. Please try again in a moment.'
+                : 'The travel plan could not be generated. Please review your details and try again.';
         res.write(`data: ${JSON.stringify({ type: 'error', message })}\n\n`);
     } finally {
         res.end();

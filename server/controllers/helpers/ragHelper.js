@@ -184,6 +184,7 @@ function formatPlacesContext(places) {
         const facts = buildPlaceFacts(p);
 
         return `[${i + 1}] ${p.name}
+    รหัสสถานที่: ${p.id}
     จังหวัด: ${p.province || '-'} | หมวดหมู่: ${p.category}
     ที่อยู่: ${p.address || '-'}
     ตำบล/แขวง: ${p.sub_district || '-'} | อำเภอ/เขต: ${p.district || '-'} | รหัสไปรษณีย์: ${p.postcode || '-'}
