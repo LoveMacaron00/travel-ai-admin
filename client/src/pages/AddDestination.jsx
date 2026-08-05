@@ -332,7 +332,7 @@ const AddDestination = () => {
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">รหัสจังหวัด</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 464" inputMode="numeric"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" step="1" placeholder="เช่น 464"
                             value={form.province_id} onChange={e => handleChange('province_id', e.target.value)} />
                     </div>
                     <div>
@@ -342,7 +342,7 @@ const AddDestination = () => {
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">รหัสอำเภอ/เขต</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 2001" inputMode="numeric"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" step="1" placeholder="เช่น 2001"
                             value={form.district_id} onChange={e => handleChange('district_id', e.target.value)} />
                     </div>
                     <div>
@@ -352,12 +352,12 @@ const AddDestination = () => {
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">รหัสตำบล/แขวง</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 200104" inputMode="numeric"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" step="1" placeholder="เช่น 200104"
                             value={form.sub_district_id} onChange={e => handleChange('sub_district_id', e.target.value)} />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">รหัสไปรษณีย์</label>
-                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 20000" inputMode="numeric"
+                        <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" step="1" placeholder="เช่น 20000"
                             value={form.postcode} onChange={e => handleChange('postcode', e.target.value)} />
                     </div>
                 </div>
