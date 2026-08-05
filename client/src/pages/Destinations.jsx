@@ -4,7 +4,6 @@ import api from '../utils/api';
 import { showConfirmAlert, showErrorAlert, showSuccessAlert } from '../utils/alerts';
 import DestinationsView from '../components/destinations/DestinationsView';
 import {
-    countDestinationStatuses,
     DEBOUNCE_MS,
     getVisiblePageNumbers,
     normalizeDestinationItems,
@@ -24,6 +23,11 @@ const Destinations = () => {
     const [loading, setLoading] = useState(false);
     const [syncingId, setSyncingId] = useState(null);
     const [bulkSyncing, setBulkSyncing] = useState(false);
+    const [statusCounts, setStatusCounts] = useState({
+        approved: 0,
+        pending: 0,
+        rejected: 0
+    });
 
     const [filters, setFilters] = useState({
         source: 'tat',
@@ -36,9 +40,7 @@ const Destinations = () => {
     const requestIdRef = useRef(0);
 
     const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
-    const sourceTotalCount = filters.source === 'tat' ? totalItems : adminDests.length;
-    const visibleTotalPages = filters.source === 'tat' ? totalPages : 1;
-    const visiblePage = filters.source === 'tat' ? page : 1;
+    const sourceTotalCount = totalItems;
 
     // -----------------------
     // หน่วงการค้นหาเพื่อลดจำนวนคำขอ
@@ -54,7 +56,7 @@ const Destinations = () => {
     // -----------------------
     // ดึงข้อมูลทั้งหมดพร้อมกัน
     // -----------------------
-    const fetchData = useCallback(async (keyword, pageNum, source, placeCategory) => {
+    const fetchData = useCallback(async (keyword, pageNum, source, placeCategory, status) => {
         requestIdRef.current += 1;
         const currentRequestId = requestIdRef.current;
 
@@ -68,6 +70,9 @@ const Destinations = () => {
             if (source === 'admin') {
                 const adminParams = new URLSearchParams();
                 if (keyword) adminParams.set('search', keyword);
+                if (status && status !== 'all') adminParams.set('status', status);
+                adminParams.set('limit', PAGE_SIZE);
+                adminParams.set('page', pageNum);
 
                 const adminRes = await api.get(`/destinations?${adminParams}`, {
                     signal: controller.signal
@@ -77,10 +82,16 @@ const Destinations = () => {
                     return;
                 }
 
-                const adminItems = Array.isArray(adminRes.data) ? adminRes.data : [];
+                const adminItems = Array.isArray(adminRes.data?.data) ? adminRes.data.data : [];
+                const pagination = adminRes.data?.pagination || {};
                 setAdminDests(adminItems);
                 setTatDests([]);
-                setTotalItems(adminItems.length);
+                setTotalItems(pagination.total || 0);
+                setStatusCounts(adminRes.data?.statusCounts || {
+                    approved: 0,
+                    pending: 0,
+                    rejected: 0
+                });
             } else {
                 const tatParams = new URLSearchParams();
                 if (keyword) tatParams.set('keyword', keyword);
@@ -104,6 +115,7 @@ const Destinations = () => {
                 setTatDests(Array.isArray(results) ? results : []);
                 setAdminDests([]);
                 setTotalItems(pagination.total || 0);
+                setStatusCounts({ approved: 0, pending: 0, rejected: 0 });
             }
         } catch (err) {
             if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
@@ -114,6 +126,7 @@ const Destinations = () => {
             setAdminDests([]);
             setTatDests([]);
             setTotalItems(0);
+            setStatusCounts({ approved: 0, pending: 0, rejected: 0 });
         } finally {
             if (requestIdRef.current === currentRequestId) {
                 setLoading(false);
@@ -129,12 +142,8 @@ const Destinations = () => {
     // -----------------------
     useEffect(() => {
         setPage(1);
-        fetchData(debouncedSearch, 1, filters.source, filters.placeCategory);
-    }, [debouncedSearch, filters.source, filters.placeCategory, fetchData]);
-
-    useEffect(() => {
-        setPage(1);
-    }, [filters.source, filters.placeCategory]);
+        fetchData(debouncedSearch, 1, filters.source, filters.placeCategory, filters.status);
+    }, [debouncedSearch, filters.source, filters.placeCategory, filters.status, fetchData]);
 
     useEffect(() => {
         return () => {
@@ -157,7 +166,7 @@ const Destinations = () => {
     const handlePageChange = (newPage) => {
         if (newPage < 1 || newPage > totalPages) return;
         setPage(newPage);
-        fetchData(debouncedSearch, newPage, filters.source, filters.placeCategory);
+        fetchData(debouncedSearch, newPage, filters.source, filters.placeCategory, filters.status);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -177,7 +186,7 @@ const Destinations = () => {
         try {
             await api.delete(`/destinations/${id}`);
             await showSuccessAlert('ลบสถานที่เรียบร้อยแล้ว');
-            fetchData(debouncedSearch, page, filters.source, filters.placeCategory);
+            fetchData(debouncedSearch, page, filters.source, filters.placeCategory, filters.status);
         } catch (err) {
             console.error('เกิดข้อผิดพลาดในการลบ:', err);
             await showErrorAlert('ลบสถานที่ไม่สำเร็จ');
@@ -241,11 +250,6 @@ const Destinations = () => {
         adminItems: adminDests
     }), [tatDests, adminDests, filters.source, filters.status]);
 
-    const statusCounts = useMemo(() => countDestinationStatuses({
-        source: filters.source,
-        tatItems: tatDests,
-        adminItems: adminDests
-    }), [tatDests, adminDests, filters.source]);
     const pageNumbers = getVisiblePageNumbers(page, totalPages);
 
     // -----------------------
@@ -272,8 +276,6 @@ const Destinations = () => {
             handleDelete={handleDelete}
             page={page}
             totalPages={totalPages}
-            visiblePage={visiblePage}
-            visibleTotalPages={visibleTotalPages}
             pageNumbers={pageNumbers}
             handlePageChange={handlePageChange}
         />

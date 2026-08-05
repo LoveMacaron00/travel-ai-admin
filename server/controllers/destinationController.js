@@ -136,20 +136,48 @@ const validateCoordinates = (latitude, longitude) => {
 // ส่งรายการสถานที่ทั้งหมดสำหรับหน้า admin พร้อมตัวกรองและ pagination
 const getAllDestinations = async (req, res) => {
     try {
-        const { province, status, search } = req.query;
-        let sql = 'SELECT id, name, province, category, image_url, status, source, created_at FROM destinations';
-        const conditions = [];
-        const params = [];
-
+        const { province, status, search, source } = req.query;
         const allowedStatuses = ['pending', 'approved', 'rejected'];
+        const allowedSources = ['admin', 'tat'];
+        const paginationRequested = req.query.page !== undefined || req.query.limit !== undefined;
+        const parsedPage = Number.parseInt(req.query.page, 10);
+        const parsedLimit = Number.parseInt(req.query.limit, 10);
+        const page = Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+        const limit = Number.isSafeInteger(parsedLimit) && parsedLimit > 0
+            ? Math.min(parsedLimit, 100)
+            : 10;
+
+        const baseConditions = [];
+        const baseParams = [];
+
+        if (source && allowedSources.includes(String(source).trim().toLowerCase())) {
+            baseParams.push(String(source).trim().toLowerCase());
+            baseConditions.push(`source = $${baseParams.length}`);
+        }
 
         if (province && typeof province === 'string' && province.trim()) {
             const cleanProvince = province.trim();
             if (/^[a-zA-Z0-9ก-๙\s.-]+$/.test(cleanProvince)) {
-                params.push(cleanProvince);
-                conditions.push(`province = $${params.length}`);
+                baseParams.push(cleanProvince);
+                baseConditions.push(`province = $${baseParams.length}`);
             }
         }
+
+        if (search && String(search).trim()) {
+            baseParams.push(`%${String(search).trim()}%`);
+            const searchParam = `$${baseParams.length}`;
+            baseConditions.push(`(
+                name ILIKE ${searchParam}
+                OR COALESCE(province, '') ILIKE ${searchParam}
+                OR COALESCE(address, '') ILIKE ${searchParam}
+                OR COALESCE(district, '') ILIKE ${searchParam}
+                OR COALESCE(sub_district, '') ILIKE ${searchParam}
+                OR COALESCE(category, '') ILIKE ${searchParam}
+            )`);
+        }
+
+        const conditions = [...baseConditions];
+        const params = [...baseParams];
         if (status && typeof status === 'string') {
             const cleanStatus = status.trim().toLowerCase();
             if (allowedStatuses.includes(cleanStatus)) {
@@ -157,19 +185,49 @@ const getAllDestinations = async (req, res) => {
                 conditions.push(`status = $${params.length}`);
             }
         }
-        if (search) {
-            params.push(`%${search}%`);
-            conditions.push(`name ILIKE $${params.length}`);
+
+        const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+        const baseWhereClause = baseConditions.length > 0
+            ? ` WHERE ${baseConditions.join(' AND ')}`
+            : '';
+        let sql = `
+            SELECT id, name, province, category, image_url, status, source, created_at
+            FROM destinations${whereClause}
+            ORDER BY created_at DESC
+        `;
+
+        if (!paginationRequested) {
+            const { rows } = await pool.query(sql, params);
+            return res.json(rows);
         }
 
-        if (conditions.length > 0) {
-            sql += ' WHERE ' + conditions.join(' AND ');
-        }
+        const paginatedParams = [...params, limit, (page - 1) * limit];
+        sql += ` LIMIT $${paginatedParams.length - 1} OFFSET $${paginatedParams.length}`;
 
-        sql += ' ORDER BY created_at DESC';
+        const [itemsResult, totalResult, statusResult] = await Promise.all([
+            pool.query(sql, paginatedParams),
+            pool.query(`SELECT COUNT(*)::int AS total FROM destinations${whereClause}`, params),
+            pool.query(
+                `SELECT
+                    COUNT(*) FILTER (WHERE status = 'approved')::int AS approved,
+                    COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+                    COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected
+                 FROM destinations${baseWhereClause}`,
+                baseParams
+            )
+        ]);
 
-        const { rows } = await pool.query(sql, params);
-        res.json(rows);
+        const total = totalResult.rows[0]?.total || 0;
+        res.json({
+            data: itemsResult.rows,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / limit))
+            },
+            statusCounts: statusResult.rows[0] || { approved: 0, pending: 0, rejected: 0 }
+        });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงรายการสถานที่:', err);
         res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });

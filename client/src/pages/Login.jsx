@@ -37,7 +37,7 @@ const Login = ({ onLogin }) => {
         <div className="min-h-screen flex items-center justify-center" style={{ background: '#464666' }}>
             <div className="w-full max-w-md px-8">
                 {/* Logo */}
-                <h1 className="text-center text-4xl font-bold mb-12" style={{ color: '#f0a500'}}>
+                <h1 className="text-center text-6xl font-bold mb-12" style={{ color: '#f0a500'}}>
                     GoThai
                 </h1>
 
@@ -76,8 +76,8 @@ const Login = ({ onLogin }) => {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="px-16 py-3 font-semibold text-lg rounded"
-                            style={{ background: '#f0a500', color: '#000' }}
+                            className="px-16 py-3 text-lg rounded"
+                            style={{ background: '#f0a500', color: 'white' }}
                         >
                             {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
                         </button>

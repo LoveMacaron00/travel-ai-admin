@@ -225,22 +225,48 @@ async function upsertTATPlace(place) {
 
 // sync สถานที่ TAT ทุกหน้าตามตัวเลือกและสรุปผลการทำงาน
 async function syncAllTATPlaces(options = {}) {
-    const { province = '', keyword = '', placeCategory = '', maxPages = 50, hydrateDetails = false } = options;
+    const {
+        province = '',
+        keyword = '',
+        placeCategory = '',
+        maxPages = Number.POSITIVE_INFINITY,
+        hydrateDetails = false,
+    } = options;
     let page = 1;
     let totalUpserted = 0;
     let totalEmbedded = 0;
     let totalFailed = 0;
     let totalTranslations = 0;
     let totalTranslationFailed = 0;
+    const seenPageSignatures = new Set();
     console.log(`[tat-sync] เริ่ม sync — province:"${province}" keyword:"${keyword}" placeCategory:"${placeCategory}"`);
 
     while (page <= maxPages) {
         let data;
-        try { data = await fetchTATPage(page, 100, keyword, province, placeCategory, 'th'); }
-        catch (err) { console.error(`[tat-sync] page ${page} error:`, err.message); break; }
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                data = await fetchTATPage(page, 100, keyword, province, placeCategory, 'th');
+                break;
+            } catch (err) {
+                console.error(`[tat-sync] page ${page} attempt ${attempt} error:`, err.message);
+                if (attempt < 3) {
+                    await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+                }
+            }
+        }
+        if (!data) break;
 
         const places = data.result || data.data || [];
         if (places.length === 0) break;
+        const pageSignature = places
+            .map(place => place.placeId || place.id)
+            .filter(Boolean)
+            .join('|');
+        if (pageSignature && seenPageSignatures.has(pageSignature)) {
+            console.error(`[tat-sync] page ${page} ซ้ำกับหน้าที่เคยได้รับ จึงหยุดเพื่อป้องกัน loop`);
+            break;
+        }
+        if (pageSignature) seenPageSignatures.add(pageSignature);
         console.log(`[tat-sync] page ${page} — ${places.length} places`);
 
         for (const place of places) {
@@ -272,7 +298,13 @@ async function syncAllTATPlaces(options = {}) {
                 console.error(`[tat-sync] ✗ place ${place.placeId}:`, err.message);
             }
         }
-        if (places.length < 100) break;
+        const pagination = data.pagination || {};
+        const total = Number(pagination.total);
+        const actualPageSize = Number(pagination.pageSize) || places.length;
+        const totalPages = Number.isFinite(total) && total >= 0 && actualPageSize > 0
+            ? Math.ceil(total / actualPageSize)
+            : null;
+        if (totalPages !== null && page >= totalPages) break;
         page++;
     }
 

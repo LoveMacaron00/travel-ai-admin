@@ -58,16 +58,6 @@ export const normalizeDestinationItems = ({ source, status, tatItems, adminItems
     return items;
 };
 
-export const countDestinationStatuses = ({ source, tatItems, adminItems }) => {
-    const statuses = (source === 'tat' ? tatItems : adminItems)
-        .map((item) => normalizeStatus(item.status));
-    return {
-        pending: statuses.filter((status) => status === 'pending').length,
-        approved: statuses.filter((status) => status === 'approved').length,
-        rejected: statuses.filter((status) => status === 'rejected').length
-    };
-};
-
 export const getVisiblePageNumbers = (page, totalPages, maxVisible = 5) => {
     let start = Math.max(1, page - Math.floor(maxVisible / 2));
     const end = Math.min(totalPages, start + maxVisible - 1);

@@ -21,8 +21,6 @@ const DestinationsView = ({
     handleDelete,
     page,
     totalPages,
-    visiblePage,
-    visibleTotalPages,
     pageNumbers,
     handlePageChange
 }) => {
@@ -77,7 +75,7 @@ const DestinationsView = ({
                             className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none disabled:transform-none"
                         >
                             <RefreshCw size={18} className={bulkSyncing ? 'animate-spin' : ''} />
-                            {bulkSyncing ? 'กำลังซิงก์...' : 'ซิงก์ TAT เข้าฐานข้อมูล'}
+                            {bulkSyncing ? 'กำลังซิงก์...' : 'ซิงก์ผลลัพธ์ TAT ทั้งหมด'}
                         </button>
                     )}
 
@@ -389,10 +387,10 @@ const DestinationsView = ({
                     )}
 
                     {/* Pagination */}
-                    {filters.source === 'tat' && totalPages > 1 && (
+                    {totalPages > 1 && (
                         <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 shadow-lg">
                             <p className="text-sm text-gray-400">
-                                หน้า <span className="text-white font-medium">{visiblePage}</span> จาก <span className="text-white font-medium">{visibleTotalPages}</span>
+                                หน้า <span className="text-white font-medium">{page}</span> จาก <span className="text-white font-medium">{totalPages}</span>
                             </p>
 
                             <div className="flex items-center gap-1.5 bg-black/30 p-1.5 rounded-xl border border-gray-800">
