@@ -11,7 +11,15 @@ const GEMINI_API_BASE = config.gemini.apiBaseUrl;
 const GEMINI_MODEL = config.gemini.model;
 const GEMINI_MAX_RETRIES = config.gemini.maxRetries;
 const GEMINI_PLAN_THINKING_BUDGET = config.gemini.planThinkingBudget;
-const SUPPORTED_TRANSPORT_MODES = new Set(['car', 'walking']);
+const SUPPORTED_TRANSPORT_MODES = new Set([
+    'car',
+    'walking',
+    'bus',
+    'train',
+    'ferry',
+    'flight',
+]);
+const LONG_DISTANCE_TRANSPORT_MODES = new Set(['train', 'ferry', 'flight']);
 const GEMINI_HEADERS = {
     'Content-Type': 'application/json',
     // ส่ง key ใน header เพื่อไม่ให้ค่าลับติด URL หรือ access log
@@ -79,7 +87,7 @@ const PLAN_RESPONSE_SCHEMA = {
                         type: 'array',
                         items: {
                             type: 'object',
-                            required: ['place', 'activity', 'latitude', 'longitude', 'arrivalTime', 'durationMinutes', 'entryCost', 'foodCost', 'transportMode', 'transportCost'],
+                            required: ['place', 'activity', 'latitude', 'longitude', 'arrivalTime', 'durationMinutes', 'entryCost', 'foodCost', 'transportMode', 'transportCost', 'segments'],
                             properties: {
                                 destinationId: { type: 'string' },
                                 place: { type: 'string' },
@@ -258,6 +266,9 @@ async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
 // สร้างแผนท่องเที่ยวด้วย Gemini แล้วส่งความคืบหน้าผ่าน SSE
 async function generateTripPlan(tripId, tripInput, res) {
     const allowedTransportModes = getAllowedTransportModes(tripInput.transport_modes);
+    const supportsLongDistance = allowedTransportModes.some(
+        (mode) => LONG_DISTANCE_TRANSPORT_MODES.has(mode),
+    );
 
     // ดึง relevant places จาก RAG
     const ragQuery = [
@@ -273,11 +284,22 @@ async function generateTripPlan(tripId, tripInput, res) {
             limit: 15,
         });
     } else if (tripInput.start_latitude != null && tripInput.start_longitude != null) {
-        places = await retrieveNearbyPlaces(
+        const nearbyPlaces = await retrieveNearbyPlaces(
             tripInput.start_latitude,
             tripInput.start_longitude,
             15,
         );
+        if (supportsLongDistance) {
+            const nationwidePlaces = await retrieveRelevantPlaces(ragQuery, {
+                province: null,
+                limit: 20,
+            });
+            places = [...new Map(
+                [...nearbyPlaces, ...nationwidePlaces].map((place) => [place.id, place]),
+            ).values()];
+        } else {
+            places = nearbyPlaces;
+        }
     } else {
         places = await retrieveRelevantPlaces(ragQuery, {
             province: null,
@@ -315,7 +337,12 @@ async function generateTripPlan(tripId, tripInput, res) {
 
     เลือกสถานที่จากฐานข้อมูลเท่านั้น ให้เหมาะกับความสนใจและงบประมาณ จัดลำดับจากจุดเริ่ม GPS เพื่อลดการย้อนเส้นทาง
     ห้ามเสนอหรือสร้าง stop ที่ไม่มีอยู่ในข้อมูลสถานที่จากฐานข้อมูล แม้จำนวนสถานที่จะไม่พอกับจำนวนวัน
-    ถ้าเป็นเครื่องบิน รถไฟ หรือเรือ ให้แยกช่วงไปสถานี/สนามบิน/ท่าเรือ ช่วงขนส่งหลัก และช่วงต่อไปยังจุดหมาย
+    transportMode ของแต่ละ stop หมายถึงพาหนะหลักที่ใช้เดินทางมาจาก stop ก่อนหน้า และต้องเลือกจากวิธีเดินทางที่ผู้ใช้ยอมรับเท่านั้น
+    แต่ละ stop เลือก transportMode ต่างกันได้ตามความเหมาะสม ห้ามใช้รถยนต์หรือเดินข้ามทะเล
+    ถ้าเป็นเครื่องบิน รถไฟ หรือเรือ ให้ใส่ segments แยกช่วงไปสถานี/สนามบิน/ท่าเรือ ช่วงขนส่งหลัก และช่วงต่อไปยังจุดหมาย โดยใช้ชื่อจุดเชื่อมต่อจริงที่มั่นใจเท่านั้น
+    ใช้ flight สำหรับระยะไกลที่ต้องบิน, ferry สำหรับการข้ามเกาะ/ทะเล, train สำหรับเส้นทางรถไฟ, bus หรือ car สำหรับถนน และ walking เฉพาะระยะที่เดินได้จริง
+    ห้ามแต่งหมายเลขเที่ยวบิน รอบเรือ รอบรถไฟ หรือเวลาออกเดินทางจริง หากไม่มีข้อมูลตารางเวลา ให้ระบุใน tip ว่าเป็นเวลาโดยประมาณและควรตรวจสอบตารางกับผู้ให้บริการ
+    ถ้าผู้ใช้อนุญาตวิธีเดินทางระยะไกลและไม่ได้จำกัดจังหวัด สามารถวางแผนหลายจังหวัดได้เมื่อจำนวนวันและงบประมาณเหมาะสม แต่ไม่จำเป็นต้องฝืนเดินทางไกล
     ค่าใช้จ่ายทั้งหมดเป็นค่าประมาณต่อทริป และทุก stop ต้องมี latitude/longitude ที่ใช้งานบนแผนที่ได้
 
     ตอบในรูปแบบ JSON นี้เท่านั้น:
