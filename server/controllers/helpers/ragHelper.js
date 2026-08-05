@@ -5,6 +5,118 @@ const query = pool.query.bind(pool);
 const { getEmbedding } = require('./embedHelper');
 const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
+const FALLBACK_STOP_WORDS = new Set([
+    'ขอ', 'ช่วย', 'หา', 'แนะนำ', 'อยาก', 'เที่ยว', 'ไป', 'ที่', 'ใน', 'มี', 'ไหม',
+    'อะไร', 'บ้าง', 'ครับ', 'ค่ะ', 'ให้', 'หน่อย', 'และ', 'หรือ', 'ของ', 'จาก',
+    'please', 'find', 'show', 'recommend', 'travel', 'trip', 'in', 'at', 'the', 'a', 'an',
+]);
+
+// ตัดคำทั่วไปออกเพื่อให้ fallback จับชื่อ จังหวัด หมวดหมู่ และความสนใจได้แม่นขึ้น
+const getFallbackSearchTerms = (queryText) => [...new Set(
+    String(queryText || '')
+        .toLowerCase()
+        .split(/[\s,./\\|()[\]{}:;!?"']+/u)
+        .map(term => term.trim())
+        .filter(term => term.length > 1 && !FALLBACK_STOP_WORDS.has(term))
+        .slice(0, 12),
+)];
+
+const destinationSelectFields = `
+    d.id,
+    d.name,
+    d.province,
+    d.description,
+    d.category,
+    d.tags,
+    d.latitude,
+    d.longitude,
+    d.address,
+    d.district,
+    d.sub_district,
+    d.postcode,
+    COALESCE(
+        d.image_url,
+        (
+            SELECT di.image_url
+            FROM destination_images di
+            WHERE di.destination_id = d.id
+            ORDER BY di.id ASC
+            LIMIT 1
+        )
+    ) AS image_url,
+    d.opening_time,
+    d.closing_time,
+    d.opening_hours,
+    d.tat_raw`;
+
+// สำรองการค้นหาแบบข้อความเมื่อบริการ embedding ใช้งานไม่ได้หรือโควตาหมด
+async function retrievePlacesByText(queryText, options = {}) {
+    const {
+        province = null,
+        categories = null,
+        limit = 10,
+    } = options;
+    const terms = getFallbackSearchTerms(queryText);
+
+    if (terms.length === 0) {
+        const { rows } = await query(
+            `SELECT ${destinationSelectFields},
+                    NULL::text AS chunk_text,
+                    'keyword_fallback'::text AS chunk_field,
+                    0::float AS similarity
+             FROM destinations d
+             WHERE d.status = 'approved'
+               AND ($1::text IS NULL OR d.province = $1)
+               AND ($2::text[] IS NULL OR d.category = ANY($2))
+             ORDER BY d.created_at DESC
+             LIMIT $3`,
+            [province, categories, limit],
+        );
+        return rows;
+    }
+
+    const { rows } = await query(
+        `SELECT ${destinationSelectFields},
+                NULL::text AS chunk_text,
+                'keyword_fallback'::text AS chunk_field,
+                matches.score::float AS similarity
+         FROM destinations d
+         CROSS JOIN LATERAL (
+             SELECT COALESCE(SUM(
+                 CASE WHEN COALESCE(d.name, '') ILIKE '%' || term || '%' THEN 8 ELSE 0 END
+                 + CASE WHEN COALESCE(d.province, '') ILIKE '%' || term || '%' THEN 6 ELSE 0 END
+                 + CASE WHEN COALESCE(d.category, '') ILIKE '%' || term || '%' THEN 4 ELSE 0 END
+                 + CASE WHEN COALESCE(array_to_string(d.tags, ' '), '') ILIKE '%' || term || '%' THEN 3 ELSE 0 END
+                 + CASE WHEN COALESCE(d.address, '') ILIKE '%' || term || '%' THEN 3 ELSE 0 END
+                 + CASE WHEN COALESCE(d.district, '') ILIKE '%' || term || '%' THEN 3 ELSE 0 END
+                 + CASE WHEN COALESCE(d.sub_district, '') ILIKE '%' || term || '%' THEN 3 ELSE 0 END
+                 + CASE WHEN COALESCE(d.description, '') ILIKE '%' || term || '%' THEN 1 ELSE 0 END
+                 + CASE WHEN EXISTS (
+                     SELECT 1
+                     FROM destination_translations dt
+                     WHERE dt.destination_id = d.id
+                       AND CONCAT_WS(' ', dt.name, dt.province, dt.address, dt.description)
+                           ILIKE '%' || term || '%'
+                 ) THEN 4 ELSE 0 END
+             ), 0)
+             + CASE
+                 WHEN COALESCE(d.province, '') <> ''
+                  AND $4::text ILIKE '%' || d.province || '%'
+                 THEN 10 ELSE 0
+               END AS score
+             FROM unnest($1::text[]) AS term
+         ) matches
+         WHERE d.status = 'approved'
+           AND ($2::text IS NULL OR d.province = $2)
+           AND ($3::text[] IS NULL OR d.category = ANY($3))
+           AND (matches.score > 0 OR $2::text IS NOT NULL)
+         ORDER BY matches.score DESC, d.created_at DESC
+         LIMIT $5`,
+        [terms, province, categories, String(queryText || ''), limit],
+    );
+    return rows;
+}
+
 // Semantic retrieval สำหรับคำถามที่ไม่มีพิกัด พร้อม filter จังหวัด/หมวดหมู่
 // ค้นหาสถานที่ที่เกี่ยวข้องกับข้อความด้วย similarity ของ embedding
 async function retrieveRelevantPlaces(queryText, options = {}) {
@@ -14,8 +126,14 @@ async function retrieveRelevantPlaces(queryText, options = {}) {
         limit = 10,
     } = options;
 
-    // embed คำถาม
-    const queryVector = await getEmbedding(queryText, 'RETRIEVAL_QUERY');
+    // embed คำถาม; หาก Gemini embedding ขัดข้องให้ใช้ PostgreSQL text fallback
+    let queryVector;
+    try {
+        queryVector = await getEmbedding(queryText, 'RETRIEVAL_QUERY');
+    } catch (error) {
+        console.warn(`[rag] embedding unavailable; using text fallback: ${error.message}`);
+        return retrievePlacesByText(queryText, { province, categories, limit });
+    }
 
     // ค้นหาเวกเตอร์และกรองผลลัพธ์
     const { rows } = await query(
@@ -202,5 +320,6 @@ module.exports = {
     findDestinationByNames,
     formatPlacesContext,
     retrieveNearbyPlaces,
+    retrievePlacesByText,
     retrieveRelevantPlaces,
 };

@@ -1,4 +1,4 @@
-import { Search, Plus, MapPin, Eye, Tag, ChevronLeft, ChevronRight, Filter, Compass, LayoutGrid, RefreshCw } from 'lucide-react';
+import { Search, Plus, MapPin, Eye, Tag, ChevronLeft, ChevronRight, Filter, Compass, LayoutGrid, RefreshCw, Sparkles } from 'lucide-react';
 import AuthenticatedImage from '../AuthenticatedImage';
 
 // ส่วนแสดงผลของหน้าสถานที่ รับสถานะและคำสั่งจากตัวควบคุมหน้าเพื่อแยกการวาดหน้าจอออกจากการไหลของข้อมูล
@@ -12,6 +12,8 @@ const DestinationsView = ({
     handleSearch,
     handleBulkSyncTAT,
     bulkSyncing,
+    embeddingQueueing,
+    handleQueueMissingEmbeddings,
     placeCategories,
     statusCounts,
     loading,
@@ -68,15 +70,24 @@ const DestinationsView = ({
                         />
                     </form>
 
+                    <button
+                        onClick={handleQueueMissingEmbeddings}
+                        disabled={embeddingQueueing}
+                        className="flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-500/15 border border-purple-500/30 disabled:bg-gray-800 disabled:text-gray-500 text-purple-300 font-bold rounded-xl"
+                    >
+                        <Sparkles size={18} className={embeddingQueueing ? 'animate-pulse' : ''} />
+                        {embeddingQueueing ? 'กำลังเริ่มคิว...' : 'สร้างข้อมูล AI ที่ขาด'}
+                    </button>
+
                     {filters.source === 'tat' && (
-                        <button
-                            onClick={handleBulkSyncTAT}
-                            disabled={bulkSyncing}
-                            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none disabled:transform-none"
-                        >
-                            <RefreshCw size={18} className={bulkSyncing ? 'animate-spin' : ''} />
-                            {bulkSyncing ? 'กำลังซิงก์...' : 'ซิงก์ผลลัพธ์ TAT ทั้งหมด'}
-                        </button>
+                            <button
+                                onClick={handleBulkSyncTAT}
+                                disabled={bulkSyncing}
+                                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:shadow-none disabled:transform-none"
+                            >
+                                <RefreshCw size={18} className={bulkSyncing ? 'animate-spin' : ''} />
+                                {bulkSyncing ? 'กำลังซิงก์...' : 'ซิงก์ผลลัพธ์ TAT ทั้งหมด'}
+                            </button>
                     )}
 
                     {filters.source === 'admin' && (

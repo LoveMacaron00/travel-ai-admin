@@ -6,10 +6,33 @@ const pool = require('../config/db');
 const { embedDestination, clearDestinationEmbedding } = require('./helpers/embedHelper');
 
 const PLACE_STATUSES = ['pending', 'approved', 'rejected'];
+const ADMIN_PLACE_CATEGORIES = ['attraction', 'accommodation', 'restaurant', 'shop', 'other'];
 // แปลงสถานะสถานที่ให้เหลือค่าที่ระบบรองรับ
 const normalizePlaceStatus = (status) => {
     const cleanStatus = String(status || 'approved').trim().toLowerCase();
     return PLACE_STATUSES.includes(cleanStatus) ? cleanStatus : 'approved';
+};
+
+// จำกัดหมวดหมู่ที่ AdminAdd บันทึกให้ตรงกับตัวกรองและแผนที่ในแอป
+const normalizeAdminPlaceCategory = (category) => {
+    const cleanCategory = String(category || 'attraction').trim().toLowerCase();
+    return ADMIN_PLACE_CATEGORIES.includes(cleanCategory) ? cleanCategory : 'attraction';
+};
+
+// การบันทึกสถานที่ต้องสำเร็จได้แม้บริการ embedding ภายนอกขัดข้อง
+// โดยส่งคำเตือนกลับให้หน้า Admin แทนการรายงานว่าบันทึกข้อมูลล้มเหลว
+const refreshDestinationEmbedding = async (destinationId, status) => {
+    try {
+        if (normalizePlaceStatus(status) === 'approved') {
+            await embedDestination(destinationId);
+        } else {
+            await clearDestinationEmbedding(destinationId);
+        }
+        return null;
+    } catch (err) {
+        console.error(`[destination] embedding destination ${destinationId} error:`, err.message);
+        return 'บันทึกสถานที่สำเร็จ แต่สร้างข้อมูลค้นหาสำหรับ AI ไม่สำเร็จ กรุณาลองสร้าง embedding ใหม่ภายหลัง';
+    }
 };
 
 // ลบไฟล์จริงจาก /uploads (เฉพาะไฟล์ที่อยู่ใน /uploads เท่านั้น)
@@ -300,6 +323,7 @@ const createDestination = async (req, res) => {
         const location = normalizeLocationInput(data);
         const images = req.body.images;
         const client = await pool.connect();
+        let destId;
         try {
             await client.query('BEGIN');
 
@@ -307,9 +331,9 @@ const createDestination = async (req, res) => {
                 `INSERT INTO destinations (
                     name, address, province_id, province, district_id, district,
                     sub_district_id, sub_district, postcode,
-                    description, latitude, longitude, opening_time, closing_time,
+                    description, category, latitude, longitude, opening_time, closing_time,
                     status, source, image_url, admission_fee
-                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'admin',$16,$17)
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'admin',$17,$18)
                  RETURNING id`,
                 [
                     data.name.trim(),
@@ -322,6 +346,7 @@ const createDestination = async (req, res) => {
                     nullableText(location.subDistrict),
                     nullableText(location.postcode),
                     nullableText(data.description),
+                    normalizeAdminPlaceCategory(data.category),
                     data.latitude !== '' && data.latitude != null ? parseFloat(data.latitude) : null,
                     data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
                     data.opening_time || '00:00 AM',
@@ -332,7 +357,7 @@ const createDestination = async (req, res) => {
                 ]
             );
 
-            const destId = rows[0].id;
+            destId = rows[0].id;
 
             if (Array.isArray(images) && images.length > 0) {
                 const validUrls = images.filter(Boolean);
@@ -352,19 +377,19 @@ const createDestination = async (req, res) => {
             }
 
             await client.query('COMMIT');
-
-            if ((data.status || 'approved') === 'approved') {
-                await embedDestination(destId);
-            } else {
-                await clearDestinationEmbedding(destId);
-            }
-            res.status(201).json({ id: destId, message: 'เพิ่มสถานที่สำเร็จ' });
         } catch (err) {
             await client.query('ROLLBACK');
             throw err;
         } finally {
             client.release();
         }
+
+        const warning = await refreshDestinationEmbedding(destId, data.status);
+        res.status(201).json({
+            id: destId,
+            message: warning || 'เพิ่มสถานที่สำเร็จ',
+            ...(warning && { warning }),
+        });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการเพิ่มสถานที่:', err);
         res.status(400).json({ message: "ไม่สามารถเพิ่มสถานที่ได้" });
@@ -408,11 +433,11 @@ const updateDestination = async (req, res) => {
                  SET name = $1, address = $2, province_id = $3, province = $4,
                      district_id = $5, district = $6,
                      sub_district_id = $7, sub_district = $8,
-                     postcode = $9, description = $10,
-                     latitude = $11, longitude = $12, opening_time = $13,
-                     closing_time = $14, status = $15, image_url = $16,
-                     admission_fee = $17, updated_at = NOW()
-                 WHERE id = $18`,
+                     postcode = $9, description = $10, category = $11,
+                     latitude = $12, longitude = $13, opening_time = $14,
+                     closing_time = $15, status = $16, image_url = $17,
+                     admission_fee = $18, updated_at = NOW()
+                 WHERE id = $19`,
                 [
                     data.name,
                     nullableText(location.address),
@@ -424,6 +449,7 @@ const updateDestination = async (req, res) => {
                     nullableText(location.subDistrict),
                     nullableText(location.postcode),
                     nullableText(data.description),
+                    normalizeAdminPlaceCategory(data.category),
                     data.latitude !== '' && data.latitude != null ? parseFloat(data.latitude) : null,
                     data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
                     data.opening_time,
@@ -482,13 +508,11 @@ const updateDestination = async (req, res) => {
 
         deleteUploadedFiles(removedImagePaths);
 
-        if ((req.body.status || 'approved') === 'approved') {
-            await embedDestination(destId);
-        } else {
-            await clearDestinationEmbedding(destId);
-        }
-
-        res.json({ message: 'อัปเดตสถานที่สำเร็จ' });
+        const warning = await refreshDestinationEmbedding(destId, req.body.status);
+        res.json({
+            message: warning || 'อัปเดตสถานที่สำเร็จ',
+            ...(warning && { warning }),
+        });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการอัปเดตสถานที่:', err);
         res.status(400).json({ message: "ไม่สามารถอัปเดตสถานที่ได้" });

@@ -234,7 +234,6 @@ async function syncAllTATPlaces(options = {}) {
     } = options;
     let page = 1;
     let totalUpserted = 0;
-    let totalEmbedded = 0;
     let totalFailed = 0;
     let totalTranslations = 0;
     let totalTranslationFailed = 0;
@@ -290,8 +289,6 @@ async function syncAllTATPlaces(options = {}) {
                     }
                 }
 
-                await embedDestination(row.id);
-                totalEmbedded++;
                 await new Promise(r => setTimeout(r, 120));
             } catch (err) {
                 totalFailed++;
@@ -310,7 +307,6 @@ async function syncAllTATPlaces(options = {}) {
 
     const summary = {
         totalUpserted,
-        totalEmbedded,
         totalFailed,
         totalTranslations,
         totalTranslationFailed,
@@ -333,7 +329,6 @@ async function syncOneTATPlace(tatPlaceId) {
     } catch (translationError) {
         console.error(`[tat-sync] ✗ English translation ${tatPlaceId}:`, translationError.message);
     }
-    await embedDestination(row.id);
     return { ...row, languages };
 }
 
@@ -374,15 +369,33 @@ async function syncMissingTATTranslations() {
     return { total: rows.length, synced, failed };
 }
 
+let bulkEmbeddingJob = null;
+
+// ใช้คิวเดียวต่อ process เพื่อป้องกันการกดซ้ำแล้วแย่ง Gemini quota กัน
+function startBulkEmbeddingQueue() {
+    if (bulkEmbeddingJob) return false;
+
+    bulkEmbeddingJob = bulkEmbedMissing()
+        .catch(err => {
+            console.error('[adminEmbed] bulkEmbedMissing error:', err.message);
+        })
+        .finally(() => {
+            bulkEmbeddingJob = null;
+        });
+    return true;
+}
+
 // POST /api/admin/embed/bulk
 // สั่งสร้าง embedding ให้สถานที่ที่ยังขาดผ่าน admin API
 const bulkEmbed = async (req, res) => {
     try {
-        res.json({ message: 'bulk embed เริ่มทำงาน (background)' });
-        // รัน background ไม่ block response
-        bulkEmbedMissing().catch(err =>
-            console.error('[adminEmbed] bulkEmbedMissing error:', err.message)
-        );
+        const started = startBulkEmbeddingQueue();
+        res.status(202).json({
+            started,
+            message: started
+                ? 'เริ่มคิวสร้างข้อมูลค้นหา AI เฉพาะสถานที่ที่ยังไม่มีแล้ว'
+                : 'คิวสร้างข้อมูลค้นหา AI กำลังทำงานอยู่',
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -405,10 +418,13 @@ const embedOne = async (req, res) => {
 const syncTAT = async (req, res) => {
     try {
         const { province, keyword, placeCategory } = req.body;
-        res.json({ message: 'TAT sync เริ่มทำงาน (background)' });
-        syncAllTATPlaces({ province, keyword, placeCategory, hydrateDetails: true }).catch(err =>
-            console.error('[adminEmbed] syncTAT error:', err.message)
-        );
+        res.status(202).json({ message: 'เริ่มซิงก์ข้อมูล TAT แล้ว ระบบจะเข้าคิวสร้างข้อมูล AI ที่ขาดหลังซิงก์เสร็จ' });
+        syncAllTATPlaces({ province, keyword, placeCategory, hydrateDetails: true })
+            .then(summary => {
+                console.log('[adminEmbed] syncTAT complete:', summary);
+                startBulkEmbeddingQueue();
+            })
+            .catch(err => console.error('[adminEmbed] syncTAT error:', err.message));
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -419,7 +435,12 @@ const syncTAT = async (req, res) => {
 const syncOneTAT = async (req, res) => {
     try {
         const row = await syncOneTATPlace(req.params.tatPlaceId);
-        res.json({ message: 'sync และ embed สำเร็จ', id: row.id, languages: row.languages });
+        startBulkEmbeddingQueue();
+        res.json({
+            message: 'ซิงก์ข้อมูลสำเร็จและเพิ่มเข้าคิวสร้างข้อมูล AI แล้ว',
+            id: row.id,
+            languages: row.languages,
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

@@ -23,6 +23,7 @@ const Destinations = () => {
     const [loading, setLoading] = useState(false);
     const [syncingId, setSyncingId] = useState(null);
     const [bulkSyncing, setBulkSyncing] = useState(false);
+    const [embeddingQueueing, setEmbeddingQueueing] = useState(false);
     const [statusCounts, setStatusCounts] = useState({
         approved: 0,
         pending: 0,
@@ -199,7 +200,7 @@ const Destinations = () => {
             : 'ทุกหมวดหมู่';
         const result = await showConfirmAlert({
             title: 'ซิงก์สถานที่จาก TAT API หรือไม่?',
-            text: `คุณต้องการเริ่มซิงก์สถานที่ทั้งหมด (หมวดหมู่: ${activeCategory}, คำค้น: "${debouncedSearch || 'ทั้งหมด'}") เข้าสู่ระบบและสร้างข้อมูลค้นหาสำหรับ AI ใช่หรือไม่? ระบบจะดำเนินการต่อในเบื้องหลัง`,
+            text: `ระบบจะซิงก์ข้อมูลทั้งหมดก่อน (หมวดหมู่: ${activeCategory}, คำค้น: "${debouncedSearch || 'ทั้งหมด'}") แล้วจึงเข้าคิวสร้างข้อมูลค้นหา AI เฉพาะสถานที่ที่ยังไม่มี`,
             confirmButtonText: 'เริ่มซิงก์',
             cancelButtonText: 'ยกเลิก'
         });
@@ -218,6 +219,19 @@ const Destinations = () => {
             await showErrorAlert(err.response?.data?.message || 'สั่งซิงก์ข้อมูลไม่สำเร็จ');
         } finally {
             setBulkSyncing(false);
+        }
+    };
+
+    const handleQueueMissingEmbeddings = async () => {
+        setEmbeddingQueueing(true);
+        try {
+            const res = await api.post('/admin/embed/bulk');
+            await showSuccessAlert(res.data?.message || 'เริ่มคิวสร้างข้อมูลค้นหา AI แล้ว');
+        } catch (err) {
+            console.error('เกิดข้อผิดพลาดในการเริ่มคิว embedding:', err);
+            await showErrorAlert(err.response?.data?.message || 'เริ่มคิวสร้างข้อมูลค้นหา AI ไม่สำเร็จ');
+        } finally {
+            setEmbeddingQueueing(false);
         }
     };
 
@@ -267,6 +281,8 @@ const Destinations = () => {
             handleSearch={handleSearch}
             handleBulkSyncTAT={handleBulkSyncTAT}
             bulkSyncing={bulkSyncing}
+            embeddingQueueing={embeddingQueueing}
+            handleQueueMissingEmbeddings={handleQueueMissingEmbeddings}
             placeCategories={PLACE_CATEGORIES}
             statusCounts={statusCounts}
             loading={loading}

@@ -11,6 +11,8 @@ export const PLACE_CATEGORIES = [
     { id: 'other', label: 'อื่นๆ' }
 ];
 
+export const EDITABLE_PLACE_CATEGORIES = PLACE_CATEGORIES.filter(({ id }) => id !== 'all');
+
 const firstImage = (value) => {
     if (!value) return '';
     if (typeof value === 'string') return value;

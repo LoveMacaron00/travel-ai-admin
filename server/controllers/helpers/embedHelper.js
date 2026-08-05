@@ -30,7 +30,11 @@ async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
             },
         }),
     });
-    if (!response.ok) throw new Error(`Gemini embedding error: ${response.status} — ${await response.text()}`);
+    if (!response.ok) {
+        const error = new Error(`Gemini embedding error: ${response.status} — ${await response.text()}`);
+        error.status = response.status;
+        throw error;
+    }
 
     const data = await response.json();
     const values = data.embedding?.values;
@@ -40,44 +44,28 @@ async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
     return values;
 }
 
-// สร้างข้อความ chunks จากข้อมูลสถานที่เพื่อใช้ทำ embedding และค้นหา
+// รวมข้อมูลสำคัญทั้งหมดเป็นเอกสารเดียว เพื่อลด Gemini quota เหลือหนึ่ง request ต่อสถานที่
 function buildChunks(dest) {
-    // แยก facts คนละความหมายเพื่อให้ vector search จับชื่อ รายละเอียด
-    // และบริบทตำแหน่งได้โดยไม่ต้อง embed เอกสารก้อนใหญ่ก้อนเดียว
     const facts = buildPlaceFacts(dest);
 
     return [
         {
-            field: 'name_tags',
+            field: 'destination',
             text: [
                 `ชื่อสถานที่: ${dest.name}`,
                 `หมวดหมู่: ${dest.category}`,
                 dest.tags?.length ? `แท็ก: ${dest.tags.join(', ')}` : '',
-                dest.province ? `สถานที่ตั้ง: ${dest.province}` : '',
-            ].filter(Boolean).join('\n'),
-        },
-        {
-            field: 'description',
-            text: [
-                dest.name,
-                facts.detailText || (dest.description ? stripHtml(dest.description).slice(0, 800) : ''),
-            ].filter(Boolean).join('\n'),
-        },
-        {
-            field: 'location_context',
-            text: [
-                `${dest.name} ตั้งอยู่`,
+                facts.detailText || (dest.description ? stripHtml(dest.description).slice(0, 1600) : ''),
                 dest.address ? `ที่อยู่: ${dest.address}` : '',
                 dest.sub_district ? `ตำบล/แขวง: ${dest.sub_district}` : '',
                 dest.district ? `อำเภอ/เขต: ${dest.district}` : '',
-                dest.province ? `สถานที่ตั้ง: ${dest.province}` : '',
+                dest.province ? `จังหวัด: ${dest.province}` : '',
                 dest.postcode ? `รหัสไปรษณีย์: ${dest.postcode}` : '',
                 (dest.latitude && dest.longitude) ? `พิกัด ${dest.latitude}, ${dest.longitude}` : '',
-                `หมวดหมู่: ${dest.category}`,
                 facts.feeText ? `ค่าเข้าชม: ${facts.feeText}` : '',
                 facts.openingHoursText ? `เวลาทำการ: ${facts.openingHoursText}` : '',
                 facts.contactText ? `ติดต่อ: ${facts.contactText}` : '',
-            ].filter(Boolean).join(' '),
+            ].filter(Boolean).join('\n'),
         },
     ];
 }
@@ -98,19 +86,34 @@ async function embedDestination(destinationId) {
     }
     const dest = rows[0];
     const chunks = buildChunks(dest);
-
-    await query('DELETE FROM place_embeddings WHERE destination_id = $1', [destinationId]);
-
+    const embeddedChunks = [];
     for (const chunk of chunks) {
         if (!chunk.text.trim()) continue;
         const vector = await getEmbedding(chunk.text, 'RETRIEVAL_DOCUMENT');
-        await query(
-            `INSERT INTO place_embeddings (destination_id, chunk_text, chunk_field, embedding)
-             VALUES ($1, $2, $3, $4::vector)`,
-            [destinationId, chunk.text, chunk.field, JSON.stringify(vector)]
-        );
+        embeddedChunks.push({ ...chunk, vector });
     }
-    console.log(`[embed] ✓ ${dest.name} (id:${destinationId}) — ${chunks.length} chunks`);
+
+    // ขอเวกเตอร์ให้ครบก่อนลบชุดเก่า เพื่อไม่ให้ quota/network error
+    // ทำให้สถานที่ที่เคยค้นหาได้สูญเสีย embedding เดิม
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM place_embeddings WHERE destination_id = $1', [destinationId]);
+        for (const chunk of embeddedChunks) {
+            await client.query(
+                `INSERT INTO place_embeddings (destination_id, chunk_text, chunk_field, embedding)
+                 VALUES ($1, $2, $3, $4::vector)`,
+                [destinationId, chunk.text, chunk.field, JSON.stringify(chunk.vector)]
+            );
+        }
+        await client.query('COMMIT');
+    } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+    } finally {
+        client.release();
+    }
+    console.log(`[embed] ✓ ${dest.name} (id:${destinationId}) — ${embeddedChunks.length} chunks`);
     return true;
 }
 
@@ -118,11 +121,16 @@ async function embedDestination(destinationId) {
 async function bulkEmbedMissing() {
     const { rows } = await query(
         `SELECT d.id FROM destinations d
-         LEFT JOIN place_embeddings pe ON pe.destination_id = d.id
-         WHERE d.status = 'approved' AND pe.id IS NULL`
+         WHERE d.status = 'approved'
+           AND NOT EXISTS (
+               SELECT 1 FROM place_embeddings pe WHERE pe.destination_id = d.id
+           )
+         ORDER BY d.id ASC`
     );
     console.log(`[embed] bulk: พบ ${rows.length} destinations ที่ยังไม่ได้ embed`);
-    let success = 0, failed = 0;
+    let success = 0;
+    let failed = 0;
+    let quotaExhausted = false;
     for (const row of rows) {
         try {
             await embedDestination(row.id);
@@ -131,10 +139,17 @@ async function bulkEmbedMissing() {
         } catch (err) {
             failed++;
             console.error(`[embed] ✗ destination ${row.id}:`, err.message);
+            if (err.status === 429) {
+                quotaExhausted = true;
+                console.error('[embed] หยุดคิวชั่วคราวเพราะ Gemini quota เต็ม');
+                break;
+            }
         }
     }
-    console.log(`[embed] bulk done — success:${success} failed:${failed}`);
-    return { success, failed };
+    const remaining = rows.length - success - failed;
+    const summary = { total: rows.length, success, failed, remaining, quotaExhausted };
+    console.log('[embed] bulk done:', summary);
+    return summary;
 }
 
 // ลบ embedding เดิมของสถานที่เพื่อเตรียมสร้างใหม่

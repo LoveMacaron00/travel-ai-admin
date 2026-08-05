@@ -10,6 +10,7 @@ import { appConfig } from '../config';
 import { showErrorAlert, showSuccessAlert, showWarningAlert } from '../utils/alerts';
 import ImageLightbox from '../components/ImageLightbox';
 import AuthenticatedImage from '../components/AuthenticatedImage';
+import { EDITABLE_PLACE_CATEGORIES } from '../utils/destinationList';
 import {
     DESTINATION_EDITOR_MODULES,
     MapClickHandler,
@@ -28,7 +29,7 @@ const AddDestination = () => {
         province_id: '', province: '', district_id: '', district: '',
         sub_district_id: '', sub_district: '', postcode: '', description: '',
         latitude: '', longitude: '',
-        status: 'approved',
+        status: 'approved', category: 'attraction',
         admission_adult: '', admission_child: '',
         admission_foreigner_adult: '', admission_foreigner_child: ''
     });
@@ -163,8 +164,12 @@ const AddDestination = () => {
                     foreignerChild: form.admission_foreigner_child,
                 },
             };
-            await api.post('/destinations', payload);
-            await showSuccessAlert('เพิ่มสถานที่เรียบร้อยแล้ว');
+            const response = await api.post('/destinations', payload);
+            if (response.data?.warning) {
+                await showWarningAlert(response.data.warning);
+            } else {
+                await showSuccessAlert(response.data?.message || 'เพิ่มสถานที่เรียบร้อยแล้ว');
+            }
             navigate('/destinations');
         } catch (err) {
             console.error('เกิดข้อผิดพลาด:', err);
@@ -292,11 +297,25 @@ const AddDestination = () => {
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-xl">
                 <h2 className="text-lg font-bold text-white mb-3 border-b border-gray-800 pb-3">ข้อมูลสถานที่</h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">ชื่อสถานที่</label>
                         <input className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all" placeholder="กรอกชื่อสถานที่"
                             value={form.name} onChange={e => handleChange('name', e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">หมวดหมู่</label>
+                        <select
+                            className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 appearance-none"
+                            value={form.category}
+                            onChange={e => handleChange('category', e.target.value)}
+                        >
+                            {EDITABLE_PLACE_CATEGORIES.map(category => (
+                                <option key={category.id} value={category.id} className="bg-gray-900">
+                                    {category.label}
+                                </option>
+                            ))}
+                        </select>
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">ที่อยู่</label>
