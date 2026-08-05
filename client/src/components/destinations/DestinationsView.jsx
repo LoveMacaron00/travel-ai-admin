@@ -70,14 +70,16 @@ const DestinationsView = ({
                         />
                     </form>
 
-                    <button
-                        onClick={handleQueueMissingEmbeddings}
-                        disabled={embeddingQueueing}
-                        className="flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-500/15 border border-purple-500/30 disabled:bg-gray-800 disabled:text-gray-500 text-purple-300 font-bold rounded-xl"
-                    >
-                        <Sparkles size={18} className={embeddingQueueing ? 'animate-pulse' : ''} />
-                        {embeddingQueueing ? 'กำลังเริ่มคิว...' : 'สร้างข้อมูล AI ที่ขาด'}
-                    </button>
+                    {filters.source === 'admin' && (
+                        <button
+                            onClick={handleQueueMissingEmbeddings}
+                            disabled={embeddingQueueing}
+                            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-500/15 border border-purple-500/30 disabled:bg-gray-800 disabled:text-gray-500 text-purple-300 font-bold rounded-xl"
+                        >
+                            <Sparkles size={18} className={embeddingQueueing ? 'animate-pulse' : ''} />
+                            {embeddingQueueing ? 'กำลังเริ่มคิว...' : 'สร้างข้อมูล AI ที่ขาด'}
+                        </button>
+                    )}
 
                     {filters.source === 'tat' && (
                             <button
