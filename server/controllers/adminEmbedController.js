@@ -435,11 +435,23 @@ const syncTAT = async (req, res) => {
 const syncOneTAT = async (req, res) => {
     try {
         const row = await syncOneTATPlace(req.params.tatPlaceId);
-        startBulkEmbeddingQueue();
+        let embeddingCreated = false;
+        let warning = null;
+        try {
+            embeddingCreated = await embedDestination(row.id);
+            if (!embeddingCreated) {
+                warning = 'ซิงก์ข้อมูลสถานที่สำเร็จ แต่สถานที่ยังไม่พร้อมสร้างข้อมูล AI';
+            }
+        } catch (embeddingError) {
+            console.error(`[adminEmbed] single embedding ${row.id} error:`, embeddingError.message);
+            warning = 'ซิงก์ข้อมูลสถานที่สำเร็จ แต่สร้างข้อมูล AI ไม่สำเร็จ กรุณาลองใหม่ภายหลัง';
+        }
         res.json({
-            message: 'ซิงก์ข้อมูลสำเร็จและเพิ่มเข้าคิวสร้างข้อมูล AI แล้ว',
+            message: warning || 'ซิงก์ข้อมูลและสร้าง embedding สำเร็จ',
             id: row.id,
             languages: row.languages,
+            embeddingCreated,
+            ...(warning && { warning }),
         });
     } catch (err) {
         res.status(500).json({ message: err.message });

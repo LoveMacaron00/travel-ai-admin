@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
-import { showConfirmAlert, showErrorAlert, showSuccessAlert } from '../utils/alerts';
+import { showConfirmAlert, showErrorAlert, showSuccessAlert, showWarningAlert } from '../utils/alerts';
 import DestinationsView from '../components/destinations/DestinationsView';
 import {
     DEBOUNCE_MS,
@@ -247,8 +247,14 @@ const Destinations = () => {
 
         setSyncingId(tatPlaceId);
         try {
-            await api.post(`/admin/sync/tat/${tatPlaceId}`);
-            await showSuccessAlert(`ซิงก์ข้อมูลสำหรับ "${name}" สำเร็จแล้ว`);
+            const res = await api.post(`/admin/sync/tat/${tatPlaceId}`);
+            if (res.data?.warning) {
+                await showWarningAlert(res.data.warning);
+            } else {
+                await showSuccessAlert(
+                    res.data?.message || `ซิงก์ข้อมูลและสร้าง embedding สำหรับ "${name}" สำเร็จแล้ว`
+                );
+            }
         } catch (err) {
             console.error('เกิดข้อผิดพลาดในการ Sync รายบุคคล:', err);
             await showErrorAlert(err.response?.data?.message || 'ซิงก์สถานที่ไม่สำเร็จ');
