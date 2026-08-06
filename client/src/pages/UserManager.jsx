@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Users, Shield, MessageSquare, Ban, Check, Search, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
+import { showConfirmAlert, showErrorAlert, showSuccessAlert } from '../utils/alerts';
 
 const UserManager = () => {
     const [users, setUsers] = useState([]);
@@ -9,6 +10,7 @@ const UserManager = () => {
     const [replyText, setReplyText] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [updatingUserId, setUpdatingUserId] = useState(null);
 
     const filteredUsers = useMemo(() => {
         const query = searchQuery.trim().toLocaleLowerCase('th');
@@ -38,19 +40,45 @@ const UserManager = () => {
         fetchData();
     }, []);
 
-    const handleBan = async (id) => {
+    const handleBan = async (user) => {
+        const displayName = user.username || user.email || 'ผู้ใช้งานนี้';
+        const isUnbanning = user.is_banned;
+        const confirmation = await showConfirmAlert({
+            title: isUnbanning ? 'ยืนยันการปลดระงับ' : 'ยืนยันการระงับผู้ใช้',
+            text: isUnbanning
+                ? `ต้องการอนุญาตให้บัญชี ${displayName} กลับมาใช้งานใช่หรือไม่?`
+                : `ต้องการระงับบัญชี ${displayName} ใช่หรือไม่?`,
+            confirmButtonText: isUnbanning ? 'ปลดระงับ' : 'ระงับผู้ใช้',
+            cancelButtonText: 'ยกเลิก',
+            icon: isUnbanning ? 'question' : 'warning'
+        });
+
+        if (!confirmation.isConfirmed) return;
+
+        setUpdatingUserId(user.id);
         try {
-            const res = await api.put(`/users/${id}/ban`);
-            const updatedUser = res.data;
+            const res = await api.put(`/users/${user.id}/ban`);
+            const updatedUser = res.data?.user || res.data;
             setUsers(prev =>
-                prev.map(user =>
-                    user.id === updatedUser.id
-                        ? { ...user, is_banned: updatedUser.is_banned }
-                        : user
+                prev.map(item =>
+                    item.id === updatedUser.id
+                        ? { ...item, is_banned: updatedUser.is_banned }
+                        : item
                 )
             );
+            await showSuccessAlert(
+                isUnbanning
+                    ? `ปลดระงับบัญชี ${displayName} เรียบร้อยแล้ว`
+                    : `ระงับบัญชี ${displayName} เรียบร้อยแล้ว`
+            );
         } catch (err) {
-            console.error('Error banning user:', err);
+            console.error('Error updating user ban status:', err);
+            await showErrorAlert(
+                err.response?.data?.message
+                || `ไม่สามารถ${isUnbanning ? 'ปลดระงับ' : 'ระงับ'}ผู้ใช้ได้ กรุณาลองใหม่อีกครั้ง`
+            );
+        } finally {
+            setUpdatingUserId(null);
         }
     };
 
@@ -227,19 +255,19 @@ const UserManager = () => {
                                             </span>
                                         </td>
                                         <td className="py-2 px-3 text-right">
-                                            {user.is_banned ? (
-                                                <span className="inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 bg-gray-800/50">
-                                                    ระงับแล้ว
-                                                </span>
-                                            ) : (
-                                                <button
-                                                    onClick={() => handleBan(user.id)}
-                                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-red-400/90 border border-transparent shadow-sm"
-                                                >
-                                                    <Ban size={15} />
-                                                    ระงับผู้ใช้
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={() => handleBan(user)}
+                                                disabled={updatingUserId === user.id}
+                                                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${user.is_banned
+                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                                    : 'bg-red-500/10 text-red-400 border-red-500/30'
+                                                    }`}
+                                            >
+                                                {user.is_banned ? <Check size={15} /> : <Ban size={15} />}
+                                                {updatingUserId === user.id
+                                                    ? 'กำลังอัปเดต...'
+                                                    : user.is_banned ? 'ปลดระงับ' : 'ระงับผู้ใช้'}
+                                            </button>
                                         </td>
                                     </tr>
                                 ))}
