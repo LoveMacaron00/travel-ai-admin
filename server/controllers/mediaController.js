@@ -75,4 +75,4 @@ const proxyImage = async (req, res) => {
     }
 };
 
-module.exports = { proxyImage, resolveAllowedMediaUrl };
+module.exports = { proxyImage };

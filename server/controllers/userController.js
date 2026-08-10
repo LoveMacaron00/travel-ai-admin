@@ -127,7 +127,8 @@ const loginUser = async (req, res) => {
             { expiresIn: '30d' }
         );
 
-        const { hash_password, ...safeUser } = user;
+        const safeUser = { ...user };
+        delete safeUser.hash_password;
 
         res.status(200).json({
             message: 'เข้าสู่ระบบสำเร็จ',

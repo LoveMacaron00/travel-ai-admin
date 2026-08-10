@@ -34,4 +34,4 @@ const createCorsOptions = ({ allowedOrigins, nodeEnv }) => ({
     maxAge: 86400,
 });
 
-module.exports = { createCorsOptions, isOriginAllowed };
+module.exports = { createCorsOptions };

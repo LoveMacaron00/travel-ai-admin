@@ -110,4 +110,4 @@ const getTripById = async (req, res) => {
     }
 };
 
-module.exports = { createTrip, createTripHandler, getUserTrips, getTripById };
+module.exports = { createTrip, getUserTrips, getTripById };
