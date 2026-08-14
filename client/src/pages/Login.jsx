@@ -77,7 +77,7 @@ const Login = ({ onLogin }) => {
                             type="submit"
                             disabled={loading}
                             className="px-16 py-3 text-lg rounded"
-                            style={{ background: '#f0a500', color: 'white' }}
+                            style={{ background: '#f0a500', color: '#000000' }}
                         >
                             {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
                         </button>

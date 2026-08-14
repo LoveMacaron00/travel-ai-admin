@@ -368,7 +368,7 @@ const DestinationsView = ({
                                                 <>
                                                     <button
                                                         onClick={() => navigate(`/destinations/edit/${item.id}`)}
-                                                        className="flex-1 py-2 bg-yellow-500 text-white text-sm font-semibold rounded-xl text-center shadow-lg shadow-yellow-500/20"
+                                                        className="flex-1 py-2 bg-yellow-500 text-black text-sm font-semibold rounded-xl text-center shadow-lg shadow-yellow-500/20"
                                                     >
                                                         แก้ไข
                                                     </button>
