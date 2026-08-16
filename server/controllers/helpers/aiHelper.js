@@ -3,8 +3,13 @@
 const pool = require('../../config/db');
 const query = pool.query.bind(pool);
 const { jsonrepair } = require('jsonrepair');
-const { retrieveRelevantPlaces, retrieveNearbyPlaces, formatPlacesContext } = require('./ragHelper');
-const { normalizePlanPlaces } = require('./planPlaceNormalizer');
+const {
+    retrieveRelevantPlaces,
+    retrieveNearbyPlaces,
+    retrievePlacesByIds,
+    formatPlacesContext,
+} = require('./ragHelper');
+const { ensureMustVisitStops, normalizePlanPlaces } = require('./planPlaceNormalizer');
 const { config } = require('../../config/env');
 const GEMINI_API_KEY = config.gemini.apiKey;
 const GEMINI_API_BASE = config.gemini.apiBaseUrl;
@@ -37,6 +42,53 @@ const getAllowedTransportModes = (modes) => {
             .filter((mode) => SUPPORTED_TRANSPORT_MODES.has(mode))
         : [];
     return allowed.length > 0 ? [...new Set(allowed)] : ['car'];
+};
+
+const getMustVisitRequests = (mustVisit) => {
+    if (!Array.isArray(mustVisit)) return [];
+
+    return mustVisit
+        .map((place) => {
+            if (place && typeof place === 'object') {
+                return {
+                    id: String(place.id ?? '').trim(),
+                    name: String(place.name ?? '').trim(),
+                    latitude: place.latitude,
+                    longitude: place.longitude,
+                };
+            }
+            return { id: '', name: String(place || '').trim() };
+        })
+        .filter((place) => place.id || place.name);
+};
+
+const mergePlaces = (...placeGroups) => {
+    const merged = new Map();
+
+    for (const place of placeGroups.flat()) {
+        if (!place || typeof place !== 'object') continue;
+        const id = String(place.id ?? '').trim();
+        const key = id || String(place.name || '').trim().toLowerCase();
+        if (!key || merged.has(key)) continue;
+        merged.set(key, place);
+    }
+
+    return [...merged.values()];
+};
+
+const formatMustVisitList = (mustVisitPlaces, fallbackRequests) => {
+    const source = mustVisitPlaces.length > 0 ? mustVisitPlaces : fallbackRequests;
+    if (source.length === 0) return 'ไม่มี';
+
+    return source
+        .map((place) => {
+            const id = place.id ? `รหัส ${place.id}` : 'ไม่มีรหัส';
+            const name = place.name || 'ไม่ทราบชื่อ';
+            const latitude = place.latitude ?? '-';
+            const longitude = place.longitude ?? '-';
+            return `${id}: ${name} (${latitude}, ${longitude})`;
+        })
+        .join(', ');
 };
 
 // ปรับ transport mode ของแผน AI ให้ตรงกับตัวเลือกที่อนุญาต
@@ -269,6 +321,10 @@ async function generateTripPlan(tripId, tripInput, res) {
     const supportsLongDistance = allowedTransportModes.some(
         (mode) => LONG_DISTANCE_TRANSPORT_MODES.has(mode),
     );
+    const mustVisitRequests = getMustVisitRequests(tripInput.must_visit);
+    const mustVisitPlaces = await retrievePlacesByIds(
+        mustVisitRequests.map((place) => place.id),
+    );
 
     // ดึง relevant places จาก RAG
     const ragQuery = [
@@ -307,7 +363,12 @@ async function generateTripPlan(tripId, tripInput, res) {
         });
     }
 
+    places = mergePlaces(mustVisitPlaces, places);
     const placesContext = formatPlacesContext(places);
+    const mustVisitDescription = formatMustVisitList(
+        mustVisitPlaces,
+        mustVisitRequests,
+    );
 
     const systemPrompt =
         `คุณคือผู้เชี่ยวชาญวางแผนการท่องเที่ยวในประเทศไทย
@@ -332,12 +393,14 @@ async function generateTripPlan(tripId, tripInput, res) {
     - ความสนใจ: ${(tripInput.interests || []).join(', ') || 'ไม่ระบุ'}
     - พื้นที่/จังหวัด (ถ้ามี): ${tripInput.destination || 'ให้เลือกจากตำแหน่ง GPS'}
     - วิธีเดินทางที่ยอมรับ: ${allowedTransportModes.join(', ')}
-    - สถานที่ที่ผู้ใช้บังคับเลือก: ${(tripInput.must_visit || []).map(p => p.name || p).join(', ') || 'ไม่มี'}
+    - สถานที่ที่ผู้ใช้บังคับเลือก: ${mustVisitDescription}
     - สถานที่ที่ผู้ใช้ลบและห้ามเสนอซ้ำ: ${(tripInput.excluded_places || []).join(', ') || 'ไม่มี'}
 
-    เลือกสถานที่จากฐานข้อมูลเท่านั้น ให้เหมาะกับความสนใจและงบประมาณ จัดลำดับจากจุดเริ่ม GPS เพื่อลดการย้อนเส้นทาง
+    สถานที่ที่ผู้ใช้บังคับเลือกทั้งหมดต้องอยู่ใน stops ของทริปอย่างน้อย 1 ครั้ง และมีความสำคัญเหนือความสนใจ วิธีเดินทาง งบประมาณ และรายการที่ลบซ้ำถ้าขัดกัน
+    เลือกสถานที่อื่นจากฐานข้อมูลเท่านั้น ให้เหมาะกับความสนใจและงบประมาณ จัดลำดับจากจุดเริ่ม GPS เพื่อลดการย้อนเส้นทาง
     ห้ามเสนอหรือสร้าง stop ที่ไม่มีอยู่ในข้อมูลสถานที่จากฐานข้อมูล แม้จำนวนสถานที่จะไม่พอกับจำนวนวัน
     transportMode ของแต่ละ stop หมายถึงพาหนะหลักที่ใช้เดินทางมาจาก stop ก่อนหน้า และต้องเลือกจากวิธีเดินทางที่ผู้ใช้ยอมรับเท่านั้น
+    ถ้าวิธีเดินทางที่ผู้ใช้เลือกไม่เหมาะกับสถานที่บังคับเลือก ให้ยังคงใส่สถานที่นั้นในแผนและระบุใน tip ให้ตรวจสอบวิธีเดินทางจริง
     แต่ละ stop เลือก transportMode ต่างกันได้ตามความเหมาะสม ห้ามใช้รถยนต์หรือเดินข้ามทะเล
     ถ้าเป็นเครื่องบิน รถไฟ หรือเรือ ให้ใส่ segments แยกช่วงไปสถานี/สนามบิน/ท่าเรือ ช่วงขนส่งหลัก และช่วงต่อไปยังจุดหมาย โดยใช้ชื่อจุดเชื่อมต่อจริงที่มั่นใจเท่านั้น
     ใช้ flight สำหรับระยะไกลที่ต้องบิน, ferry สำหรับการข้ามเกาะ/ทะเล, train สำหรับเส้นทางรถไฟ, bus หรือ car สำหรับถนน และ walking เฉพาะระยะที่เดินได้จริง
@@ -411,6 +474,12 @@ async function generateTripPlan(tripId, tripInput, res) {
                         `Gemini plan JSON is missing days (keys=${Object.keys(planData).join(',')})`,
                     );
                 }
+                normalizePlanTransportModes(planData, allowedTransportModes);
+                normalizePlanPlaces(planData, places);
+                ensureMustVisitStops(planData, mustVisitPlaces, {
+                    allowedTransportModes,
+                    days: tripInput.days,
+                });
                 normalizePlanTransportModes(planData, allowedTransportModes);
                 normalizePlanPlaces(planData, places);
                 if (planData.days.length === 0) {

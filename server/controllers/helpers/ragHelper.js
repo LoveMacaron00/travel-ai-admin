@@ -236,6 +236,28 @@ async function retrieveNearbyPlaces(latitude, longitude, limit = 15) {
     return rows;
 }
 
+async function retrievePlacesByIds(ids) {
+    const normalizedIds = [...new Set(
+        (Array.isArray(ids) ? ids : [])
+            .map((id) => Number.parseInt(String(id), 10))
+            .filter((id) => Number.isInteger(id) && id > 0),
+    )];
+    if (normalizedIds.length === 0) return [];
+
+    const { rows } = await query(
+        `SELECT ${destinationSelectFields},
+                NULL::text AS chunk_text,
+                'must_visit'::text AS chunk_field,
+                1::float AS similarity
+         FROM destinations d
+         WHERE d.status = 'approved'
+           AND d.id = ANY($1::int[])
+         ORDER BY array_position($1::int[], d.id), d.created_at DESC`,
+        [normalizedIds],
+    );
+    return rows;
+}
+
 // ค้นสถานที่ approved จากชื่อที่ AI ระบุ รองรับชื่อหลักและชื่อแปล
 async function findDestinationByNames(names) {
     const normalizedNames = [...new Set(
@@ -320,6 +342,7 @@ module.exports = {
     findDestinationByNames,
     formatPlacesContext,
     retrieveNearbyPlaces,
+    retrievePlacesByIds,
     retrievePlacesByText,
     retrieveRelevantPlaces,
 };
