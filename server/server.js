@@ -42,6 +42,7 @@ const chatRoutes = require('./routes/chatRoutes');
 const adminEmbedRoutes = require('./routes/adminEmbedRoutes');
 const mobileRoutes = require('./routes/mobileRoutes');
 const activityRoutes = require('./routes/activityRoutes');
+const preferenceRoutes = require('./routes/preferenceRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/destinations', requireAdminAuth, destinationRoutes);
@@ -55,6 +56,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/admin', adminEmbedRoutes);
 app.use('/api/mobile', mobileRoutes);
 app.use('/api/activity', activityRoutes);
+app.use('/api/preferences', requireAdminAuth, preferenceRoutes);
 
 app.get('/', (req, res) => res.send('Smart Travel API กำลังทำงาน'));
 

@@ -7,8 +7,11 @@ const { proxyImage } = require('../controllers/mediaController');
 const { recordDestinationView } = require('../controllers/destinationViewController');
 const { requireUserAuth } = require('../middleware/userAuth');
 const travelDiaryController = require('../controllers/travelDiaryController');
+const preferenceController = require('../controllers/preferenceController');
 
 router.get('/media', proxyImage);
+// ตัวเลือกความสนใจและรูปแบบการเดินทางสำหรับหน้าสร้างแผนเที่ยว (admin จัดการผ่าน /api/preferences)
+router.get('/plan-options', preferenceController.getPlanOptions);
 router.get('/provinces', mobileController.getProvinces);
 router.get('/destinations', mobileController.getDestinations);
 router.post('/destinations/:id/view', requireUserAuth, recordDestinationView);

@@ -7,7 +7,7 @@ import {
     Navigate,
     useLocation,
 } from 'react-router-dom';
-import { LayoutDashboard, MapPin, LogOut, Users } from 'lucide-react';
+import { LayoutDashboard, MapPin, LogOut, Users, SlidersHorizontal } from 'lucide-react';
 import { showConfirmAlert, showSuccessAlert } from './utils/alerts';
 
 import Login from './pages/Login';
@@ -19,6 +19,7 @@ const ReadDestination = lazy(() => import('./pages/ReadDestination'));
 const AddDestination = lazy(() => import('./pages/AddDestination'));
 const EditDestination = lazy(() => import('./pages/EditDestination'));
 const UserManager = lazy(() => import('./pages/UserManager'));
+const PlanOptions = lazy(() => import('./pages/PlanOptions'));
 
 const RouteFallback = () => (
     <div className="flex min-h-screen items-center justify-center bg-[#1a1a2e] text-sm text-gray-400">
@@ -34,6 +35,7 @@ const Sidebar = ({ onLogout }) => {
     const navItems = [
         { label: 'สถิติ', path: '/', icon: LayoutDashboard },
         { label: 'สถานที่', path: '/destinations', icon: MapPin },
+        { label: 'ตัวเลือกแผน', path: '/plan-options', icon: SlidersHorizontal },
         { label: 'ผู้ใช้งาน', path: '/users', icon: Users },
     ];
 
@@ -122,6 +124,7 @@ const ProtectedLayout = ({ onLogout }) => {
                         element={<EditDestination />}
                     />
                     <Route path="/users" element={<UserManager />} />
+                    <Route path="/plan-options" element={<PlanOptions />} />
                     <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
             </main>
