@@ -111,6 +111,44 @@ const normalizePlanTransportModes = (planData, allowedModes) => {
     }
 };
 
+const stopUsesFerry = (stop) => {
+    if (String(stop?.transportMode || '').toLowerCase() === 'ferry') {
+        return true;
+    }
+    return Array.isArray(stop?.segments) && stop.segments.some(
+        (segment) => String(segment?.mode || '').toLowerCase() === 'ferry',
+    );
+};
+
+// ไม่สามารถระบุเกาะจากพิกัดเพียงอย่างเดียวได้ จึงใช้ ferry เป็นสัญญาณของ
+// การข้ามฝั่ง/เกาะ และส่งแผนกลับไปแก้เมื่อมีมากกว่าหนึ่งครั้งต่อวัน
+const findExcessFerryCrossings = (planData, mustVisitPlaces) => {
+    const mustVisitIds = new Set(
+        mustVisitPlaces
+            .map((place) => String(place?.id || '').trim())
+            .filter(Boolean),
+    );
+    const violations = [];
+
+    for (const day of planData?.days || []) {
+        const ferryStops = (day?.stops || []).filter(stopUsesFerry);
+        const excessStops = ferryStops.slice(1).filter(
+            (stop) => !mustVisitIds.has(String(stop?.destinationId || '').trim()),
+        );
+        if (excessStops.length > 0) {
+            violations.push({ day: day?.day, stops: excessStops });
+        }
+    }
+
+    return violations;
+};
+
+const formatFerryViolations = (violations) => violations
+    .map((violation) =>
+        `วันที่ ${violation.day || '?'}: ${violation.stops.map((stop) => stop.place).join(', ')}`,
+    )
+    .join('; ');
+
 const PLAN_RESPONSE_SCHEMA = {
     type: 'object',
     required: ['summary', 'totalEstimatedCost', 'budgetBreakdown', 'days', 'tips'],
@@ -379,6 +417,8 @@ async function generateTripPlan(tripId, tripInput, res) {
     - ห้ามเพิ่มชื่อสถานที่จากความรู้ของโมเดล ห้ามเดาสถานที่ และห้ามสร้าง URL รูปภาพเอง
     - ต้องคัดลอก destinationId, ชื่อ, พิกัด และ imageUrl จากข้อมูลฐานข้อมูลตรงตัว
     - ถ้าข้อมูลมีน้อย ให้สร้างแผนจากรายการที่มีเท่านั้น ห้ามเติมสถานที่อื่นให้ครบจำนวนวัน
+    - จัดกลุ่มสถานที่บนเกาะและบนฝั่งเป็นช่วงเดียวกัน ห้ามวางลำดับ เกาะ → ฝั่ง → เกาะ หรือ ฝั่ง → เกาะ → ฝั่ง ในวันเดียวกัน
+    - ในหนึ่งวันให้ใช้ ferry เพื่อข้ามระหว่างเกาะกับฝั่งได้ไม่เกินหนึ่งครั้ง เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
 
     ข้อมูลสถานที่จากฐานข้อมูล:
     ${placesContext}`;
@@ -449,9 +489,13 @@ async function generateTripPlan(tripId, tripInput, res) {
 
         let fullText = '';
         let planData;
+        let routeCorrection = '';
 
         for (let generationAttempt = 0; generationAttempt < 2; generationAttempt++) {
-            const generated = await generateGeminiJson(systemPrompt, userPrompt);
+            const generated = await generateGeminiJson(
+                systemPrompt,
+                `${userPrompt}${routeCorrection}`,
+            );
             fullText = generated.text;
 
             try {
@@ -482,6 +526,21 @@ async function generateTripPlan(tripId, tripInput, res) {
                 });
                 normalizePlanTransportModes(planData, allowedTransportModes);
                 normalizePlanPlaces(planData, places);
+                const ferryViolations = findExcessFerryCrossings(
+                    planData,
+                    mustVisitPlaces,
+                );
+                if (ferryViolations.length > 0) {
+                    if (generationAttempt === 0) {
+                        routeCorrection = `\n\nการตรวจแผนพบการข้ามเกาะ/ฝั่งซ้ำ: ${formatFerryViolations(ferryViolations)}\nกรุณาสร้างแผนใหม่โดยรวมสถานที่ฝั่งเดียวกันไว้ต่อเนื่อง และให้ข้ามด้วย ferry ไม่เกินหนึ่งครั้งต่อวัน ห้ามตัดสถานที่ที่ผู้ใช้บังคับเลือก`;
+                        continue;
+                    }
+                    const routeError = new Error(
+                        `Plan still has excessive ferry crossings: ${formatFerryViolations(ferryViolations)}`,
+                    );
+                    routeError.code = 'EXCESSIVE_FERRY_CROSSINGS';
+                    throw routeError;
+                }
                 if (planData.days.length === 0) {
                     const noVerifiedStops = new Error(
                         'The generated plan contained no database-backed destinations',
@@ -518,6 +577,8 @@ async function generateTripPlan(tripId, tripInput, res) {
         const transient = err instanceof SyntaxError || err.statusCode === 429 || err.statusCode >= 500;
         const message = err.code === 'NO_DATABASE_PLACES'
             ? 'ไม่พบสถานที่จากฐานข้อมูลเพียงพอสำหรับสร้างแผน กรุณาเพิ่มหรือนำเข้าข้อมูลสถานที่ก่อน'
+            : err.code === 'EXCESSIVE_FERRY_CROSSINGS'
+                ? 'ไม่สามารถจัดแผนที่ลดการข้ามเกาะและฝั่งได้ กรุณาเลือกสถานที่หรือจังหวัดให้แคบลง'
             : transient
                 ? 'The AI travel planner is temporarily busy. Please try again in a moment.'
                 : 'The travel plan could not be generated. Please review your details and try again.';
