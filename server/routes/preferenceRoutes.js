@@ -1,11 +1,46 @@
-// server/routes/preferenceRoutes.js
-// Admin CRUD สำหรับตัวเลือกความสนใจและรูปแบบการเดินทาง
-// (ตัวเลือกในหน้าสร้างแผนเที่ยวของแอปมือถือ)
-// หมายเหตุ: requireAdminAuth ถูกบังคับที่ mount ใน server.js เช่นเดียวกับ destinationRoutes
-
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const preferenceController = require('../controllers/preferenceController');
+
+// Multer storage สำหรับรูป Icon ตัวเลือกแผนเที่ยว (/uploads/preferences)
+const prefUploadDir = path.join(__dirname, '..', 'uploads', 'preferences');
+if (!fs.existsSync(prefUploadDir)) {
+    fs.mkdirSync(prefUploadDir, { recursive: true });
+}
+
+const iconStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, prefUploadDir),
+    filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase() || '.png';
+        const name = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+        cb(null, name);
+    },
+});
+
+const iconUpload = multer({
+    storage: iconStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    fileFilter: (_req, file, cb) => {
+        const allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+        if (allowedMimes.includes(file.mimetype.toLowerCase())) {
+            cb(null, true);
+        } else {
+            cb(new Error('อนุญาตเฉพาะไฟล์รูปภาพ (.png, .jpg, .jpeg, .webp, .svg)'));
+        }
+    },
+});
+
+// POST /api/preferences/upload-icon — อัปโหลดรูป Icon ตัวเลือก
+router.post('/upload-icon', iconUpload.single('file'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ message: 'กรุณาเลือกไฟล์รูปภาพ' });
+    }
+    const iconUrl = `/uploads/preferences/${req.file.filename}`;
+    res.json({ url: iconUrl });
+});
 
 // GET /api/preferences?type=interest|transport_mode — รายการตัวเลือก
 router.get('/', preferenceController.listPreferences);

@@ -275,7 +275,7 @@ CREATE TABLE IF NOT EXISTS plan_preference_options (
     key VARCHAR(50) NOT NULL,          -- ค่าที่ส่งเข้า AI เช่น 'food', 'car'
     label_th VARCHAR(100) NOT NULL,    -- ชื่อภาษาไทย เช่น 'อาหาร'
     label_en VARCHAR(100) NOT NULL,    -- ชื่อภาษาอังกฤษ เช่น 'Food'
-    icon VARCHAR(50),                  -- ไอคอนพาหนะสำหรับ transport_mode
+    icon_url TEXT,                     -- Path รูปภาพ icon เช่น '/uploads/preferences/car.png'
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     sort_order INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -284,22 +284,22 @@ CREATE TABLE IF NOT EXISTS plan_preference_options (
 );
 
 -- seed ค่าเริ่มต้นตามหน้าจอแอป (ไม่ทับรายการที่แก้ไขไปแล้ว)
-INSERT INTO plan_preference_options (type, key, label_th, label_en, icon, sort_order) VALUES
-    ('interest',       'food',      'อาหาร',        'Food',       NULL,     1),
-    ('interest',       'cafe',      'คาเฟ่',        'Cafe',       NULL,     2),
-    ('interest',       'nature',    'ธรรมชาติ',     'Nature',     NULL,     3),
-    ('interest',       'beach',     'ชายหาด',       'Beach',      NULL,     4),
-    ('interest',       'temple',    'วัด',           'Temple',     NULL,     5),
-    ('interest',       'adventure', 'ผจญภัย',       'Adventure',  NULL,     6),
-    ('interest',       'shopping',  'ชอปปิง',       'Shopping',   NULL,     7),
-    ('interest',       'nightlife', 'ชีวิตกลางคืน', 'Nightlife',  NULL,     8),
-    ('interest',       'culture',   'วัฒนธรรม',     'Culture',    NULL,     9),
-    ('transport_mode', 'car',       'รถยนต์',       'Car',        'car',     1),
-    ('transport_mode', 'walking',   'เดิน',         'Walking',    'walking', 2),
-    ('transport_mode', 'bus',       'รถโดยสาร',     'Bus',        'bus',     3),
-    ('transport_mode', 'train',     'รถไฟ',         'Train',      'train',   4),
-    ('transport_mode', 'ferry',     'เรือ',         'Ferry',      'ferry',   5),
-    ('transport_mode', 'flight',    'เครื่องบิน',   'Flight',     'flight',  6)
+INSERT INTO plan_preference_options (type, key, label_th, label_en, icon_url, sort_order) VALUES
+    ('interest',       'food',      'อาหาร',        'Food',       NULL,                                 1),
+    ('interest',       'cafe',      'คาเฟ่',        'Cafe',       NULL,                                 2),
+    ('interest',       'nature',    'ธรรมชาติ',     'Nature',     NULL,                                 3),
+    ('interest',       'beach',     'ชายหาด',       'Beach',      NULL,                                 4),
+    ('interest',       'temple',    'วัด',           'Temple',     NULL,                                 5),
+    ('interest',       'adventure', 'ผจญภัย',       'Adventure',  NULL,                                 6),
+    ('interest',       'shopping',  'ชอปปิง',       'Shopping',   NULL,                                 7),
+    ('interest',       'nightlife', 'ชีวิตกลางคืน', 'Nightlife',  NULL,                                 8),
+    ('interest',       'culture',   'วัฒนธรรม',     'Culture',    NULL,                                 9),
+    ('transport_mode', 'car',       'รถยนต์',       'Car',        '/uploads/preferences/car.png',       1),
+    ('transport_mode', 'walking',   'เดิน',         'Walking',    '/uploads/preferences/walking.png',   2),
+    ('transport_mode', 'bus',       'รถโดยสาร',     'Bus',        '/uploads/preferences/bus.png',       3),
+    ('transport_mode', 'train',     'รถไฟ',         'Train',      '/uploads/preferences/train.png',     4),
+    ('transport_mode', 'ferry',     'เรือ',         'Ferry',      '/uploads/preferences/ferry.png',     5),
+    ('transport_mode', 'flight',    'เครื่องบิน',   'Flight',     '/uploads/preferences/flight.png',    6)
 ON CONFLICT (type, key) DO NOTHING;
 
 -- -------------------------------------------------------------

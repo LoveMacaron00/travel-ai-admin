@@ -12,6 +12,11 @@ const secureUploads = async (req, res, next) => {
         return res.status(404).json({ message: 'ไม่พบไฟล์' });
     }
 
+    // รูป preference icons เปิดให้เข้าถึงได้แบบสาธารณะสำหรับแอปมือถือและหน้าเว็บ
+    if (req.path === '/preferences' || req.path.startsWith('/preferences/')) {
+        return next();
+    }
+
     // รับ token จาก header เท่านั้น ป้องกัน JWT ติด browser history, referrer
     // และ access log จาก query string
     const authHeader = req.headers.authorization || '';

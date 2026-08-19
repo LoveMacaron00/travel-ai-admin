@@ -13,16 +13,17 @@ import {
     Eye,
     EyeOff,
     Tags,
+    Upload,
+    ImageIcon,
 } from 'lucide-react';
 import api from '../utils/api';
+import { resolveAssetUrl } from '../config';
 import {
     showConfirmAlert,
     showErrorAlert,
     showSuccessAlert,
     showWarningAlert,
 } from '../utils/alerts';
-
-
 
 const TYPE_TABS = [
     { value: 'interest', label: 'ความสนใจ', icon: Heart },
@@ -34,6 +35,7 @@ const emptyForm = (type) => ({
     key: '',
     label_th: '',
     label_en: '',
+    icon_url: '',
     is_active: true,
 });
 
@@ -43,6 +45,7 @@ const toPayload = (item) => ({
     key: item.key,
     label_th: item.label_th,
     label_en: item.label_en,
+    icon_url: item.icon_url || null,
     is_active: item.is_active,
     sort_order: item.sort_order,
 });
@@ -54,6 +57,7 @@ const PlanOptions = () => {
     const [modal, setModal] = useState(null); // null | { mode: 'add' } | { mode: 'edit', item }
     const [form, setForm] = useState(emptyForm('interest'));
     const [saving, setSaving] = useState(false);
+    const [uploadingIcon, setUploadingIcon] = useState(false);
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -93,6 +97,7 @@ const PlanOptions = () => {
             key: item.key,
             label_th: item.label_th,
             label_en: item.label_en,
+            icon_url: item.icon_url || '',
             is_active: item.is_active,
         });
         setModal({ mode: 'edit', item });
@@ -100,6 +105,29 @@ const PlanOptions = () => {
 
     const handleChange = (field, value) => {
         setForm((prev) => ({ ...prev, [field]: value }));
+    };
+
+    const handleFileUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        setUploadingIcon(true);
+        try {
+            const res = await api.post('/preferences/upload-icon', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            if (res.data?.url) {
+                setForm((prev) => ({ ...prev, icon_url: res.data.url }));
+            }
+        } catch (err) {
+            console.error('Error uploading icon:', err);
+            await showErrorAlert(err.response?.data?.message || 'อัปโหลดรูปภาพไม่สำเร็จ');
+        } finally {
+            setUploadingIcon(false);
+        }
     };
 
     const handleSubmit = async () => {
@@ -328,25 +356,26 @@ const PlanOptions = () => {
                                 <th className="py-2.5 px-3">คีย์</th>
                                 <th className="py-2.5 px-3">ภาษาไทย</th>
                                 <th className="py-2.5 px-3">English</th>
-
                                 <th className="py-2.5 px-3">สถานะ</th>
+                                {isTransportTab && <th className="py-2.5 px-3 w-16">ไอคอน</th>}
                                 <th className="py-2.5 px-3 text-right">การจัดการ</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-800/50">
                             {isLoading ? (
                                 <tr>
-                                    <td colSpan={6} className="py-16 text-center text-gray-500">
+                                    <td colSpan={isTransportTab ? 7 : 6} className="py-16 text-center text-gray-500">
                                         กำลังโหลดข้อมูล...
                                     </td>
                                 </tr>
                             ) : currentList.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="py-16 text-center text-gray-500">
+                                    <td colSpan={isTransportTab ? 7 : 6} className="py-16 text-center text-gray-500">
                                         ยังไม่มีตัวเลือกในหมวดหมู่นี้
                                     </td>
                                 </tr>
                             ) : currentList.map((item, index) => {
+                                const iconSrc = item.icon_url ? resolveAssetUrl(item.icon_url) : null;
                                 return (
                                     <tr key={item.id} className="group">
                                         <td className="py-2 px-3">
@@ -400,6 +429,23 @@ const PlanOptions = () => {
                                                 {item.is_active ? 'ใช้งานอยู่' : 'ปิดใช้งาน'}
                                             </button>
                                         </td>
+
+                                        {isTransportTab && (
+                                            <td className="py-2 px-3">
+                                                {iconSrc ? (
+                                                    <img
+                                                        src={iconSrc}
+                                                        alt={item.key}
+                                                        className="w-8 h-8 object-contain rounded-lg bg-white/90 border border-gray-700 p-1 shadow-sm"
+                                                    />
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-lg bg-white/10 border border-dashed border-gray-700 flex items-center justify-center text-gray-400">
+                                                        <ImageIcon size={14} />
+                                                    </div>
+                                                )}
+                                            </td>
+                                        )}
+
                                         <td className="py-2 px-3 text-right">
                                             <div className="inline-flex items-center gap-1.5">
                                                 <button
@@ -443,6 +489,49 @@ const PlanOptions = () => {
                         </div>
 
                         <div className="p-5 space-y-4">
+                            {isTransportTab && (
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">
+                                        รูปภาพ Icon
+                                    </label>
+                                    <div className="flex items-center gap-3">
+                                        {form.icon_url ? (
+                                            <img
+                                                src={resolveAssetUrl(form.icon_url)}
+                                                alt="Preview"
+                                                className="w-12 h-12 object-contain rounded-xl bg-white/90 border border-gray-700 p-1.5 shadow-sm"
+                                            />
+                                        ) : (
+                                            <div className="w-12 h-12 rounded-xl bg-black/60 border border-dashed border-gray-700 flex items-center justify-center text-gray-500">
+                                                <ImageIcon size={20} />
+                                            </div>
+                                        )}
+                                        <div className="flex flex-col gap-1">
+                                            <label className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-gray-700 rounded-xl text-xs font-semibold text-gray-300 hover:text-white hover:bg-white/10 cursor-pointer transition-colors w-fit">
+                                                <Upload size={14} className="text-yellow-400" />
+                                                {uploadingIcon ? 'กำลังอัปโหลด...' : 'อัปโหลดรูป Icon'}
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    className="hidden"
+                                                    disabled={uploadingIcon}
+                                                    onChange={handleFileUpload}
+                                                />
+                                            </label>
+                                            {form.icon_url && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleChange('icon_url', '')}
+                                                    className="text-[11px] text-red-400 hover:underline text-left"
+                                                >
+                                                    ลบรูปภาพ
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">
                                     คีย์ (key)
@@ -481,8 +570,6 @@ const PlanOptions = () => {
                                     onChange={(e) => handleChange('label_en', e.target.value)}
                                 />
                             </div>
-
-
 
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input
