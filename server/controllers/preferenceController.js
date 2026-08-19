@@ -8,15 +8,6 @@ const pool = require('../config/db');
 const { resolveTatLanguage } = require('./helpers/tatLanguage');
 
 const ALLOWED_TYPES = new Set(['interest', 'transport_mode']);
-// ไอคอนพาหนะที่แอปมือถือรู้จัก (map เป็น Material Icons ใน Flutter)
-const TRANSPORT_ICONS = new Set([
-    'car',
-    'walking',
-    'bus',
-    'train',
-    'ferry',
-    'flight',
-]);
 
 // อ่านภาษาที่ผู้ใช้ร้องขอจาก Accept-Language
 const requestLanguage = (req) => resolveTatLanguage(
@@ -55,24 +46,12 @@ const normalizeInput = (body) => {
         throw error;
     }
 
-    let icon = body.icon ? String(body.icon).trim().toLowerCase() : '';
-    if (type === 'interest') {
-        icon = null;
-    } else if (icon && !TRANSPORT_ICONS.has(icon)) {
-        const error = new Error('ไอคอนพาหนะไม่ถูกต้อง');
-        error.statusCode = 400;
-        throw error;
-    } else if (!icon) {
-        // พาหนะไม่มีไอคอน ให้ใช้คีย์เป็นไอคอน (แอปรองรับเฉพาะชุดที่รู้จัก)
-        icon = TRANSPORT_ICONS.has(key) ? key : null;
-    }
-
     // null = ให้ระบบหาลำดับต่อท้ายอัตโนมัติ (สร้าง) หรือคงค่าเดิม (แก้ไข)
     const sortOrder = Number.isInteger(Number(body.sort_order))
         ? Number(body.sort_order)
         : null;
 
-    return { type, key, labelTh, labelEn, icon, sortOrder };
+    return { type, key, labelTh, labelEn, sortOrder };
 };
 
 // สร้าง controller สำหรับจัดการตัวเลือก โดยรับ database เพื่อทดสอบหรือสลับ dependency ได้
@@ -87,7 +66,7 @@ const createPreferenceControllers = (database) => {
 
             const params = [];
             let sql = `
-                SELECT id, type, key, label_th, label_en, icon,
+                SELECT id, type, key, label_th, label_en,
                        is_active, sort_order, created_at, updated_at
                 FROM plan_preference_options
             `;
@@ -108,7 +87,7 @@ const createPreferenceControllers = (database) => {
     // Admin: เพิ่มตัวเลือกใหม่ (ไม่ระบุลำดับจะเรียงต่อท้ายหมวดหมู่อัตโนมัติ)
     const createPreference = async (req, res) => {
         try {
-            const { type, key, labelTh, labelEn, icon, sortOrder } =
+            const { type, key, labelTh, labelEn, sortOrder } =
                 normalizeInput(req.body);
 
             let nextOrder = sortOrder;
@@ -123,11 +102,11 @@ const createPreferenceControllers = (database) => {
 
             const { rows } = await database.query(
                 `INSERT INTO plan_preference_options
-                    (type, key, label_th, label_en, icon, sort_order)
-                 VALUES ($1,$2,$3,$4,$5,$6)
-                 RETURNING id, type, key, label_th, label_en, icon,
+                    (type, key, label_th, label_en, sort_order)
+                 VALUES ($1,$2,$3,$4,$5)
+                 RETURNING id, type, key, label_th, label_en,
                            is_active, sort_order, created_at, updated_at`,
-                [type, key, labelTh, labelEn, icon, nextOrder],
+                [type, key, labelTh, labelEn, nextOrder],
             );
             res.status(201).json({ data: rows[0] });
         } catch (err) {
@@ -152,7 +131,7 @@ const createPreferenceControllers = (database) => {
                 return res.status(400).json({ message: 'รหัสตัวเลือกไม่ถูกต้อง' });
             }
 
-            const { type, key, labelTh, labelEn, icon, sortOrder } =
+            const { type, key, labelTh, labelEn, sortOrder } =
                 normalizeInput(req.body);
             const isActive = req.body.is_active !== false;
 
@@ -160,12 +139,12 @@ const createPreferenceControllers = (database) => {
             const { rows } = await database.query(
                 `UPDATE plan_preference_options
                  SET type = $1, key = $2, label_th = $3, label_en = $4,
-                     icon = $5, sort_order = COALESCE($6, sort_order),
-                     is_active = $7, updated_at = NOW()
-                 WHERE id = $8
-                 RETURNING id, type, key, label_th, label_en, icon,
+                     sort_order = COALESCE($5, sort_order),
+                     is_active = $6, updated_at = NOW()
+                 WHERE id = $7
+                 RETURNING id, type, key, label_th, label_en,
                            is_active, sort_order, created_at, updated_at`,
-                [type, key, labelTh, labelEn, icon, sortOrder, isActive, id],
+                [type, key, labelTh, labelEn, sortOrder, isActive, id],
             );
             if (!rows[0]) {
                 return res.status(404).json({ message: 'ไม่พบตัวเลือกนี้' });
@@ -212,7 +191,7 @@ const createPreferenceControllers = (database) => {
         const language = requestLanguage(req);
         try {
             const { rows } = await database.query(
-                `SELECT type, key, label_th, label_en, icon
+                `SELECT type, key, label_th, label_en
                  FROM plan_preference_options
                  WHERE is_active = TRUE
                  ORDER BY type, sort_order ASC, id ASC`,
@@ -226,7 +205,6 @@ const createPreferenceControllers = (database) => {
                     : (row.label_th || row.label_en);
                 const item = { key: row.key, label };
                 if (row.type === 'transport_mode') {
-                    item.icon = row.icon || row.key;
                     transportModes.push(item);
                 } else {
                     interests.push(item);

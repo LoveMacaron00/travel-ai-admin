@@ -7,12 +7,6 @@ import {
     ChevronUp,
     ChevronDown,
     X,
-    Car,
-    Footprints,
-    Bus,
-    TrainFront,
-    Ship,
-    Plane,
     Heart,
     Route,
     Power,
@@ -28,24 +22,7 @@ import {
     showWarningAlert,
 } from '../utils/alerts';
 
-// ไอคอนพาหนะที่แอปมือถือรู้จัก (Flutter map เป็น Material Icons)
-const TRANSPORT_ICON_OPTIONS = [
-    { value: 'car', label: 'รถยนต์' },
-    { value: 'walking', label: 'เดิน' },
-    { value: 'bus', label: 'รถโดยสาร' },
-    { value: 'train', label: 'รถไฟ' },
-    { value: 'ferry', label: 'เรือ' },
-    { value: 'flight', label: 'เครื่องบิน' },
-];
 
-const TRANSPORT_ICON_MAP = {
-    car: Car,
-    walking: Footprints,
-    bus: Bus,
-    train: TrainFront,
-    ferry: Ship,
-    flight: Plane,
-};
 
 const TYPE_TABS = [
     { value: 'interest', label: 'ความสนใจ', icon: Heart },
@@ -57,7 +34,6 @@ const emptyForm = (type) => ({
     key: '',
     label_th: '',
     label_en: '',
-    icon: type === 'transport_mode' ? 'car' : '',
     is_active: true,
 });
 
@@ -67,7 +43,6 @@ const toPayload = (item) => ({
     key: item.key,
     label_th: item.label_th,
     label_en: item.label_en,
-    icon: item.icon || '',
     is_active: item.is_active,
     sort_order: item.sort_order,
 });
@@ -118,7 +93,6 @@ const PlanOptions = () => {
             key: item.key,
             label_th: item.label_th,
             label_en: item.label_en,
-            icon: item.icon || (item.type === 'transport_mode' ? item.key : ''),
             is_active: item.is_active,
         });
         setModal({ mode: 'edit', item });
@@ -354,7 +328,7 @@ const PlanOptions = () => {
                                 <th className="py-2.5 px-3">คีย์</th>
                                 <th className="py-2.5 px-3">ภาษาไทย</th>
                                 <th className="py-2.5 px-3">English</th>
-                                {isTransportTab && <th className="py-2.5 px-3">ไอคอน</th>}
+
                                 <th className="py-2.5 px-3">สถานะ</th>
                                 <th className="py-2.5 px-3 text-right">การจัดการ</th>
                             </tr>
@@ -362,18 +336,17 @@ const PlanOptions = () => {
                         <tbody className="divide-y divide-gray-800/50">
                             {isLoading ? (
                                 <tr>
-                                    <td colSpan={isTransportTab ? 7 : 6} className="py-16 text-center text-gray-500">
+                                    <td colSpan={6} className="py-16 text-center text-gray-500">
                                         กำลังโหลดข้อมูล...
                                     </td>
                                 </tr>
                             ) : currentList.length === 0 ? (
                                 <tr>
-                                    <td colSpan={isTransportTab ? 7 : 6} className="py-16 text-center text-gray-500">
+                                    <td colSpan={6} className="py-16 text-center text-gray-500">
                                         ยังไม่มีตัวเลือกในหมวดหมู่นี้
                                     </td>
                                 </tr>
                             ) : currentList.map((item, index) => {
-                                const IconComp = item.icon ? TRANSPORT_ICON_MAP[item.icon] : null;
                                 return (
                                     <tr key={item.id} className="group">
                                         <td className="py-2 px-3">
@@ -412,17 +385,7 @@ const PlanOptions = () => {
                                         <td className="py-2 px-3 text-gray-400">
                                             {item.label_en}
                                         </td>
-                                        {isTransportTab && (
-                                            <td className="py-2 px-3">
-                                                {IconComp ? (
-                                                    <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 border border-gray-700 text-yellow-400">
-                                                        <IconComp size={15} />
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-xs text-gray-500">—</span>
-                                                )}
-                                            </td>
-                                        )}
+
                                         <td className="py-2 px-3">
                                             <button
                                                 onClick={() => handleToggleActive(item)}
@@ -519,27 +482,7 @@ const PlanOptions = () => {
                                 />
                             </div>
 
-                            {isTransportTab && (
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">
-                                        ไอคอนพาหนะ
-                                    </label>
-                                    <select
-                                        className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 appearance-none"
-                                        value={form.icon}
-                                        onChange={(e) => handleChange('icon', e.target.value)}
-                                    >
-                                        {TRANSPORT_ICON_OPTIONS.map((icon) => (
-                                            <option key={icon.value} value={icon.value} className="bg-gray-900">
-                                                {icon.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <p className="text-[11px] text-gray-500 mt-1.5">
-                                        แอปมือถือแสดงไอคอนตามตัวเลือกนี้ (รองรับ 6 แบบที่มีอยู่)
-                                    </p>
-                                </div>
-                            )}
+
 
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input
