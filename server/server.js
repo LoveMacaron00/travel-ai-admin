@@ -10,6 +10,7 @@ const morgan = require('morgan');
 const { createCorsOptions } = require('./config/corsOptions');
 const { requireAdminAuth } = require('./middleware/adminAuth');
 const { secureUploads } = require('./middleware/secureUploads');
+const { warmPlaceIndex } = require('./controllers/helpers/tatPlaceIndex');
 
 
 const app = express();
@@ -67,4 +68,5 @@ app.use((err, _req, res, _next) => {
 
 app.listen(config.port, () => {
     console.log(`เซิร์ฟเวอร์กำลังทำงานบนพอร์ต ${config.port}`);
+    warmPlaceIndex({ apiKey: config.tat.apiKey, apiBaseUrl: config.tat.apiBaseUrl });
 });

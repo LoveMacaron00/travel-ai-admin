@@ -2,6 +2,7 @@
 
 const { config } = require('../config/env');
 const { resolveTatLanguage, tatHeadersFor } = require('./helpers/tatLanguage');
+const { searchPlaceIndex } = require('./helpers/tatPlaceIndex');
 const TAT_API_KEY = config.tat.apiKey;
 const TAT_API_BASE = config.tat.apiBaseUrl;
 
@@ -18,22 +19,11 @@ const checkEnvConfig = (res) => {
     return true;
 };
 
-// ตรวจว่าชื่อสถานที่มีคำค้นอยู่ (contains) โดยไม่สนใจตัวพิมพ์เล็ก/ใหญ่
-// ใช้กรองผลลัพธ์จาก TAT API ที่อาจคืนสถานที่ไม่เกี่ยวข้องกับชื่อที่ค้น
-const nameMatchesKeyword = (place, keyword) => {
-    const lower = String(keyword).toLowerCase();
-    return [place.name, place.placeName, place.title, place.nameTh, place.nameEn]
-        .some((name) => name && String(name).toLowerCase().includes(lower));
-};
-
-// กรองเฉพาะผลที่มีคำค้นอยู่ในชื่อ
-const filterByName = (items, keyword) => items.filter((place) => nameMatchesKeyword(place, keyword));
-
 // ค้นหาสถานที่จาก TAT API
 // GET /api/v2/places
-// - ค้นตาม TAT keyword แล้วกรองชื่อ (TAT อาจคืนผลที่ไม่เกี่ยวกับชื่อที่พิม)
-// - ไม่เจอ → ลองอีกภาษา แล้วกรองชื่ออีกครั้ง
-// - ยังไม่เจอ → คืน empty result
+// - ปกติใช้ keyword ของ TAT
+// - TAT คืนผลว่างเมื่อคำค้นเป็นคำไทยคำเดียวที่ใช้บ่อย (เช่น "วัด" "เกาะ" "หาด")
+//   จึงค้นจากดัชนีสถานที่ของเราเองต่อ แล้วค่อยลองอีกภาษาเป็นทางเลือกสุดท้าย
 const searchPlaces = async (req, res) => {
     if (!checkEnvConfig(res)) return;
     try {
@@ -45,17 +35,18 @@ const searchPlaces = async (req, res) => {
         const language = resolveTatLanguage(req.get('Accept-Language'));
         const otherLanguage = language === 'en' ? 'th' : 'en';
 
-        // พารามิเตอร์ร่วม (ไม่รวม keyword และหน้า)
-        const baseParams = new URLSearchParams();
-        if (province) baseParams.set('provinceName', province);
-        if (place_category) baseParams.set('place_category', place_category);
-
-        // เรียก TAT API หนึ่งครั้งตาม keyword และภาษา
-        const searchWithKeyword = async (kw, lang) => {
-            const params = new URLSearchParams(baseParams);
-            params.set('numberOfResult', parsedLimit);
+        const buildParams = () => {
+            const params = new URLSearchParams();
+            params.set('limit', parsedLimit);
             params.set('page', parsedPage);
-            if (kw) params.set('keyword', kw);
+            if (province) params.set('provinceName', province);
+            if (place_category) params.set('place_category', place_category);
+            return params;
+        };
+
+        const searchWithKeyword = async (lang) => {
+            const params = buildParams();
+            if (cleanKeyword) params.set('keyword', cleanKeyword);
             const response = await fetch(`${TAT_API_BASE}/places?${params}`, {
                 headers: tatHeadersFor(TAT_API_KEY, lang),
             });
@@ -63,53 +54,38 @@ const searchPlaces = async (req, res) => {
             return { status: response.status, data };
         };
 
+        const searchIndex = (lang) => searchPlaceIndex({
+            apiKey: TAT_API_KEY,
+            apiBaseUrl: TAT_API_BASE,
+            language: lang,
+            province,
+            placeCategory: place_category,
+            keyword: cleanKeyword,
+            page: parsedPage,
+            limit: parsedLimit,
+        });
+
         res.vary('Accept-Language');
 
-        if (cleanKeyword) {
-            // 1) ค้นด้วย TAT keyword ตามภาษาที่ขอ แล้วกรองเฉพาะที่มีชื่อตรง
-            let { status, data } = await searchWithKeyword(cleanKeyword, language);
-            let filtered = filterByName(Array.isArray(data.data) ? data.data : [], cleanKeyword);
-
-            // 2) ถ้ากรองแล้วได้ 0 ลองอีกภาษาหนึ่ง แล้วกรองอีกครั้ง
-            if (filtered.length === 0) {
-                const alt = await searchWithKeyword(cleanKeyword, otherLanguage);
-                const altFiltered = filterByName(Array.isArray(alt.data.data) ? alt.data.data : [], cleanKeyword);
-                if (altFiltered.length > 0) {
-                    status = alt.status;
-                    data = alt.data;
-                    filtered = altFiltered;
-                }
-            }
-
-            // 3) มีผลที่ตรงชื่อ → คืน filtered items พร้อม pagination ที่ปรับแล้ว
-            if (filtered.length > 0) {
-                return res.status(status).json({
-                    ...data,
-                    data: filtered,
-                    pagination: {
-                        ...(data.pagination || {}),
-                        total: filtered.length,
-                        pageSize: filtered.length,
-                    },
-                });
-            }
-
-            // 4) ไม่มีชื่อสถานที่ตรงกับคำค้นเลย → คืน empty result
-            return res.status(200).json({
-                data: [],
-                pagination: { pageNumber: parsedPage, pageSize: parsedLimit, total: 0 },
-            });
+        if (!cleanKeyword) {
+            const { status, data } = await searchWithKeyword(language);
+            return res.status(status).json(data);
         }
 
-        // ไม่มี keyword → ส่งต่อไปยัง TAT ตามเดิม
-        const params = new URLSearchParams(baseParams);
-        params.set('numberOfResult', parsedLimit);
-        params.set('page', parsedPage);
-        const response = await fetch(`${TAT_API_BASE}/places?${params}`, {
-            headers: requestTatHeaders(req),
-        });
-        const data = await response.json();
-        res.status(response.status).json(data);
+        const { status, data } = await searchWithKeyword(language);
+        if (Array.isArray(data.data) && data.data.length > 0) {
+            return res.status(status).json(data);
+        }
+
+        const indexResult = await searchIndex(language);
+        if (indexResult.data.length > 0) return res.status(200).json(indexResult);
+
+        const otherLanguageResult = await searchWithKeyword(otherLanguage);
+        if (Array.isArray(otherLanguageResult.data.data) && otherLanguageResult.data.data.length > 0) {
+            return res.status(otherLanguageResult.status).json(otherLanguageResult.data);
+        }
+
+        return res.status(200).json(indexResult);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงข้อมูล TAT API (ค้นหา):', err);
         res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน tatController - searchPlaces" });
@@ -137,4 +113,3 @@ module.exports = {
     searchPlaces,
     getPlaceById,
 };
-

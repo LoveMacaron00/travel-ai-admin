@@ -27,7 +27,7 @@ async function fetchTATPage(page, limit = 100, keyword = '', province = '', plac
         throw new Error('ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)');
     }
     const params = new URLSearchParams({
-        numberOfResult: limit,
+        limit,
         page,
         ...(keyword && { keyword }),
         ...(province && { provinceName: province }),
