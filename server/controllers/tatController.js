@@ -5,16 +5,11 @@ const { resolveTatLanguage, tatHeadersFor } = require('./helpers/tatLanguage');
 const TAT_API_KEY = config.tat.apiKey;
 const TAT_API_BASE = config.tat.apiBaseUrl;
 
-// TAT API กำหนด pageSize คงที่ 10 (พารามิเตอร์ numberOfResult ถูก ignore)
-// จำนวนหน้าสูงสุดที่ดึงมาใช้ค้นหาท้องถิ่นเมื่อ TAT keyword ค้นไม่เจอ (10 หน้า = 100 รายการ)
-const FALLBACK_MAX_PAGES = 10;
-
 // สร้าง header ตามภาษาใน request เพื่อเรียก TAT API
 const requestTatHeaders = (req) =>
     tatHeadersFor(TAT_API_KEY, req.get('Accept-Language'));
 
 // ตรวจสอบความถูกต้องของ API Key ใน Environment ก่อนเรียกใช้งาน
-// ตรวจว่ามี TAT API key ก่อนส่ง request ไปยังผู้ให้บริการ
 const checkEnvConfig = (res) => {
     if (!TAT_API_KEY || TAT_API_KEY === 'your_tat_api_key_here') {
         res.status(503).json({ message: "ไม่ได้ตั้งค่า TAT API Key ในระบบ (.env)" });
@@ -23,56 +18,22 @@ const checkEnvConfig = (res) => {
     return true;
 };
 
-// ค้นหาท้องถิ่น: ดึงหลายหน้าจาก TAT แบบไม่ใช้ keyword แล้วส่งผลลัพธ์ตรง ๆ โดยไม่กรองชื่อ
-// ใช้เมื่อ TAT keyword ค้นไม่เจอ เช่น คำสั้น 1 ตัวอักษร หรือคำที่ TAT จับคู่ไม่ตรง
-const searchTatLocally = async (keyword, baseParams, page, limit) => {
-    // คำภาษาไทยใช้ข้อมูลไทย ส่วนคำภาษาอื่นใช้ข้อมูลอังกฤษ
-    const hasThai = /[\u0E00-\u0E7F]/.test(keyword);
-    const headers = tatHeadersFor(TAT_API_KEY, hasThai ? 'th' : 'en');
-
-    const requests = [];
-    for (let p = 1; p <= FALLBACK_MAX_PAGES; p++) {
-        const params = new URLSearchParams(baseParams);
-        params.set('page', p);
-        requests.push(fetch(`${TAT_API_BASE}/places?${params}`, { headers }));
-    }
-
-    const responses = await Promise.all(requests);
-    const all = [];
-    for (const response of responses) {
-        if (!response.ok) continue;
-        const data = await response.json();
-        all.push(...(Array.isArray(data.data) ? data.data : []));
-    }
-
-    // กันรายการซ้ำด้วย placeId โดยไม่กรองชื่อเพิ่มเติม
-    const seen = new Set();
-    const matches = all.filter((place) => {
-        const id = place.placeId ?? place.id;
-        if (id !== undefined && id !== null) {
-            if (seen.has(id)) return false;
-            seen.add(id);
-        }
-        return true;
-    });
-
-    const start = (page - 1) * limit;
-    return {
-        data: matches.slice(start, start + limit),
-        pagination: {
-            pageNumber: page,
-            pageSize: limit,
-            total: matches.length,
-        },
-    };
+// ตรวจว่าชื่อสถานที่มีคำค้นอยู่ (contains) โดยไม่สนใจตัวพิมพ์เล็ก/ใหญ่
+// ใช้กรองผลลัพธ์จาก TAT API ที่อาจคืนสถานที่ไม่เกี่ยวข้องกับชื่อที่ค้น
+const nameMatchesKeyword = (place, keyword) => {
+    const lower = String(keyword).toLowerCase();
+    return [place.name, place.placeName, place.title, place.nameTh, place.nameEn]
+        .some((name) => name && String(name).toLowerCase().includes(lower));
 };
 
- // ค้นหาสถานที่จาก TAT API
- // GET /api/v2/places
-// ค้นหาสถานที่จาก TAT API แล้วส่งผลลัพธ์กลับให้ admin
-// - ค้นตาม TAT keyword ก่อน (ภาษาเดียวกับที่ request มา)
-// - ไม่เจอ → ลองอีกภาษา (เช่นพิมพ์อังกฤษ แต่ admin ส่ง header เป็นไทย)
-// - ยังไม่เจอ (เช่น keyword 1 ตัวอักษร) → ดึงหลายหน้าแล้วกรองชื่อแบบ contains
+// กรองเฉพาะผลที่มีคำค้นอยู่ในชื่อ
+const filterByName = (items, keyword) => items.filter((place) => nameMatchesKeyword(place, keyword));
+
+// ค้นหาสถานที่จาก TAT API
+// GET /api/v2/places
+// - ค้นตาม TAT keyword แล้วกรองชื่อ (TAT อาจคืนผลที่ไม่เกี่ยวกับชื่อที่พิม)
+// - ไม่เจอ → ลองอีกภาษา แล้วกรองชื่ออีกครั้ง
+// - ยังไม่เจอ → คืน empty result
 const searchPlaces = async (req, res) => {
     if (!checkEnvConfig(res)) return;
     try {
@@ -105,25 +66,39 @@ const searchPlaces = async (req, res) => {
         res.vary('Accept-Language');
 
         if (cleanKeyword) {
-            // 1) ค้นด้วย TAT keyword ตามภาษาที่ขอ
+            // 1) ค้นด้วย TAT keyword ตามภาษาที่ขอ แล้วกรองเฉพาะที่มีชื่อตรง
             let { status, data } = await searchWithKeyword(cleanKeyword, language);
+            let filtered = filterByName(Array.isArray(data.data) ? data.data : [], cleanKeyword);
 
-            // 2) ถ้าไม่เจอ ลองอีกภาษาหนึ่ง (เช่นพิมพ์อังกฤษ แต่ header เป็นไทย)
-            if ((data.pagination?.total || 0) === 0) {
+            // 2) ถ้ากรองแล้วได้ 0 ลองอีกภาษาหนึ่ง แล้วกรองอีกครั้ง
+            if (filtered.length === 0) {
                 const alt = await searchWithKeyword(cleanKeyword, otherLanguage);
-                if ((alt.data.pagination?.total || 0) > 0) {
+                const altFiltered = filterByName(Array.isArray(alt.data.data) ? alt.data.data : [], cleanKeyword);
+                if (altFiltered.length > 0) {
                     status = alt.status;
                     data = alt.data;
+                    filtered = altFiltered;
                 }
             }
 
-            // 3) ยังไม่เจอ → ดึงหลายหน้าแล้วกรองชื่อแบบ contains
-            if ((data.pagination?.total || 0) === 0) {
-                const fallback = await searchTatLocally(cleanKeyword, baseParams, parsedPage, parsedLimit);
-                return res.status(200).json(fallback);
+            // 3) มีผลที่ตรงชื่อ → คืน filtered items พร้อม pagination ที่ปรับแล้ว
+            if (filtered.length > 0) {
+                return res.status(status).json({
+                    ...data,
+                    data: filtered,
+                    pagination: {
+                        ...(data.pagination || {}),
+                        total: filtered.length,
+                        pageSize: filtered.length,
+                    },
+                });
             }
 
-            return res.status(status).json(data);
+            // 4) ไม่มีชื่อสถานที่ตรงกับคำค้นเลย → คืน empty result
+            return res.status(200).json({
+                data: [],
+                pagination: { pageNumber: parsedPage, pageSize: parsedLimit, total: 0 },
+            });
         }
 
         // ไม่มี keyword → ส่งต่อไปยัง TAT ตามเดิม
@@ -141,9 +116,8 @@ const searchPlaces = async (req, res) => {
     }
 };
 
- // ดูรายละเอียดสถานที่จาก TAT API ตาม ID
- // GET /api/v2/places/:id
 // ดึงรายละเอียดสถานที่หนึ่งแห่งจาก TAT API
+// GET /api/v2/places/:id
 const getPlaceById = async (req, res) => {
     if (!checkEnvConfig(res)) return;
     try {
@@ -154,7 +128,7 @@ const getPlaceById = async (req, res) => {
         res.vary('Accept-Language');
         res.status(response.status).json(data);
     } catch (err) {
-        console.error('เกิดข้อผิดพลาดในการดึงข้อมูล TaT API (รายละเอียด):', err);
+        console.error('เกิดข้อผิดพลาดในการดึงข้อมูล TAT API (รายละเอียด):', err);
         res.status(500).json({ message: "เกิดข้อผิดพลาดภายใน tatController - getPlaceById" });
     }
 };
@@ -163,3 +137,4 @@ module.exports = {
     searchPlaces,
     getPlaceById,
 };
+
