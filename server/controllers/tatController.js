@@ -23,14 +23,7 @@ const checkEnvConfig = (res) => {
     return true;
 };
 
-// ตรวจว่าชื่อสถานที่ตรงกับคำค้นแบบ contains (ไม่ต้องตรงตัว)
-const nameMatchesKeyword = (place, keyword) => {
-    const lower = String(keyword).toLowerCase();
-    return [place.name, place.placeName, place.title]
-        .some((name) => name && String(name).toLowerCase().includes(lower));
-};
-
-// ค้นหาท้องถิ่น: ดึงหลายหน้าจาก TAT แบบไม่ใช้ keyword แล้วกรองชื่อเอง
+// ค้นหาท้องถิ่น: ดึงหลายหน้าจาก TAT แบบไม่ใช้ keyword แล้วส่งผลลัพธ์ตรง ๆ โดยไม่กรองชื่อ
 // ใช้เมื่อ TAT keyword ค้นไม่เจอ เช่น คำสั้น 1 ตัวอักษร หรือคำที่ TAT จับคู่ไม่ตรง
 const searchTatLocally = async (keyword, baseParams, page, limit) => {
     // คำภาษาไทยใช้ข้อมูลไทย ส่วนคำภาษาอื่นใช้ข้อมูลอังกฤษ
@@ -52,7 +45,7 @@ const searchTatLocally = async (keyword, baseParams, page, limit) => {
         all.push(...(Array.isArray(data.data) ? data.data : []));
     }
 
-    // กรองเฉพาะชื่อที่มีคำค้น (กันรายการซ้ำด้วย placeId)
+    // กันรายการซ้ำด้วย placeId โดยไม่กรองชื่อเพิ่มเติม
     const seen = new Set();
     const matches = all.filter((place) => {
         const id = place.placeId ?? place.id;
@@ -60,7 +53,7 @@ const searchTatLocally = async (keyword, baseParams, page, limit) => {
             if (seen.has(id)) return false;
             seen.add(id);
         }
-        return nameMatchesKeyword(place, keyword);
+        return true;
     });
 
     const start = (page - 1) * limit;
