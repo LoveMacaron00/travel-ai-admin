@@ -588,6 +588,25 @@ async function generateTripPlan(tripId, tripInput, res) {
     }
 }
 
+// ตรวจสอบว่าข้อความเป็นคำถามเกี่ยวกับการท่องเที่ยวหรือไม่
+function isTravelRelatedQuery(message) {
+    const travelKeywords = [
+        // Thai keywords
+        'ที่เที่ยว', 'สถานที่', 'เที่ยว', 'ไป', 'จังหวัด', 'หา', 'แนะนำ', 'ร้าน', 'อาหาร', 
+        'รีสอร์ท', 'โรงแรม', 'ที่พัก', 'ภาพ', 'สแกน', 'ป้าย', 'เส้นทาง', 'เดินทาง', 'พิกัด',
+        'ระยะทาง', 'เวลา', 'เปิด', 'ปิด', 'ราคา', 'ค่าเข้า', 'ค่าบริการ', 'กิจกรรม', 'ช้อปปิ้ง',
+        'ตลาด', 'วัด', 'พิพิธภัณฑ์', 'ชายหาด', 'ภูเขา', 'น้ำตก', 'อุทยาน', 'เกาะ', 'ทะเล', 'ป่า',
+        // English keywords
+        'place', 'travel', 'trip', 'visit', 'go', 'location', 'recommend', 'restaurant', 'food',
+        'resort', 'hotel', 'stay', 'image', 'scan', 'sign', 'route', 'direction', 'coordinate',
+        'distance', 'time', 'open', 'close', 'price', 'fee', 'cost', 'activity', 'shopping',
+        'market', 'temple', 'museum', 'beach', 'mountain', 'waterfall', 'park', 'island', 'sea', 'forest'
+    ];
+    
+    const lowerMessage = message.toLowerCase();
+    return travelKeywords.some(keyword => lowerMessage.includes(keyword));
+}
+
 // ฟังก์ชันแชทที่ใช้การค้นคืนข้อมูล ragChat()
 // ตอบคำถามเกี่ยวกับแผนเที่ยว ด้วย RAG + chat history
 // ส่งกลับไป Flutter พร้อมบันทึก source_chunk_ids
@@ -607,16 +626,26 @@ async function ragChat(
     );
     const trip = tripRows[0];
 
-    // RAG: embed คำถาม → ดึง relevant places
-    const places = await retrieveRelevantPlaces(userMessage, {
-        province: trip?.province,
-        limit: 5,
-    });
+    // ตรวจสอบว่าเป็นคำถามเกี่ยวกับการท่องเที่ยวหรือไม่
+    const isTravelQuery = isTravelRelatedQuery(userMessage);
+    
+    let places = [];
+    let placesContext = '';
+    let sourceChunkIds = [];
+    
+    // ใช้ RAG เฉพาะเมื่อเป็นคำถามเกี่ยวกับการท่องเที่ยว
+    if (isTravelQuery) {
+        // RAG: embed คำถาม → ดึง relevant places
+        places = await retrieveRelevantPlaces(userMessage, {
+            province: trip?.province,
+            limit: 5,
+        });
 
-    const placesContext = formatPlacesContext(places);
-    const sourceChunkIds = places.map(p => p.id);
+        placesContext = formatPlacesContext(places);
+        sourceChunkIds = places.map(p => p.id);
+    }
 
-    const systemPrompt =
+    const systemPrompt = isTravelQuery ?
     `คุณคือ AI Guide สำหรับการท่องเที่ยวและวัฒนธรรมไทย
     ตอบเป็นภาษาเดียวกับข้อความล่าสุดของผู้ใช้ และใช้ภาษาอังกฤษเป็นค่าเริ่มต้นเมื่อระบุภาษาไม่ได้
     ตอบคำถามเกี่ยวกับการท่องเที่ยว สถานที่ ป้ายภาษาไทย อาหารไทย และผลการสแกนก่อนหน้า
@@ -624,9 +653,16 @@ async function ragChat(
     สำหรับข้อมูลสถานที่ ให้ยึด context จากฐานข้อมูลเป็นหลัก ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูลยืนยัน
     ห้ามยืนยันสารก่อภูมิแพ้ ส่วนผสมทั้งหมด หรือสถานะฮาลาลจากภาพอาหารเพียงอย่างเดียว
     หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ ให้แจ้งข้อมูลนั้นโดยตรงทันที
+    ห้ามใช้ markdown formatting เช่น **, *, #, -, หรือสัญลักษณ์อื่นๆ ในคำตอบ ตอบเป็นข้อความธรรมดาเท่านั้น
 
     ข้อมูลสถานที่ที่เกี่ยวข้อง:
-    ${placesContext}`;
+    ${placesContext}` :
+    `คุณคือ AI Guide สำหรับการท่องเที่ยวและวัฒนธรรมไทย
+    ตอบเป็นภาษาเดียวกับข้อความล่าสุดของผู้ใช้ และใช้ภาษาอังกฤษเป็นค่าเริ่มต้นเมื่อระบุภาษาไม่ได้
+    คุยตามปกติเหมือนเพื่อน ตอบคำถามทั่วไปได้อย่างอิสระ
+    หากผู้ใช้ถามเกี่ยวกับการท่องเที่ยว สถานที่ หรือข้อมูลที่ต้องการข้อมูลจากฐานข้อมูล ให้แนะนำให้ถามให้ชัดเจนเฉพาะเจาะจงเพิ่มเติม
+    อย่าพยายามแนะนำสถานที่ท่องเที่ยวโดยไม่มีข้อมูลจากฐานข้อมูลที่เชื่อถือได้
+    ห้ามใช้ markdown formatting เช่น **, *, #, -, หรือสัญลักษณ์อื่นๆ ในคำตอบ ตอบเป็นข้อความธรรมดาเท่านั้น`;
 
     // ตั้ง SSE headers
     res.setHeader('Content-Type', 'text/event-stream');

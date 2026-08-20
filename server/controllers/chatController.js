@@ -12,6 +12,7 @@ const {
     deleteChatImage,
     saveChatImage,
 } = require('./helpers/chatImageStorage');
+const query = pool.query.bind(pool);
 
 const IMAGE_MESSAGES = {
     en: {
@@ -485,6 +486,34 @@ const getSessionByTrip = async (req, res) => {
     }
 };
 
+// POST /api/chat/navigation — บันทึกการนำทางจากแชทไปแผนที่
+const logNavigation = async (req, res) => {
+    try {
+        const { messageId, destinationId, sessionId } = req.body;
+        const userId = req.user?.id || null;
+
+        if (!messageId || !destinationId || !sessionId) {
+            return res.status(400).json({ message: 'Missing required fields' });
+        }
+
+        const { rows } = await query(
+            `INSERT INTO chat_navigation_events 
+             (chat_message_id, destination_id, user_id, session_id)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id, navigated_at`,
+            [messageId, destinationId, userId, sessionId]
+        );
+
+        res.status(201).json({
+            success: true,
+            data: rows[0]
+        });
+    } catch (err) {
+        console.error('[chatController] logNavigation:', err.message);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาด' });
+    }
+};
+
 module.exports = {
     createSession,
     sendMessage,
@@ -495,4 +524,5 @@ module.exports = {
     getLatestSession,
     getSessionByTrip,
     updateMessage,
+    logNavigation,
 };

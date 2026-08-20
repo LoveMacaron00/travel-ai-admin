@@ -12,6 +12,7 @@ const {
     getSessionByTrip,
     sendMessage,
     updateMessage,
+    logNavigation,
 } = require('../controllers/chatController');
 const { requireUserAuth } = require('../middleware/userAuth');
 const imageUpload = require('../config/imageUpload');
@@ -30,5 +31,6 @@ router.get('/messages/:messageId/image', requireUserAuth, getMessageImage);
 router.patch('/messages/:messageId', requireUserAuth, updateMessage);
 router.delete('/messages/:messageId', requireUserAuth, deleteMessage);
 router.get('/trips/:tripId/session', requireUserAuth, getSessionByTrip);
+router.post('/navigation', requireUserAuth, logNavigation);
 
 module.exports = router;
