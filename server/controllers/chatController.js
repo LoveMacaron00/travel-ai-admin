@@ -275,7 +275,38 @@ const getMessages = async (req, res) => {
              ORDER BY created_at ASC, id ASC`,
             [req.params.sessionId]
         );
-        res.json(rows);
+
+        const allChunkIds = [...new Set(rows.flatMap(r => r.source_chunk_ids || []).filter(Boolean))];
+        let destinationMap = new Map();
+        if (allChunkIds.length > 0) {
+            const { rows: destRows } = await pool.query(
+                `SELECT id, name, province, category, image_url
+                 FROM destinations
+                 WHERE id = ANY($1::int[])`,
+                [allChunkIds]
+            );
+            destinationMap = new Map(destRows.map(d => [d.id, d]));
+        }
+
+        const enrichedRows = rows.map(r => {
+            const chunkIds = r.source_chunk_ids || [];
+            const sources = chunkIds
+                .map(id => destinationMap.get(id))
+                .filter(Boolean)
+                .map(place => ({
+                    id: place.id,
+                    name: place.name,
+                    province: place.province,
+                    category: place.category,
+                    image_url: place.image_url,
+                }));
+            return {
+                ...r,
+                sources,
+            };
+        });
+
+        res.json(enrichedRows);
     } catch (err) {
         console.error('[chatController] getMessages:', err.message);
         res.status(500).json({ message: 'เกิดข้อผิดพลาด' });

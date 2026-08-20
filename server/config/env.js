@@ -51,7 +51,7 @@ const config = {
         apiBaseUrl: withoutTrailingSlash(
             process.env.GEMINI_API_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
         ),
-        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+        model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
         embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
         maxRetries: Math.max(0, asNumber(process.env.GEMINI_MAX_RETRIES, 3)),
         planThinkingBudget: Math.max(0, asNumber(process.env.GEMINI_PLAN_THINKING_BUDGET, 0)),
