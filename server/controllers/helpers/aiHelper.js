@@ -684,20 +684,29 @@ async function ragChat(
         sourceChunkIds = places.map(p => p.id);
     }
 
-    const systemPrompt = isTravelQuery ?
-    `คุณคือ AI Guide สำหรับการท่องเที่ยวและวัฒนธรรมไทย
+    // เปิด Google Search เฉพาะเมื่อ RAG ไม่ได้ข้อมูลจากฐานข้อมูลเลย
+    // เพราะ grounding มีโควตาแยกของตัวเองและ free tier มักไม่รองรับ
+    const useWebSearch = isTravelQuery && places.length === 0;
+
+    const travelGuideRules = `คุณคือ AI Guide สำหรับการท่องเที่ยวและวัฒนธรรมไทย
     ตอบเป็นภาษาเดียวกับข้อความล่าสุดของผู้ใช้ และใช้ภาษาอังกฤษเป็นค่าเริ่มต้นเมื่อระบุภาษาไม่ได้
     ตอบคำถามเกี่ยวกับการท่องเที่ยว สถานที่ ป้ายภาษาไทย อาหารไทย และผลการสแกนก่อนหน้า
     ใช้ chat history เมื่อตอบคำถามต่อเนื่องเกี่ยวกับรูปที่เพิ่งสแกน แต่ต้องคงระดับความไม่แน่นอนจากผลเดิม
-    สำหรับข้อมูลสถานที่ ให้ยึด context จากฐานข้อมูลเป็นหลัก
-    ถ้าคำถามไม่มีข้อมูลในฐานข้อมูล หรือข้อมูลไม่ครอบคลุม ให้ค้นหาข้อมูลเพิ่มจาก Google Search แล้วสรุปเป็นคำตอบที่เชื่อถือได้
-    เมื่อใช้ข้อมูลจากเว็บ ให้แจ้งผู้ใช้ว่าข้อมูลส่วนนั้นมาจากการค้นเว็บ ไม่ใช่ข้อมูลยืนยันในระบบ
     ห้ามยืนยันสารก่อภูมิแพ้ ส่วนผสมทั้งหมด หรือสถานะฮาลาลจากภาพอาหารเพียงอย่างเดียว
+    ห้ามใช้ markdown formatting เช่น **, *, #, -, หรือสัญลักษณ์อื่นๆ ในคำตอบ ตอบเป็นข้อความธรรมดาเท่านั้น`;
+
+    const systemPrompt = isTravelQuery ?
+    (useWebSearch ?
+    `${travelGuideRules}
+    ไม่พบข้อมูลสถานที่ที่เกี่ยวข้องในฐานข้อมูลของแอป ให้ค้นหาข้อมูลจาก Google Search เพื่อช่วยตอบคำถาม
+    สรุปจากผลค้นหาอย่างระมัดระวัง และระบุให้ผู้ใช้ทราบว่าข้อมูลนี้มาจากเว็บ ไม่ใช่สถานที่ที่ยืนยันในฐานข้อมูลของแอป
+    ถ้าผลค้นหาไม่ชัดเจนหรือขัดแย้งกัน ให้แจ้งข้อจำกัดนั้นแทนการเดา` :
+    `${travelGuideRules}
+    สำหรับข้อมูลสถานที่ ให้ยึด context จากฐานข้อมูลเป็นหลัก ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูลยืนยัน
     หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ ให้แจ้งข้อมูลนั้นโดยตรงทันที
-    ห้ามใช้ markdown formatting เช่น **, *, #, -, หรือสัญลักษณ์อื่นๆ ในคำตอบ ตอบเป็นข้อความธรรมดาเท่านั้น
 
     ข้อมูลสถานที่ที่เกี่ยวข้อง:
-    ${placesContext}` :
+    ${placesContext}`) :
     `คุณคือ AI Guide สำหรับการท่องเที่ยวและวัฒนธรรมไทย
     ตอบเป็นภาษาเดียวกับข้อความล่าสุดของผู้ใช้ และใช้ภาษาอังกฤษเป็นค่าเริ่มต้นเมื่อระบุภาษาไม่ได้
     คุยตามปกติเหมือนเพื่อน ตอบคำถามทั่วไปได้อย่างอิสระ
@@ -723,12 +732,26 @@ async function ragChat(
         const groundingChunks = [];
         const collectGrounding = (chunks) => groundingChunks.push(...chunks);
 
-        for await (const token of streamGemini(systemPrompt, messages, 1024, {
-            googleSearch: isTravelQuery,
-            onGrounding: isTravelQuery ? collectGrounding : null,
-        })) {
-            fullAnswer += token;
-            res.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
+        try {
+            for await (const token of streamGemini(systemPrompt, messages, 1024, {
+                googleSearch: useWebSearch,
+                onGrounding: useWebSearch ? collectGrounding : null,
+            })) {
+                fullAnswer += token;
+                res.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
+            }
+        } catch (searchError) {
+            // grounding ล้มเหลว (เช่น 429 เกินโควตา search) และยังไม่ได้ส่งคำตอบส่วนไหนออกไป
+            // ให้ stream ซ้ำแบบไม่มี grounding เพื่อไม่ให้แชทล่ม
+            if (!useWebSearch || fullAnswer) throw searchError;
+            console.warn(`[ai] Google Search grounding failed: ${searchError.message}; retrying without grounding`);
+            groundingChunks.length = 0;
+            const fallbackPrompt = `${travelGuideRules}
+    ไม่พบข้อมูลสถานที่ที่เกี่ยวข้องในฐานข้อมูล ให้บอกผู้ใช้ตรงๆ ว่ายังไม่มีข้อมูลยืนยันสำหรับคำถามนี้`;
+            for await (const token of streamGemini(fallbackPrompt, messages, 1024)) {
+                fullAnswer += token;
+                res.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
+            }
         }
 
         // ส่ง citation เป็น token สุดท้ายเพื่อให้ผู้ใช้เห็นในแชทและบันทึกลงประวัติด้วย

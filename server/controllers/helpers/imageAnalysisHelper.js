@@ -564,7 +564,7 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, langua
     const placeContext = nearbyPlaces.length
         ? formatPlacesContext(nearbyPlaces)
         : 'No verified nearby destination data was available.';
-    const result = await generateGeminiJsonWithSearch({
+    const result = await generateGeminiJsonPreferSearch({
         systemPrompt:
             `You are a careful Thai cultural guide. ${responseLanguageInstruction(languageCode)} ` +
             'Use Google Search results to verify what the photo shows, especially when the verified destination ' +
@@ -676,7 +676,7 @@ async function explainFoodCandidate(
     const names = candidates.map((candidate) =>
         `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
     ).join(', ');
-    return generateGeminiJsonWithSearch({
+    return generateGeminiJsonPreferSearch({
         systemPrompt:
             `You are a careful Thai food and culture guide. ${responseLanguageInstruction(languageCode)} ` +
             'Use Google Search results to verify the dish name, its region, typical ingredients, and cultural context ' +
@@ -701,7 +701,7 @@ async function verifyFoodWithVision(candidates, languageCode, imageBuffer, mimeT
     const names = candidates.map((candidate) =>
         `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
     ).join(', ');
-    return generateGeminiJsonWithSearch({
+    return generateGeminiJsonPreferSearch({
         systemPrompt:
             `Independently identify the visible Thai dish. ${responseLanguageInstruction(languageCode)} ` +
             'Use Google Search results to verify the dish identity, its region, and typical ingredients before answering. ' +
@@ -797,7 +797,7 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
         // หาก T-Food ไม่มีผลลัพธ์ ให้ vision model วิเคราะห์แทนและลดความแน่นอนตามผลจริง
         console.warn('[image-analysis] T-Food flow failed:', primaryError.message);
         provider = 'gemini_fallback';
-        result = await generateGeminiJsonWithSearch({
+        result = await generateGeminiJsonPreferSearch({
             systemPrompt:
                 `Identify Thai food carefully. ${responseLanguageInstruction(languageCode)} ` +
                 'Use Google Search results to verify the dish name, region, typical ingredients, and cultural context ' +
