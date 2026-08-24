@@ -666,8 +666,9 @@ const mergeFoodCandidates = (visionResult, candidates) => {
     return merged.slice(0, 3);
 };
 
-// ขอคำอธิบายอาหารผู้สมัครจาก Gemini ตามภาพและภาษาที่เลือก
-async function explainFoodCandidate(
+// ให้ Gemini ดูภาพและระบุอาหารเองเป็นตัวหลัก โดยใช้ผลจำแนกของ T-Food เป็นเพียง hint
+// พร้อมบังคับตรวจความสอดคล้องของประเภทจาน เช่น ห้ามตอบน้ำพริก/จิ้มสำหรับภาพก๋วยเตี๋ยวน้ำ
+async function identifyFoodFromImage(
     candidates,
     languageCode,
     imageBuffer,
@@ -679,40 +680,20 @@ async function explainFoodCandidate(
     return generateGeminiJsonPreferSearch({
         systemPrompt:
             `You are a careful Thai food and culture guide. ${responseLanguageInstruction(languageCode)} ` +
-            'Use Google Search results to verify the dish name, its region, typical ingredients, and cultural context ' +
-            'so the explanation is accurate rather than from memory alone. ' +
-            'Keep thaiName in Thai and englishName in English. ' +
-            'Check that the visible dish is consistent with the classifier candidate before explaining it. ' +
-            'Describe common ingredients only. In dietaryCaution, mention only potential allergens supported by visible ' +
-            'ingredients or the typical recipe, explicitly say recipes vary by vendor, and never guarantee allergens, ' +
-            'halal status, or the exact recipe from appearance alone. Never claim rice noodles contain gluten; mention ' +
-            'possible gluten only when a sauce or another wheat-based ingredient may contain it.',
-        userPrompt:
-            `T-Food returned these possible dishes: ${names}. Explain the top candidate for an international visitor, ` +
-            'while reflecting uncertainty when its score is below 0.8.',
-        schema: FOOD_SCHEMA,
-        imageBuffer,
-        mimeType,
-    });
-}
-
-// ให้ Gemini ยืนยันหรือจัดอันดับรายชื่ออาหารที่ผู้ให้บริการเสนอ
-async function verifyFoodWithVision(candidates, languageCode, imageBuffer, mimeType) {
-    const names = candidates.map((candidate) =>
-        `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
-    ).join(', ');
-    return generateGeminiJsonPreferSearch({
-        systemPrompt:
-            `Independently identify the visible Thai dish. ${responseLanguageInstruction(languageCode)} ` +
-            'Use Google Search results to verify the dish identity, its region, and typical ingredients before answering. ' +
-            'Treat classifier candidates as weak hints, not facts. Keep thaiName in Thai and englishName in English. ' +
+            'First determine the dish CATEGORY from the image itself (for example: noodle soup, rice dish, curry, ' +
+            'dip or paste, salad, stir-fry, soup, grilled, dessert). ' +
+            'Then verify the dish name, its region, typical ingredients, and cultural context with Google Search results. ' +
+            'Treat classifier hints as weak hints, not facts. REJECT any hint whose category does not match what is ' +
+            'visible (for example, never answer a dip or paste when the photo clearly shows a noodle or rice soup). ' +
+            'Identify from the image even when no hint matches. Keep thaiName in Thai and englishName in English. ' +
             'If the dish cannot be identified confidently, keep cultural and ingredient fields brief and do not invent history. ' +
             'In dietaryCaution, mention only potential allergens supported by what is visible or a typical recipe, ' +
             'state that recipes vary by vendor, and never guarantee exact ingredients, allergens, or halal status. ' +
             'Never claim rice noodles contain gluten; mention possible gluten only for sauces or wheat-based ingredients.',
-        userPrompt:
-            `Inspect the image yourself and identify the dish. Weak T-Food suggestions: ${names}. ` +
-            'Return your own confidence based on the image.',
+        userPrompt: names
+            ? `Inspect the image yourself, pick the dish category you can see, and identify the dish. ` +
+              `Weak T-Food hints (may be wrong): ${names}. Return your own confidence based on the image.`
+            : 'Inspect the image and identify the Thai dish. Return your own confidence based on the image.',
         schema: FOOD_SCHEMA,
         imageBuffer,
         mimeType,
@@ -736,82 +717,49 @@ const uncertainFoodResult = ({ copy, candidates, confidence, provider, languageC
     };
 };
 
-// วิเคราะห์อาหารจากหลายผู้ให้บริการและคืนผลที่มั่นใจที่สุด
+// วิเคราะห์อาหาร: ให้ vision model ระบุจากภาพเป็นตัวหลัก แล้วใช้ T-Food เป็น hint รอง
+// เพราะ classifier ของ T-Food มีชุด label จำกัด มักเดาผิดเป็นจานใกล้เคียงเมื่อไม่มีเมนูนั้น
 async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
     const copy = imageCopyFor(languageCode);
+    let provider = 'gemini_vision';
+
+    // 1) ขอ hint จาก T-Food ก่อน แต่ล้มเหลวได้ไม่กระทบผลลัพธ์
     let candidates = [];
-    let result;
-    let provider = 'aiforthai+gemini';
     try {
         candidates = await classifyThaiFood(imageBuffer);
-        const tFoodConfidence = candidates[0].score;
-        if (tFoodConfidence >= FOOD_VISION_VERIFY_THRESHOLD) {
-            result = await explainFoodCandidate(
-                candidates,
-                languageCode,
-                imageBuffer,
-                mimeType,
-            );
-            const visionName = String(result.thaiName || '').trim().toLowerCase();
-            const tFoodName = candidates[0].name.trim().toLowerCase();
-            if (visionName === tFoodName) {
-                result.confidence = tFoodConfidence;
-                result.thaiName = candidates[0].name;
-            } else {
-                // แม้ T-Food คะแนนสูง แต่ถ้า vision เห็นต่าง ให้ใช้ผลที่เห็นภาพจริง
-                // และงดเรื่องราวหาก vision เองยังไม่มั่นใจ
-                provider = 'aiforthai+gemini_verification';
-                candidates = mergeFoodCandidates(result, candidates);
-                if (clampConfidence(result.confidence) < FOOD_VISION_VERIFY_THRESHOLD) {
-                    return uncertainFoodResult({
-                        copy,
-                        candidates,
-                        confidence: result.confidence,
-                        provider,
-                        languageCode,
-                    });
-                }
-            }
-        } else {
-            // คะแนนต่ำต้องให้ vision model เห็นภาพและตัดสินใหม่เอง
-            provider = 'aiforthai+gemini_verification';
-            result = await verifyFoodWithVision(
-                candidates,
-                languageCode,
-                imageBuffer,
-                mimeType,
-            );
-            candidates = mergeFoodCandidates(result, candidates);
+    } catch (error) {
+        console.warn('[image-analysis] T-Food unavailable:', error.message);
+    }
+    const tFoodTop = candidates[0] || null;
 
-            if (clampConfidence(result.confidence) < FOOD_VISION_VERIFY_THRESHOLD) {
-                return uncertainFoodResult({
-                    copy,
-                    candidates,
-                    confidence: result.confidence,
-                    provider,
-                    languageCode,
-                });
-            }
-        }
-    } catch (primaryError) {
-        // หาก T-Food ไม่มีผลลัพธ์ ให้ vision model วิเคราะห์แทนและลดความแน่นอนตามผลจริง
-        console.warn('[image-analysis] T-Food flow failed:', primaryError.message);
-        provider = 'gemini_fallback';
-        result = await generateGeminiJsonPreferSearch({
-            systemPrompt:
-                `Identify Thai food carefully. ${responseLanguageInstruction(languageCode)} ` +
-                'Use Google Search results to verify the dish name, region, typical ingredients, and cultural context ' +
-                'so the explanation is accurate rather than from memory alone. ' +
-                'Keep thaiName in Thai and englishName in English. ' +
-                'Mention only potential allergens supported by what is visible or a typical recipe, explicitly state ' +
-                'that recipes vary by vendor, and never guarantee allergens, halal status, or exact ingredients from appearance alone. ' +
-                'Never claim rice noodles contain gluten; mention possible gluten only for sauces or wheat-based ingredients.',
-            userPrompt: 'Identify this dish and explain its cultural context, typical ingredients, and how it is served.',
-            schema: FOOD_SCHEMA,
-            imageBuffer,
-            mimeType,
+    // 2) ให้ Gemini ดูภาพและสรุปเอง (grounded search) โดยไม่ยอมรับ hint ที่ขัดกับภาพ
+    const result = await identifyFoodFromImage(
+        candidates,
+        languageCode,
+        imageBuffer,
+        mimeType,
+    );
+
+    // 3) ถ้า Gemini เห็นพ้องกับ T-Food ให้เชื่อมั่นขึ้นตามคะแนน classifier เสริม
+    const visionName = String(result.thaiName || '').trim().toLowerCase();
+    if (tFoodTop && visionName === tFoodTop.name.trim().toLowerCase()) {
+        result.confidence = Math.max(
+            clampConfidence(result.confidence),
+            tFoodTop.score,
+        );
+        provider = 'gemini_vision+tfood_agree';
+    }
+
+    candidates = mergeFoodCandidates(result, candidates);
+
+    if (clampConfidence(result.confidence) < FOOD_VISION_VERIFY_THRESHOLD) {
+        return uncertainFoodResult({
+            copy,
+            candidates,
+            confidence: result.confidence,
+            provider,
+            languageCode,
         });
-        candidates = [{ name: result.thaiName, score: clampConfidence(result.confidence) }];
     }
 
     // เมื่อยืนยันชื่อได้แล้ว ไม่แสดงตัวเลือกอ่อนมากที่มีคะแนนต่ำกว่า 50% ให้ผู้ใช้สับสน
