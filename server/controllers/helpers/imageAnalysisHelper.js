@@ -288,6 +288,81 @@ async function generateGeminiJson({
     );
 }
 
+// Gemini รุ่น 1.5 ใช้ tool ชื่อ google_search_retrieval ส่วน 2.0 ขึ้นไปใช้ google_search
+const googleSearchTool = () =>
+    /gemini-1\.[05]/.test(config.gemini.model)
+        ? { google_search_retrieval: {} }
+        : { google_search: {} };
+
+// ขอผลวิเคราะห์ JSON จาก Gemini พร้อม Google Search grounding
+// grounding ใช้ร่วมกับ responseMimeType JSON ไม่ได้ จึงฝังรูปแบบ JSON ไว้ใน prompt แทน
+async function generateGeminiJsonWithSearch({
+    systemPrompt,
+    userPrompt,
+    schema,
+    imageBuffer = null,
+    mimeType = 'image/jpeg',
+}) {
+    if (!config.gemini.apiKey) {
+        throw new ImageAnalysisError(
+            'GEMINI_API_KEY is missing',
+            'Image explanation is not configured yet.',
+            503,
+        );
+    }
+
+    const parts = [{ text: userPrompt }];
+    if (imageBuffer) {
+        parts.push({
+            inlineData: {
+                mimeType,
+                data: imageBuffer.toString('base64'),
+            },
+        });
+    }
+
+    const body = {
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts }],
+        generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 2048,
+        },
+        tools: [googleSearchTool()],
+    };
+
+    const url = `${config.gemini.apiBaseUrl}/models/${config.gemini.model}:generateContent`;
+    const response = await requestWithTimeout(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': config.gemini.apiKey,
+        },
+        body: JSON.stringify(body),
+    }, 'AI Guide search');
+    const payload = await response.json();
+    const text = payload.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || '')
+        .join('');
+    if (!text) throw new Error('Gemini returned no content');
+    const parsed = parseGeminiJson(text);
+    if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Gemini search returned no JSON object');
+    }
+    return parsed;
+}
+
+// ใช้ Google Search grounding ก่อนเพื่อความแม่นยำ ถ้า grounding ใช้ไม่ได้
+// (โมเดล/พื้นที่บริการไม่รองรับ หรือ JSON เสียหาย) ค่อยตอบจากความรู้ของโมเดลอย่างเดียว
+async function generateGeminiJsonPreferSearch(options) {
+    try {
+        return await generateGeminiJsonWithSearch(options);
+    } catch (error) {
+        console.warn(`[image-analysis] grounded generation failed: ${error.message}`);
+        return generateGeminiJson(options);
+    }
+}
+
 const buildAnalysis = ({
     mode,
     title,
@@ -489,10 +564,14 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, langua
     const placeContext = nearbyPlaces.length
         ? formatPlacesContext(nearbyPlaces)
         : 'No verified nearby destination data was available.';
-    const result = await generateGeminiJson({
+    const result = await generateGeminiJsonWithSearch({
         systemPrompt:
             `You are a careful Thai cultural guide. ${responseLanguageInstruction(languageCode)} ` +
-            'Do not claim an exact landmark unless visual evidence and the nearby destination context support it. ' +
+            'Use Google Search results to verify what the photo shows, especially when the verified destination ' +
+            'context is insufficient or does not match the visual evidence. ' +
+            'Do not claim an exact landmark unless visual evidence, search results, or the nearby destination ' +
+            'context support it. If the landmark is not in the verified context, still identify it from visual ' +
+            'and search evidence, and say in identificationNote that it is not yet in the verified database. ' +
             'When uncertain, describe what is visible and say what additional photo would help. ' +
             'If matchedDestinationName is present, copy that destination name exactly from the verified context.',
         userPrompt:
@@ -597,9 +676,11 @@ async function explainFoodCandidate(
     const names = candidates.map((candidate) =>
         `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
     ).join(', ');
-    return generateGeminiJson({
+    return generateGeminiJsonWithSearch({
         systemPrompt:
             `You are a careful Thai food and culture guide. ${responseLanguageInstruction(languageCode)} ` +
+            'Use Google Search results to verify the dish name, its region, typical ingredients, and cultural context ' +
+            'so the explanation is accurate rather than from memory alone. ' +
             'Keep thaiName in Thai and englishName in English. ' +
             'Check that the visible dish is consistent with the classifier candidate before explaining it. ' +
             'Describe common ingredients only. In dietaryCaution, mention only potential allergens supported by visible ' +
@@ -620,9 +701,10 @@ async function verifyFoodWithVision(candidates, languageCode, imageBuffer, mimeT
     const names = candidates.map((candidate) =>
         `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
     ).join(', ');
-    return generateGeminiJson({
+    return generateGeminiJsonWithSearch({
         systemPrompt:
             `Independently identify the visible Thai dish. ${responseLanguageInstruction(languageCode)} ` +
+            'Use Google Search results to verify the dish identity, its region, and typical ingredients before answering. ' +
             'Treat classifier candidates as weak hints, not facts. Keep thaiName in Thai and englishName in English. ' +
             'If the dish cannot be identified confidently, keep cultural and ingredient fields brief and do not invent history. ' +
             'In dietaryCaution, mention only potential allergens supported by what is visible or a typical recipe, ' +
@@ -715,9 +797,11 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
         // หาก T-Food ไม่มีผลลัพธ์ ให้ vision model วิเคราะห์แทนและลดความแน่นอนตามผลจริง
         console.warn('[image-analysis] T-Food flow failed:', primaryError.message);
         provider = 'gemini_fallback';
-        result = await generateGeminiJson({
+        result = await generateGeminiJsonWithSearch({
             systemPrompt:
                 `Identify Thai food carefully. ${responseLanguageInstruction(languageCode)} ` +
+                'Use Google Search results to verify the dish name, region, typical ingredients, and cultural context ' +
+                'so the explanation is accurate rather than from memory alone. ' +
                 'Keep thaiName in Thai and englishName in English. ' +
                 'Mention only potential allergens supported by what is visible or a typical recipe, explicitly state ' +
                 'that recipes vary by vendor, and never guarantee allergens, halal status, or exact ingredients from appearance alone. ' +

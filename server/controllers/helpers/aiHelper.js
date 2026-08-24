@@ -34,6 +34,30 @@ const GEMINI_HEADERS = {
 // หน่วงเวลาแบบ async สำหรับการ retry request ไปยัง Gemini
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Gemini รุ่น 1.5 ใช้ tool ชื่อ google_search_retrieval ส่วน 2.0 ขึ้นไปใช้ google_search
+const googleSearchTool = () =>
+    /gemini-1\.[05]/.test(GEMINI_MODEL)
+        ? { google_search_retrieval: {} }
+        : { google_search: {} };
+
+// รวมแหล่งอ้างอิงเว็บจาก grounding metadata เป็นข้อความธรรมดาท้ายคำตอบ
+const formatWebCitations = (chunks, userMessage) => {
+    const seen = new Set();
+    const citations = [];
+    for (const chunk of chunks) {
+        const uri = chunk?.web?.uri;
+        if (!uri || seen.has(uri)) continue;
+        seen.add(uri);
+        citations.push(`${chunk.web.title || uri} (${uri})`);
+        if (citations.length >= 3) break;
+    }
+    if (!citations.length) return '';
+    const label = /[\u0E00-\u0E7F]/.test(userMessage)
+        ? 'อ้างอิงจากเว็บ:'
+        : 'Web sources:';
+    return `${label}\n${citations.join('\n')}`;
+};
+
 // คัดเฉพาะรูปแบบการเดินทางที่ระบบรองรับจากข้อมูลนำเข้าของผู้ใช้
 const getAllowedTransportModes = (modes) => {
     const allowed = Array.isArray(modes)
@@ -218,7 +242,13 @@ const PLAN_RESPONSE_SCHEMA = {
 };
 
 // คืน async generator ที่ yield text delta เพื่อส่งต่อเป็น SSE โดยไม่รอคำตอบทั้งหมด
-async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode = false) {
+// เปิด googleSearch เพื่อให้โมเดลค้นเว็บเมื่อข้อมูลใน context ไม่พอ พร้อม onGrounding รับแหล่งอ้างอิง
+async function* streamGemini(
+    systemPrompt,
+    messages,
+    maxTokens = 4096,
+    { jsonMode = false, googleSearch = false, onGrounding = null } = {},
+) {
 
     const contents = messages.map(m => ({
         role: m.role === 'assistant' ? 'model' : m.role,
@@ -236,6 +266,10 @@ async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode 
     if (jsonMode) {
         body.generationConfig.responseMimeType = 'application/json';
         body.generationConfig.temperature = 0.35;
+    }
+
+    if (googleSearch) {
+        body.tools = [googleSearchTool()];
     }
 
     if (systemPrompt) {
@@ -289,9 +323,14 @@ async function* streamGemini(systemPrompt, messages, maxTokens = 4096, jsonMode 
 
             try {
                 const event = JSON.parse(jsonStr);
-                const text = event.candidates?.[0]?.content?.parts?.[0]?.text;
+                const candidate = event.candidates?.[0];
+                const text = candidate?.content?.parts?.[0]?.text;
                 if (text) {
                     yield text;
+                }
+                if (onGrounding) {
+                    const chunks = candidate?.groundingMetadata?.groundingChunks;
+                    if (Array.isArray(chunks) && chunks.length > 0) onGrounding(chunks);
                 }
             } catch {
                 // ข้ามเฉพาะ SSE event ที่ถูกตัดกลางทาง แล้วอ่าน event ถัดไปต่อ
@@ -650,7 +689,9 @@ async function ragChat(
     ตอบเป็นภาษาเดียวกับข้อความล่าสุดของผู้ใช้ และใช้ภาษาอังกฤษเป็นค่าเริ่มต้นเมื่อระบุภาษาไม่ได้
     ตอบคำถามเกี่ยวกับการท่องเที่ยว สถานที่ ป้ายภาษาไทย อาหารไทย และผลการสแกนก่อนหน้า
     ใช้ chat history เมื่อตอบคำถามต่อเนื่องเกี่ยวกับรูปที่เพิ่งสแกน แต่ต้องคงระดับความไม่แน่นอนจากผลเดิม
-    สำหรับข้อมูลสถานที่ ให้ยึด context จากฐานข้อมูลเป็นหลัก ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูลยืนยัน
+    สำหรับข้อมูลสถานที่ ให้ยึด context จากฐานข้อมูลเป็นหลัก
+    ถ้าคำถามไม่มีข้อมูลในฐานข้อมูล หรือข้อมูลไม่ครอบคลุม ให้ค้นหาข้อมูลเพิ่มจาก Google Search แล้วสรุปเป็นคำตอบที่เชื่อถือได้
+    เมื่อใช้ข้อมูลจากเว็บ ให้แจ้งผู้ใช้ว่าข้อมูลส่วนนั้นมาจากการค้นเว็บ ไม่ใช่ข้อมูลยืนยันในระบบ
     ห้ามยืนยันสารก่อภูมิแพ้ ส่วนผสมทั้งหมด หรือสถานะฮาลาลจากภาพอาหารเพียงอย่างเดียว
     หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ ให้แจ้งข้อมูลนั้นโดยตรงทันที
     ห้ามใช้ markdown formatting เช่น **, *, #, -, หรือสัญลักษณ์อื่นๆ ในคำตอบ ตอบเป็นข้อความธรรมดาเท่านั้น
@@ -678,9 +719,25 @@ async function ragChat(
             { role: 'user', content: userMessage },
         ];
 
-        for await (const token of streamGemini(systemPrompt, messages, 1024)) {
+        // เก็บแหล่งอ้างอิงเว็บจาก grounding metadata เพื่อแนบท้ายคำตอบ
+        const groundingChunks = [];
+        const collectGrounding = (chunks) => groundingChunks.push(...chunks);
+
+        for await (const token of streamGemini(systemPrompt, messages, 1024, {
+            googleSearch: isTravelQuery,
+            onGrounding: isTravelQuery ? collectGrounding : null,
+        })) {
             fullAnswer += token;
             res.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
+        }
+
+        // ส่ง citation เป็น token สุดท้ายเพื่อให้ผู้ใช้เห็นในแชทและบันทึกลงประวัติด้วย
+        const webCitations = formatWebCitations(groundingChunks, userMessage);
+        if (webCitations) {
+            fullAnswer += `\n\n${webCitations}`;
+            res.write(
+                `data: ${JSON.stringify({ type: 'token', text: `\n\n${webCitations}` })}\n\n`,
+            );
         }
 
         let userMessageId;
