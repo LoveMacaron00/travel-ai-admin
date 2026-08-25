@@ -110,4 +110,22 @@ const getTripById = async (req, res) => {
     }
 };
 
-module.exports = { createTrip, getUserTrips, getTripById };
+// DELETE /api/trips/:id — ลบแผนเที่ยวตาม ID
+// ลบแผนเที่ยวเมื่อเป็นเจ้าของรายการนั้น
+const deleteTrip = async (req, res) => {
+    try {
+        const { rowCount } = await pool.query(
+            `DELETE FROM trips WHERE id = $1 AND user_id = $2`,
+            [req.params.id, req.user?.id]
+        );
+        if (rowCount === 0) {
+            return res.status(404).json({ message: 'ไม่พบแผนเที่ยวหรือคุณไม่มีสิทธิ์ลบ' });
+        }
+        res.json({ message: 'ลบแผนเที่ยวสำเร็จ' });
+    } catch (err) {
+        console.error('[tripController] deleteTrip:', err.message);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการลบแผนเที่ยว' });
+    }
+};
+
+module.exports = { createTrip, getUserTrips, getTripById, deleteTrip };
