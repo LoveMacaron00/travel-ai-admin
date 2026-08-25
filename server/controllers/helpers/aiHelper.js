@@ -351,11 +351,16 @@ async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
             temperature: 0.25,
             responseMimeType: 'application/json',
             responseJsonSchema: PLAN_RESPONSE_SCHEMA,
-            thinkingConfig: {
-                thinkingBudget: GEMINI_PLAN_THINKING_BUDGET,
-            },
         },
     };
+
+    // โมเดลใหม่บางรุ่นปฏิเสธ thinkingBudget เป็น 0 (400 INVALID_ARGUMENT)
+    // จึงส่ง thinkingConfig เฉพาะเมื่อตั้งค่า budget มากกว่า 0 เท่านั้น
+    if (GEMINI_PLAN_THINKING_BUDGET > 0) {
+        body.generationConfig.thinkingConfig = {
+            thinkingBudget: GEMINI_PLAN_THINKING_BUDGET,
+        };
+    }
 
     for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
         const response = await fetch(url, {
