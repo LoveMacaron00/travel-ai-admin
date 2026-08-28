@@ -51,7 +51,7 @@ app.use('/api/analytics', requireAdminAuth, analyticsRoutes);
 app.use('/api/upload', requireAdminAuth, uploadRoutes);
 app.use('/api/v2', requireAdminAuth, tatRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/feedback', requireAdminAuth, feedbackRoutes);
+app.use('/api/feedback', feedbackRoutes);
 app.use('/api/trips', tripRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/admin', adminEmbedRoutes);

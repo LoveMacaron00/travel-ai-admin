@@ -8,6 +8,7 @@ const { recordDestinationView } = require('../controllers/destinationViewControl
 const { requireUserAuth } = require('../middleware/userAuth');
 const travelDiaryController = require('../controllers/travelDiaryController');
 const preferenceController = require('../controllers/preferenceController');
+const feedbackController = require('../controllers/feedbackController');
 
 router.get('/media', proxyImage);
 // ตัวเลือกความสนใจและรูปแบบการเดินทางสำหรับหน้าสร้างแผนเที่ยว (admin จัดการผ่าน /api/preferences)
@@ -19,5 +20,7 @@ router.get('/destinations/:id', mobileController.getDestinationDetail);
 router.get('/diary', requireUserAuth, travelDiaryController.getEntries);
 router.post('/diary', requireUserAuth, travelDiaryController.upsertEntry);
 router.delete('/diary/:externalId', requireUserAuth, travelDiaryController.deleteEntry);
+router.post('/feedback', requireUserAuth, feedbackController.createFeedback);
+router.get('/feedback/my', requireUserAuth, feedbackController.getUserFeedback);
 
 module.exports = router;

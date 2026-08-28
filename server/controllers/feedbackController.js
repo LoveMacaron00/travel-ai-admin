@@ -2,6 +2,48 @@
 
 const pool = require('../config/db');
 
+// สร้าง feedback ใหม่จากผู้ใช้
+const createFeedback = async (req, res) => {
+    try {
+        const { message } = req.body;
+        const userId = req.user?.id;
+
+        if (!message || message.trim() === '') {
+            return res.status(400).json({ message: 'กรุณากรอกข้อความ feedback' });
+        }
+
+        const { rows } = await pool.query(
+            `INSERT INTO feedback (user_id, message, status, created_at)
+             VALUES ($1, $2, 'pending', NOW())
+             RETURNING id, user_id, message, status, created_at`,
+            [userId, message.trim()]
+        );
+
+        res.status(201).json(rows[0]);
+    } catch (err) {
+        console.error('เกิดข้อผิดพลาดในการสร้าง feedback:', err);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดภายใน feedbackController - createFeedback' });
+    }
+};
+
+// ดึง feedback ของ user คนนั้นๆ สำหรับ mobile app
+const getUserFeedback = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const { rows } = await pool.query(
+            `SELECT id, message, status, admin_reply, created_at
+             FROM feedback
+             WHERE user_id = $1
+             ORDER BY created_at DESC`,
+            [userId]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error('เกิดข้อผิดพลาดในการดึงข้อมูล feedback ของ user:', err);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดภายใน feedbackController - getUserFeedback' });
+    }
+};
+
 // ส่งรายการ feedback ทั้งหมดสำหรับหน้าจัดการของ admin
 const getAllFeedback = async (req, res) => {
     try {
@@ -45,6 +87,8 @@ const updateFeedback = async (req, res) => {
 };
 
 module.exports = {
+    createFeedback,
+    getUserFeedback,
     getAllFeedback,
     updateFeedback
 };
