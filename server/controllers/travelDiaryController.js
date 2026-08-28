@@ -199,7 +199,16 @@ const createTravelDiaryController = (database) => {
         }
     };
 
-    return { getEntries, upsertEntry, deleteEntry };
+    const uploadImage = (req, res) => {
+        if (!req.file) {
+            return res.status(400).json({ message: 'ไม่พบไฟล์ที่อัปโหลด' });
+        }
+        const url = `/uploads/${req.file.filename}`;
+        // รองรับทั้ง {url} และ {data:{url}} เพื่อให้ client รุ่นเก่า/ใหม่ใช้งานได้
+        return res.json({ url, data: { url } });
+    };
+
+    return { getEntries, upsertEntry, deleteEntry, uploadImage };
 };
 
 module.exports = {
