@@ -144,19 +144,94 @@ const stopUsesFerry = (stop) => {
     );
 };
 
-// ไม่สามารถระบุเกาะจากพิกัดเพียงอย่างเดียวได้ จึงใช้ ferry เป็นสัญญาณของ
-// การข้ามฝั่ง/เกาะ และส่งแผนกลับไปแก้เมื่อมีมากกว่าหนึ่งครั้งต่อวัน
-const findExcessFerryCrossings = (planData, mustVisitPlaces) => {
+const ISLAND_KEYWORDS = ['เกาะ', 'หมู่เกาะ', 'island', 'islands', 'koh', 'ko.', 'เกาะช้าง', 'เกาะกูด', 'เกาะหมาก', 'เกาะพะงัน', 'เกาะเต่า', 'เกาะพีพี', 'เกาะลันตา', 'เกาะยาว', 'เกาะสมุย'];
+const ISLAND_PROVINCE_KEYWORDS = ['ภูเก็ต', 'phuket'];
+
+const normalizeIslandName = (value) => String(value || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase('th')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+
+const isIslandPlace = (place) => {
+    if (!place || typeof place !== 'object') return false;
+    const haystack = [
+        place.name || '',
+        place.category || '',
+        Array.isArray(place.tags) ? place.tags.join(' ') : String(place.tags || ''),
+        place.description || '',
+        place.address || '',
+        place.district || '',
+        place.sub_district || '',
+        place.province || '',
+    ].join(' ').toLowerCase();
+    if (ISLAND_PROVINCE_KEYWORDS.some((kw) => haystack.includes(kw.toLowerCase()))) return true;
+    return ISLAND_KEYWORDS.some((kw) => haystack.includes(kw.toLowerCase()));
+};
+
+const getIslandStatusForStop = (stop, placeById, placeByName) => {
+    const id = String(stop?.destinationId || '').trim();
+    let place = id ? placeById.get(id) : null;
+    if (!place) {
+        const nameKey = normalizeIslandName(stop?.place);
+        if (nameKey) place = placeByName.get(nameKey);
+    }
+    if (!place) return null;
+    return isIslandPlace(place);
+};
+
+// นับการข้ามเกาะ↔ฝั่งทุกการเดินทาง ไม่จำกัดแค่ ferry
+// ถ้ารู้ตำแหน่งเกาะ/ฝั่งจากฐานข้อมูลจะใช้ภูมิศาสตร์ตัดสิน ถ้าไม่รู้จะ fallback เป็น ferry เป็นสัญญาณข้ามทะเล
+const findExcessIslandCrossings = (planData, mustVisitPlaces, allPlaces) => {
     const mustVisitIds = new Set(
-        mustVisitPlaces
+        (mustVisitPlaces || [])
             .map((place) => String(place?.id || '').trim())
             .filter(Boolean),
     );
+    const placeById = new Map();
+    const placeByName = new Map();
+    for (const place of allPlaces || []) {
+        if (!place || typeof place !== 'object') continue;
+        const id = String(place.id ?? '').trim();
+        const nameKey = normalizeIslandName(place.name);
+        if (id) placeById.set(id, place);
+        if (nameKey) placeByName.set(nameKey, place);
+    }
+
     const violations = [];
 
     for (const day of planData?.days || []) {
-        const ferryStops = (day?.stops || []).filter(stopUsesFerry);
-        const excessStops = ferryStops.slice(1).filter(
+        const stops = day?.stops || [];
+        if (stops.length < 2) continue;
+
+        const crossings = [];
+        let prevIsIsland = getIslandStatusForStop(stops[0], placeById, placeByName);
+
+        for (let i = 1; i < stops.length; i++) {
+            const currStop = stops[i];
+            const currIsIsland = getIslandStatusForStop(currStop, placeById, placeByName);
+
+            let isCrossing = false;
+            if (prevIsIsland !== null && currIsIsland !== null) {
+                // รู้ภูมิศาสตร์ทั้งสองจุด → นับเมื่อสลับ เกาะ↔ฝั่ง ไม่สนว่าใช้ car/bus/train/ferry/flight/walking อะไร
+                isCrossing = prevIsIsland !== currIsIsland;
+            } else {
+                // ข้อมูลภูมิศาสตร์ไม่พอ → ferry ถือว่าเป็นการข้ามทะเล (คงพฤติกรรมเดิมเป็น fallback)
+                isCrossing = stopUsesFerry(currStop);
+            }
+
+            if (isCrossing) {
+                crossings.push(currStop);
+            }
+
+            if (currIsIsland !== null) {
+                prevIsIsland = currIsIsland;
+            } else if (stopUsesFerry(currStop) && prevIsIsland !== null) {
+                // ถ้าข้ามด้วยเรือแต่ไม่รู้ว่าปลายทางเป็นเกาะ ให้สลับฝั่งโดยประมาณเพื่อจับการไป-กลับ
+                prevIsIsland = !prevIsIsland;
+            }
+        }
+
+        const excessStops = crossings.slice(1).filter(
             (stop) => !mustVisitIds.has(String(stop?.destinationId || '').trim()),
         );
         if (excessStops.length > 0) {
@@ -167,11 +242,16 @@ const findExcessFerryCrossings = (planData, mustVisitPlaces) => {
     return violations;
 };
 
+// alias เดิมเพื่อให้โค้ดอื่นที่เรียกชื่อเก่าไม่พัง และใช้ logic ใหม่ที่ครอบคลุมทุกพาหนะ
+const findExcessFerryCrossings = findExcessIslandCrossings;
+
 const formatFerryViolations = (violations) => violations
     .map((violation) =>
         `วันที่ ${violation.day || '?'}: ${violation.stops.map((stop) => stop.place).join(', ')}`,
     )
     .join('; ');
+
+const formatIslandViolations = formatFerryViolations;
 
 const PLAN_RESPONSE_SCHEMA = {
     type: 'object',
@@ -461,8 +541,8 @@ async function generateTripPlan(tripId, tripInput, res) {
     - ห้ามเพิ่มชื่อสถานที่จากความรู้ของโมเดล ห้ามเดาสถานที่ และห้ามสร้าง URL รูปภาพเอง
     - ต้องคัดลอก destinationId, ชื่อ, พิกัด และ imageUrl จากข้อมูลฐานข้อมูลตรงตัว
     - ถ้าข้อมูลมีน้อย ให้สร้างแผนจากรายการที่มีเท่านั้น ห้ามเติมสถานที่อื่นให้ครบจำนวนวัน
-    - จัดกลุ่มสถานที่บนเกาะและบนฝั่งเป็นช่วงเดียวกัน ห้ามวางลำดับ เกาะ → ฝั่ง → เกาะ หรือ ฝั่ง → เกาะ → ฝั่ง ในวันเดียวกัน
-    - ในหนึ่งวันให้ใช้ ferry เพื่อข้ามระหว่างเกาะกับฝั่งได้ไม่เกินหนึ่งครั้ง เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
+    - จัดกลุ่มสถานที่บนเกาะและบนฝั่งเป็นช่วงเดียวกัน ห้ามวางลำดับ เกาะ → ฝั่ง → เกาะ หรือ ฝั่ง → เกาะ → ฝั่ง ในวันเดียวกัน ไม่ว่าจะใช้พาหนะชนิดใด
+    - ในหนึ่งวันให้ข้ามระหว่างเกาะกับฝั่งได้ไม่เกินหนึ่งครั้ง ไม่ว่าจะใช้พาหนะชนิดใด (car/bus/train/ferry/flight/walking) เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
 
     ข้อมูลสถานที่จากฐานข้อมูล:
     ${placesContext}`;
@@ -570,17 +650,18 @@ async function generateTripPlan(tripId, tripInput, res) {
                 });
                 normalizePlanTransportModes(planData, allowedTransportModes);
                 normalizePlanPlaces(planData, places);
-                const ferryViolations = findExcessFerryCrossings(
+                const ferryViolations = findExcessIslandCrossings(
                     planData,
                     mustVisitPlaces,
+                    places,
                 );
                 if (ferryViolations.length > 0) {
                     if (generationAttempt === 0) {
-                        routeCorrection = `\n\nการตรวจแผนพบการข้ามเกาะ/ฝั่งซ้ำ: ${formatFerryViolations(ferryViolations)}\nกรุณาสร้างแผนใหม่โดยรวมสถานที่ฝั่งเดียวกันไว้ต่อเนื่อง และให้ข้ามด้วย ferry ไม่เกินหนึ่งครั้งต่อวัน ห้ามตัดสถานที่ที่ผู้ใช้บังคับเลือก`;
+                        routeCorrection = `\n\nการตรวจแผนพบการข้ามเกาะ/ฝั่งซ้ำ: ${formatIslandViolations(ferryViolations)}\nกรุณาสร้างแผนใหม่โดยรวมสถานที่ฝั่งเดียวกันไว้ต่อเนื่อง และให้ข้ามระหว่างเกาะกับฝั่งไม่เกินหนึ่งครั้งต่อวันไม่ว่าจะใช้พาหนะชนิดใด (car/bus/train/ferry/flight/walking) ห้ามตัดสถานที่ที่ผู้ใช้บังคับเลือก`;
                         continue;
                     }
                     const routeError = new Error(
-                        `Plan still has excessive ferry crossings: ${formatFerryViolations(ferryViolations)}`,
+                        `Plan still has excessive island crossings: ${formatIslandViolations(ferryViolations)}`,
                     );
                     routeError.code = 'EXCESSIVE_FERRY_CROSSINGS';
                     throw routeError;
