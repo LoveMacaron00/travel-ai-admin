@@ -97,6 +97,7 @@ const buildMustVisitStop = (place, day, mode) => {
     return {
         destinationId: String(place?.id ?? '').trim(),
         place: name,
+        province: String(place?.province || '').trim(),
         activity: `แวะชม ${name}`,
         latitude: latitude ?? 0,
         longitude: longitude ?? 0,
@@ -206,6 +207,7 @@ const normalizePlanPlaces = (planData, places = []) => {
 
             stop.destinationId = String(matched.id);
             stop.imageUrl = String(matched.image_url || '').trim();
+            stop.province = String(matched.province || stop.province || '').trim();
 
             const latitude = finiteNumber(matched.latitude);
             const longitude = finiteNumber(matched.longitude);
