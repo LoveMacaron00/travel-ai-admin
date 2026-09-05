@@ -258,6 +258,27 @@ const formatFerryViolations = (violations) => violations
 
 const formatIslandViolations = formatFerryViolations;
 
+// เลือกเฉพาะสถานที่ที่ชื่อปรากฏในคำตอบของ AI จริง เรียงตามลำดับที่ถูกพูดถึง
+// เพื่อให้ card ตรงกับสถานที่ที่ AI กล่าวถึง ไม่ใช่ผล RAG ดิบ
+const pickPlacesMentionedInAnswer = (answer, places) => {
+    const normalize = (value) => String(value || '')
+        .normalize('NFKC')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const answerText = normalize(answer);
+    if (!answerText) return [];
+
+    const mentioned = [];
+    for (const place of places) {
+        const name = normalize(place?.name);
+        if (!name) continue;
+        const index = answerText.indexOf(name);
+        if (index >= 0) mentioned.push({ place, index });
+    }
+    mentioned.sort((a, b) => a.index - b.index);
+    return mentioned.map((item) => item.place);
+};
+
 // จัดกลุ่มใหม่แบบคำนวณใหม่แทนการทิ้ง error — รวมเกาะไว้ด้วยกัน ฝั่งไว้ด้วยกันให้เหลือข้ามไม่เกิน 1 ครั้ง/วัน
 const regroupIslandsToMinimizeCrossings = (planData, allPlaces) => {
     const placeById = new Map();
@@ -824,7 +845,7 @@ async function ragChat(
         // RAG: embed คำถาม → ดึง relevant places
         places = await retrieveRelevantPlaces(userMessage, {
             province: trip?.province,
-            limit: 5,
+            limit: 8,
         });
 
         placesContext = formatPlacesContext(places);
@@ -868,6 +889,9 @@ async function ragChat(
     `${travelGuideRules}
     สำหรับข้อมูลสถานที่ ให้ยึด context จากฐานข้อมูลเป็นหลัก ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูลยืนยัน
     หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ ให้แจ้งข้อมูลนั้นโดยตรงทันที
+    เมื่อแนะนำสถานที่ ให้พูดถึงสถานที่ที่มีใน context หลายแห่งตามความเหมาะสม และเขียนชื่อสถานที่ให้ตรงกับชื่อใน context ทุกครั้ง
+    ตอบคำตอบที่มีเนื้อหาครบถ้วน อย่างน้อย 4-6 ประโยค พร้อมเหตุผล จุดเด่น และข้อมูลประกอบที่มีใน context เช่น ค่าเข้า เวลาเปิด กิจกรรม
+    ห้ามตอบสั้นหรือตัดคำตอบค้างไว้ ให้เขียนจนจบเรื่อง
 
     ข้อมูลสถานที่ที่เกี่ยวข้อง:
     ${placesContext}` :
@@ -897,7 +921,7 @@ async function ragChat(
         // เก็บแหล่งอ้างอิงเว็บจากผล freeWebSearch เพื่อแนบท้ายคำตอบ
         const groundingChunks = toGroundingChunks(webResults);
 
-        for await (const token of streamGemini(systemPrompt, messages, 1024, {
+        for await (const token of streamGemini(systemPrompt, messages, 2048, {
             webContext,
         })) {
             fullAnswer += token;
@@ -912,6 +936,12 @@ async function ragChat(
                 `data: ${JSON.stringify({ type: 'token', text: `\n\n${webCitations}` })}\n\n`,
             );
         }
+
+        // กรองให้เหลือเฉพาะสถานที่ที่ AI พูดถึงจริงในคำตอบ เรียงตามลำดับที่ถูกกล่าวถึง
+        // ถ้าจับคู่ชื่อไม่ได้เลย จะ fallback เป็นผล RAG 2 อันดับแรก
+        const citedPlaces = pickPlacesMentionedInAnswer(fullAnswer, places);
+        const sourcePlaces = citedPlaces.length > 0 ? citedPlaces : places.slice(0, 2);
+        sourceChunkIds = sourcePlaces.map((place) => place.id);
 
         let userMessageId;
         let assistantMessageId;
@@ -986,7 +1016,7 @@ async function ragChat(
             assistantMessageId = rows[0].assistant_message_id;
         }
 
-        const sources = places.map(place => ({
+        const sources = sourcePlaces.map(place => ({
             id: place.id,
             name: place.name,
             province: place.province,
