@@ -11,6 +11,11 @@ const {
 } = require('./ragHelper');
 const { ensureMustVisitStops, normalizePlanPlaces } = require('./planPlaceNormalizer');
 const { config } = require('../../config/env');
+const {
+    freeWebSearch,
+    formatWebSearchContext,
+    toGroundingChunks,
+} = require('./webSearchHelper');
 const GEMINI_API_KEY = config.gemini.apiKey;
 const GEMINI_API_BASE = config.gemini.apiBaseUrl;
 const GEMINI_MODEL = config.gemini.model;
@@ -34,13 +39,8 @@ const GEMINI_HEADERS = {
 // หน่วงเวลาแบบ async สำหรับการ retry request ไปยัง Gemini
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Gemini รุ่น 1.5 ใช้ tool ชื่อ google_search_retrieval ส่วน 2.0 ขึ้นไปใช้ google_search
-const googleSearchTool = () =>
-    /gemini-1\.[05]/.test(GEMINI_MODEL)
-        ? { google_search_retrieval: {} }
-        : { google_search: {} };
-
-// รวมแหล่งอ้างอิงเว็บจาก grounding metadata เป็นข้อความธรรมดาท้ายคำตอบ
+// รวมแหล่งอ้างอิงเว็บจากผล free web search (Tavily/Wikipedia/DuckDuckGo)
+// เป็นข้อความธรรมดาท้ายคำตอบ — รูปแบบเดียวกับ grounding เดิม
 const formatWebCitations = (chunks, userMessage) => {
     const seen = new Set();
     const citations = [];
@@ -378,12 +378,13 @@ const PLAN_RESPONSE_SCHEMA = {
 };
 
 // คืน async generator ที่ yield text delta เพื่อส่งต่อเป็น SSE โดยไม่รอคำตอบทั้งหมด
-// เปิด googleSearch เพื่อให้โมเดลค้นเว็บเมื่อข้อมูลใน context ไม่พอ พร้อม onGrounding รับแหล่งอ้างอิง
+// ค้นเว็บด้วย freeWebSearch (Tavily หลัก) แล้วฝาก webContext มากับ systemPrompt แทน
+// Gemini grounding (tools google_search) — เลิกใช้เพราะต้องเปิด billing
 async function* streamGemini(
     systemPrompt,
     messages,
     maxTokens = 4096,
-    { jsonMode = false, googleSearch = false, onGrounding = null } = {},
+    { jsonMode = false, webContext = '' } = {},
 ) {
 
     const contents = messages.map(m => ({
@@ -404,13 +405,12 @@ async function* streamGemini(
         body.generationConfig.temperature = 0.35;
     }
 
-    if (googleSearch) {
-        body.tools = [googleSearchTool()];
-    }
-
-    if (systemPrompt) {
+    if (systemPrompt || webContext) {
+        const combinedPrompt = webContext
+            ? `${systemPrompt}\n\nข้อมูลเสริมจากเว็บ (ยังไม่ยืนยันในฐานข้อมูล ใช้ประกอบการตอบเท่านั้น):\n${webContext}`
+            : systemPrompt;
         body.systemInstruction = {
-            parts: [{ text: systemPrompt }]
+            parts: [{ text: combinedPrompt }]
         };
     }
 
@@ -463,10 +463,6 @@ async function* streamGemini(
                 const text = candidate?.content?.parts?.[0]?.text;
                 if (text) {
                     yield text;
-                }
-                if (onGrounding) {
-                    const chunks = candidate?.groundingMetadata?.groundingChunks;
-                    if (Array.isArray(chunks) && chunks.length > 0) onGrounding(chunks);
                 }
             } catch {
                 // ข้ามเฉพาะ SSE event ที่ถูกตัดกลางทาง แล้วอ่าน event ถัดไปต่อ
@@ -835,9 +831,23 @@ async function ragChat(
         sourceChunkIds = places.map(p => p.id);
     }
 
-    // เปิด Google Search เฉพาะเมื่อ RAG ไม่ได้ข้อมูลจากฐานข้อมูลเลย
-    // เพราะ grounding มีโควตาแยกของตัวเองและ free tier มักไม่รองรับ
-    const useWebSearch = isTravelQuery && places.length === 0;
+    // ค้นเว็บฟรี (Tavily หลัก + Wikipedia/DuckDuckGo สำรอง) เฉพาะเมื่อ RAG
+    // ไม่ได้ข้อมูลจากฐานข้อมูลเลย — ประหยัดเครดิต Tavily (1 call ต่อ 1 เทิร์น)
+    const useWebSearch = isTravelQuery && places.length === 0 && config.webSearch.enabled;
+    let webResults = [];
+    let webContext = '';
+    if (useWebSearch) {
+        try {
+            webResults = await freeWebSearch(userMessage, {
+                limit: config.webSearch.maxResults,
+            });
+            webContext = formatWebSearchContext(webResults);
+        } catch (error) {
+            console.warn(`[ai] free web search failed: ${error.message}`);
+            webResults = [];
+            webContext = '';
+        }
+    }
 
     const travelGuideRules = `คุณคือ AI Guide สำหรับการท่องเที่ยวและวัฒนธรรมไทย
     ตอบเป็นภาษาเดียวกับข้อความล่าสุดของผู้ใช้ และใช้ภาษาอังกฤษเป็นค่าเริ่มต้นเมื่อระบุภาษาไม่ได้
@@ -846,18 +856,23 @@ async function ragChat(
     ห้ามยืนยันสารก่อภูมิแพ้ ส่วนผสมทั้งหมด หรือสถานะฮาลาลจากภาพอาหารเพียงอย่างเดียว
     ห้ามใช้ markdown formatting เช่น **, *, #, -, หรือสัญลักษณ์อื่นๆ ในคำตอบ ตอบเป็นข้อความธรรมดาเท่านั้น`;
 
-    const systemPrompt = isTravelQuery ?
-    (useWebSearch ?
-    `${travelGuideRules}
-    ไม่พบข้อมูลสถานที่ที่เกี่ยวข้องในฐานข้อมูลของแอป ให้ค้นหาข้อมูลจาก Google Search เพื่อช่วยตอบคำถาม
+    const webAnswerRules = webResults.length > 0
+        ? `ไม่พบข้อมูลสถานที่ที่เกี่ยวข้องในฐานข้อมูลของแอป ให้ใช้ข้อมูลเสริมจากเว็บด้านล่างช่วยตอบคำถาม
     สรุปจากผลค้นหาอย่างระมัดระวัง และระบุให้ผู้ใช้ทราบว่าข้อมูลนี้มาจากเว็บ ไม่ใช่สถานที่ที่ยืนยันในฐานข้อมูลของแอป
-    ถ้าผลค้นหาไม่ชัดเจนหรือขัดแย้งกัน ให้แจ้งข้อจำกัดนั้นแทนการเดา` :
+    ถ้าผลค้นหาไม่ชัดเจนหรือขัดแย้งกัน ให้แจ้งข้อจำกัดนั้นแทนการเดา`
+        : `ไม่พบข้อมูลสถานที่ที่เกี่ยวข้องในฐานข้อมูลของแอป และค้นเว็บไม่พบผลลัพธ์
+    ให้บอกผู้ใช้ตรงๆ ว่ายังไม่มีข้อมูลยืนยันสำหรับคำถามนี้ แนะนำให้ถามให้ชัดเจนเฉพาะเจาะจงเพิ่มเติม`;
+
+    const systemPrompt = isTravelQuery ?
+    (places.length > 0 ?
     `${travelGuideRules}
     สำหรับข้อมูลสถานที่ ให้ยึด context จากฐานข้อมูลเป็นหลัก ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูลยืนยัน
     หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ ให้แจ้งข้อมูลนั้นโดยตรงทันที
 
     ข้อมูลสถานที่ที่เกี่ยวข้อง:
-    ${placesContext}`) :
+    ${placesContext}` :
+    `${travelGuideRules}
+    ${webAnswerRules}`) :
     `คุณคือ AI Guide สำหรับการท่องเที่ยวและวัฒนธรรมไทย
     ตอบเป็นภาษาเดียวกับข้อความล่าสุดของผู้ใช้ และใช้ภาษาอังกฤษเป็นค่าเริ่มต้นเมื่อระบุภาษาไม่ได้
     คุยตามปกติเหมือนเพื่อน ตอบคำถามทั่วไปได้อย่างอิสระ
@@ -879,30 +894,14 @@ async function ragChat(
             { role: 'user', content: userMessage },
         ];
 
-        // เก็บแหล่งอ้างอิงเว็บจาก grounding metadata เพื่อแนบท้ายคำตอบ
-        const groundingChunks = [];
-        const collectGrounding = (chunks) => groundingChunks.push(...chunks);
+        // เก็บแหล่งอ้างอิงเว็บจากผล freeWebSearch เพื่อแนบท้ายคำตอบ
+        const groundingChunks = toGroundingChunks(webResults);
 
-        try {
-            for await (const token of streamGemini(systemPrompt, messages, 1024, {
-                googleSearch: useWebSearch,
-                onGrounding: useWebSearch ? collectGrounding : null,
-            })) {
-                fullAnswer += token;
-                res.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
-            }
-        } catch (searchError) {
-            // grounding ล้มเหลว (เช่น 429 เกินโควตา search) และยังไม่ได้ส่งคำตอบส่วนไหนออกไป
-            // ให้ stream ซ้ำแบบไม่มี grounding เพื่อไม่ให้แชทล่ม
-            if (!useWebSearch || fullAnswer) throw searchError;
-            console.warn(`[ai] Google Search grounding failed: ${searchError.message}; retrying without grounding`);
-            groundingChunks.length = 0;
-            const fallbackPrompt = `${travelGuideRules}
-    ไม่พบข้อมูลสถานที่ที่เกี่ยวข้องในฐานข้อมูล ให้บอกผู้ใช้ตรงๆ ว่ายังไม่มีข้อมูลยืนยันสำหรับคำถามนี้`;
-            for await (const token of streamGemini(fallbackPrompt, messages, 1024)) {
-                fullAnswer += token;
-                res.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
-            }
+        for await (const token of streamGemini(systemPrompt, messages, 1024, {
+            webContext,
+        })) {
+            fullAnswer += token;
+            res.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
         }
 
         // ส่ง citation เป็น token สุดท้ายเพื่อให้ผู้ใช้เห็นในแชทและบันทึกลงประวัติด้วย

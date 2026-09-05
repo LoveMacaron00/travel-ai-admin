@@ -1,5 +1,9 @@
 const { config } = require('../../config/env');
 const {
+    freeWebSearch,
+    formatWebSearchContext,
+} = require('./webSearchHelper');
+const {
     findDestinationByNames,
     formatPlacesContext,
     retrieveNearbyPlaces,
@@ -288,20 +292,15 @@ async function generateGeminiJson({
     );
 }
 
-// Gemini รุ่น 1.5 ใช้ tool ชื่อ google_search_retrieval ส่วน 2.0 ขึ้นไปใช้ google_search
-const googleSearchTool = () =>
-    /gemini-1\.[05]/.test(config.gemini.model)
-        ? { google_search_retrieval: {} }
-        : { google_search: {} };
-
-// ขอผลวิเคราะห์ JSON จาก Gemini พร้อม Google Search grounding
-// grounding ใช้ร่วมกับ responseMimeType JSON ไม่ได้ จึงฝังรูปแบบ JSON ไว้ใน prompt แทน
-async function generateGeminiJsonWithSearch({
+// ขอผลวิเคราะห์ JSON จาก Gemini พร้อม context จาก free web search (Tavily หลัก)
+// แทน Google Search grounding เดิมที่ต้องเปิด billing — ใช้ responseMimeType JSON ได้ปกติ
+async function generateGeminiJsonWithWebContext({
     systemPrompt,
     userPrompt,
     schema,
     imageBuffer = null,
     mimeType = 'image/jpeg',
+    webQuery = '',
 }) {
     if (!config.gemini.apiKey) {
         throw new ImageAnalysisError(
@@ -311,7 +310,24 @@ async function generateGeminiJsonWithSearch({
         );
     }
 
-    const parts = [{ text: userPrompt }];
+    let enrichedUserPrompt = userPrompt;
+    const normalizedQuery = String(webQuery || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    if (normalizedQuery && config.webSearch.enabled) {
+        try {
+            const webResults = await freeWebSearch(normalizedQuery, {
+                limit: config.webSearch.maxResults,
+            });
+            const webContext = formatWebSearchContext(webResults);
+            if (webContext) {
+                enrichedUserPrompt =
+                    `${userPrompt}\n\nSupplemental web search context (unverified, use to verify only):\n${webContext}`;
+            }
+        } catch (error) {
+            console.warn(`[image-analysis] free web search failed: ${error.message}`);
+        }
+    }
+
+    const parts = [{ text: enrichedUserPrompt }];
     if (imageBuffer) {
         parts.push({
             inlineData: {
@@ -327,8 +343,9 @@ async function generateGeminiJsonWithSearch({
         generationConfig: {
             temperature: 0.2,
             maxOutputTokens: 2048,
+            responseMimeType: 'application/json',
+            responseJsonSchema: schema,
         },
-        tools: [googleSearchTool()],
     };
 
     const url = `${config.gemini.apiBaseUrl}/models/${config.gemini.model}:generateContent`;
@@ -339,7 +356,7 @@ async function generateGeminiJsonWithSearch({
             'x-goog-api-key': config.gemini.apiKey,
         },
         body: JSON.stringify(body),
-    }, 'AI Guide search');
+    }, 'AI Guide web');
     const payload = await response.json();
     const text = payload.candidates?.[0]?.content?.parts
         ?.map((part) => part.text || '')
@@ -347,18 +364,22 @@ async function generateGeminiJsonWithSearch({
     if (!text) throw new Error('Gemini returned no content');
     const parsed = parseGeminiJson(text);
     if (!parsed || typeof parsed !== 'object') {
-        throw new Error('Gemini search returned no JSON object');
+        throw new Error('Gemini web-context search returned no JSON object');
     }
     return parsed;
 }
 
-// ใช้ Google Search grounding ก่อนเพื่อความแม่นยำ ถ้า grounding ใช้ไม่ได้
-// (โมเดล/พื้นที่บริการไม่รองรับ หรือ JSON เสียหาย) ค่อยตอบจากความรู้ของโมเดลอย่างเดียว
+// ใช้ free web search (Tavily หลัก) ก่อนเพื่อความแม่นยำ ถ้าใช้ไม่ได้
+// (คีย์หาย/โควต้าหมด/JSON เสียหาย) ค่อยตอบจากความรู้ของโมเดลอย่างเดียว
 async function generateGeminiJsonPreferSearch(options) {
+    // ไม่มี webQuery (เช่น ไม่มี hint ตั้งต้น) → ข้าม web search ประหยัด credit
+    if (!String(options?.webQuery || '').trim() || !config.webSearch.enabled) {
+        return generateGeminiJson(options);
+    }
     try {
-        return await generateGeminiJsonWithSearch(options);
+        return await generateGeminiJsonWithWebContext(options);
     } catch (error) {
-        console.warn(`[image-analysis] grounded generation failed: ${error.message}`);
+        console.warn(`[image-analysis] web-context generation failed: ${error.message}`);
         return generateGeminiJson(options);
     }
 }
@@ -564,14 +585,20 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, langua
     const placeContext = nearbyPlaces.length
         ? formatPlacesContext(nearbyPlaces)
         : 'No verified nearby destination data was available.';
+    // ใช้ชื่อสถานที่ใกล้เคียงเป็น webQuery ประหยัด credit (ไม่มี nearby = ข้าม web search)
+    const placeWebQuery = nearbyPlaces
+        .slice(0, 3)
+        .map((place) => String(place.name || '').trim())
+        .filter(Boolean)
+        .join(', ');
     const result = await generateGeminiJsonPreferSearch({
         systemPrompt:
             `You are a careful Thai cultural guide. ${responseLanguageInstruction(languageCode)} ` +
-            'Use Google Search results to verify what the photo shows, especially when the verified destination ' +
+            'Use the supplemental web search context (if provided) to verify what the photo shows, especially when the verified destination ' +
             'context is insufficient or does not match the visual evidence. ' +
-            'Do not claim an exact landmark unless visual evidence, search results, or the nearby destination ' +
+            'Do not claim an exact landmark unless visual evidence, web context, or the nearby destination ' +
             'context support it. If the landmark is not in the verified context, still identify it from visual ' +
-            'and search evidence, and say in identificationNote that it is not yet in the verified database. ' +
+            'and web evidence, and say in identificationNote that it is not yet in the verified database. ' +
             'When uncertain, describe what is visible and say what additional photo would help. ' +
             'If matchedDestinationName is present, copy that destination name exactly from the verified context.',
         userPrompt:
@@ -580,6 +607,7 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, langua
         schema: PLACE_SCHEMA,
         imageBuffer,
         mimeType,
+        webQuery: placeWebQuery,
     });
 
     let matched = nearbyPlaces.find((place) =>
@@ -677,12 +705,18 @@ async function identifyFoodFromImage(
     const names = candidates.map((candidate) =>
         `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
     ).join(', ');
+    // ใช้ชื่อ hint จาก T-Food เป็น webQuery (ไม่มี hint = ข้าม web search ประหยัด credit)
+    const foodWebQuery = candidates
+        .slice(0, 3)
+        .map((candidate) => String(candidate.name || '').trim())
+        .filter(Boolean)
+        .join(', ');
     return generateGeminiJsonPreferSearch({
         systemPrompt:
             `You are a careful Thai food and culture guide. ${responseLanguageInstruction(languageCode)} ` +
             'First determine the dish CATEGORY from the image itself (for example: noodle soup, rice dish, curry, ' +
             'dip or paste, salad, stir-fry, soup, grilled, dessert). ' +
-            'Then verify the dish name, its region, typical ingredients, and cultural context with Google Search results. ' +
+            'Then verify the dish name, its region, typical ingredients, and cultural context with the supplemental web search context (if provided). ' +
             'Treat classifier hints as weak hints, not facts. REJECT any hint whose category does not match what is ' +
             'visible (for example, never answer a dip or paste when the photo clearly shows a noodle or rice soup). ' +
             'Identify from the image even when no hint matches. Keep thaiName in Thai and englishName in English. ' +
@@ -697,6 +731,7 @@ async function identifyFoodFromImage(
         schema: FOOD_SCHEMA,
         imageBuffer,
         mimeType,
+        webQuery: foodWebQuery,
     });
 }
 
@@ -732,7 +767,7 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
     }
     const tFoodTop = candidates[0] || null;
 
-    // 2) ให้ Gemini ดูภาพและสรุปเอง (grounded search) โดยไม่ยอมรับ hint ที่ขัดกับภาพ
+    // 2) ให้ Gemini ดูภาพและสรุปเอง (free web search) โดยไม่ยอมรับ hint ที่ขัดกับภาพ
     const result = await identifyFoodFromImage(
         candidates,
         languageCode,

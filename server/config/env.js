@@ -12,6 +12,12 @@ const asNumber = (value, fallback) => {
 // ตัด slash ท้าย URL เพื่อให้ต่อ path เพิ่มได้โดยไม่เกิด //
 const withoutTrailingSlash = (value) => value.replace(/\/+$/, '');
 
+// แปลงค่า boolean จาก env ('true'/'1'/'yes' เท่านั้นที่ถือว่าเปิด)
+const asBoolean = (value, fallback) => {
+    if (value === undefined || value === null || value === '') return fallback;
+    return ['true', '1', 'yes', 'y', 'on'].includes(String(value).trim().toLowerCase());
+};
+
 // อ่าน process.env เพียงไฟล์เดียว เพื่อให้ชื่อ ค่า default และการแปลง type
 // ไม่กระจายอยู่ตาม controller รวมถึงช่วยให้ตรวจ config ตอนเริ่มระบบได้
 const config = {
@@ -70,6 +76,22 @@ const config = {
             process.env.TAT_API_BASE_URL || 'https://tatdataapi.io/api/v2',
         ),
     },
+    webSearch: {
+        // สวิตช์ค้นเว็บฟรีแทน Gemini grounding (ปิดแล้วระบบตอบจาก DB อย่างเดียว)
+        enabled: asBoolean(process.env.WEB_SEARCH_ENABLED, true),
+        providers: (process.env.WEB_SEARCH_PROVIDERS || 'tavily,wikipedia,duckduckgo')
+            .split(',')
+            .map((name) => name.trim().toLowerCase())
+            .filter(Boolean),
+        // Tavily เป็นตัวหลัก: บังคับ basic (1 credit) ห้ามใช้ advanced (2 credits)
+        tavilyApiKey: process.env.TAVILY_API_KEY || '',
+        tavilySearchDepth: (process.env.TAVILY_SEARCH_DEPTH || 'basic').trim().toLowerCase() === 'advanced'
+            ? 'advanced'
+            : 'basic',
+        timeoutMs: Math.max(1000, asNumber(process.env.WEB_SEARCH_TIMEOUT_MS, 8000)),
+        maxResults: Math.min(10, Math.max(1, asNumber(process.env.WEB_SEARCH_MAX_RESULTS, 5))),
+        cacheTtlMs: Math.max(0, asNumber(process.env.WEB_SEARCH_CACHE_TTL_MS, 600000)),
+    },
 };
 
 const requiredEnvironmentVariables = [
@@ -89,6 +111,9 @@ const warnAboutMissingEnvironment = () => {
     // ส่วน secret ที่กระทบ auth จะถูกตรวจแบบ fail-fast ใน jwtSecrets.js
     for (const [name, value] of requiredEnvironmentVariables) {
         if (!value) console.warn(`[env] ${name} ไม่ได้ตั้งค่าใน .env`);
+    }
+    if (config.webSearch.enabled && !config.webSearch.tavilyApiKey) {
+        console.warn('[env] TAVILY_API_KEY ไม่ได้ตั้งค่า — web search จะใช้เฉพาะ Wikipedia/DuckDuckGo (ฟรี)');
     }
 };
 
