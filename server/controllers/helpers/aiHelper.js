@@ -259,24 +259,61 @@ const formatFerryViolations = (violations) => violations
 const formatIslandViolations = formatFerryViolations;
 
 // เลือกเฉพาะสถานที่ที่ชื่อปรากฏในคำตอบของ AI จริง เรียงตามลำดับที่ถูกพูดถึง
-// เพื่อให้ card ตรงกับสถานที่ที่ AI กล่าวถึง ไม่ใช่ผล RAG ดิบ
+// จับคู่แบบยืดหยุ่น: ชื่อเต็ม ชื่อย่อ หรือคำสำคัญตรงกันเกินส่วนใหญ่
+// ถ้าไม่มีสถานที่ไหนถูกพูดถึงเลยจะไม่ส่ง card กลับ (ไม่ fallback เป็นผล RAG)
 const pickPlacesMentionedInAnswer = (answer, places) => {
     const normalize = (value) => String(value || '')
         .normalize('NFKC')
-        .replace(/\s+/g, ' ')
-        .trim();
+        .toLocaleLowerCase('th')
+        .replace(/[^\p{L}\p{N}]+/gu, '');
     const answerText = normalize(answer);
     if (!answerText) return [];
 
-    const mentioned = [];
+    const candidates = [];
     for (const place of places) {
         const name = normalize(place?.name);
-        if (!name) continue;
+        if (name.length < 4) continue;
         const index = answerText.indexOf(name);
-        if (index >= 0) mentioned.push({ place, index });
+        if (index >= 0) {
+            // exact/full-name hit — ให้คะแนนความยาวชื่อเพื่อ prefer ชื่อเต็ม
+            candidates.push({ place, name, index, score: name.length * 10 });
+            continue;
+        }
+        // ชื่อย่อ: คำในชื่อสถานที่ปรากฏในคำตอบครบเกิน 60% (เช่น "อรุณ" ของ "วัดอรุณราชวราราม")
+        const tokens = String(place?.name || '')
+            .split(/[\s\u0E4F\-–,()]+/u)
+            .map((token) => token.trim())
+            .filter((token) => token.length >= 3);
+        if (!tokens.length) continue;
+        const hitTokens = tokens.filter((token) =>
+            answerText.includes(normalize(token)),
+        );
+        const ratio = hitTokens.length / tokens.length;
+        if (ratio >= 0.6) {
+            candidates.push({
+                place,
+                name,
+                index: answerText.indexOf(normalize(hitTokens[0])),
+                score: ratio * 100,
+            });
+        }
     }
-    mentioned.sort((a, b) => a.index - b.index);
-    return mentioned.map((item) => item.place);
+
+    // ตัด variant ที่ซ้อนกัน: ถ้า "วัดรองขนุน" ตรงเต็มแล้ว ให้ตัด "วัดรองขนุนศิลปิน"
+    // ที่ชื่อมีชื่อที่ตรงกว่าซ้อนอยู่และโผล่ตำแหน่งเดียวกันออก
+    const selected = [];
+    for (const candidate of candidates) {
+        const shadowed = candidates.some((other) =>
+            other !== candidate
+            && other.score > candidate.score
+            && other.index <= candidate.index
+            && other.index + other.name.length >= candidate.index + candidate.name.length
+        );
+        if (!shadowed) selected.push(candidate);
+    }
+
+    selected.sort((a, b) => a.index - b.index || b.score - a.score);
+    return selected.map((item) => item.place);
 };
 
 // จัดกลุ่มใหม่แบบคำนวณใหม่แทนการทิ้ง error — รวมเกาะไว้ด้วยกัน ฝั่งไว้ด้วยกันให้เหลือข้ามไม่เกิน 1 ครั้ง/วัน
@@ -890,7 +927,9 @@ async function ragChat(
     สำหรับข้อมูลสถานที่ ให้ยึด context จากฐานข้อมูลเป็นหลัก ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูลยืนยัน
     หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ ให้แจ้งข้อมูลนั้นโดยตรงทันที
     เมื่อแนะนำสถานที่ ให้พูดถึงสถานที่ที่มีใน context หลายแห่งตามความเหมาะสม และเขียนชื่อสถานที่ให้ตรงกับชื่อใน context ทุกครั้ง
-    ตอบคำตอบที่มีเนื้อหาครบถ้วน อย่างน้อย 4-6 ประโยค พร้อมเหตุผล จุดเด่น และข้อมูลประกอบที่มีใน context เช่น ค่าเข้า เวลาเปิด กิจกรรม
+    คำตอบทุกครั้งต้องมีเนื้อหาครบถ้วน ยาวอย่างน้อย 5 ประโยค ห้ามตอบสั้นเด็ดขาด แม้คำถามจะสั้นหรือเป็นคำถามปิด เช่น น่าเที่ยวไหม ดีไหม ก็ต้องตอบพร้อมเหตุผลและรายละเอียด
+    โครงสร้างคำตอบที่ต้องมี: คำตอบตรงคำถามก่อน 1 ประโยค แล้วขยายด้วยจุดเด่นและสิ่งที่ทำได้ที่สถานที่นั้น ข้อมูลประกอบที่มีใน context เช่น ค่าเข้า เวลาเปิด กิจกรรม และคำแนะนำปิดท้ายสำหรับคนที่สนใจไป
+    ถ้า context มีข้อมูลน้อย ให้เล่าเพิ่มจากส่วนที่มี เช่น หมวดหมู่ จังหวัด พิกัด หรือสถานที่ใกล้เคียงใน context แทนการตอบสั้น
     ห้ามตอบสั้นหรือตัดคำตอบค้างไว้ ให้เขียนจนจบเรื่อง
 
     ข้อมูลสถานที่ที่เกี่ยวข้อง:
@@ -938,9 +977,8 @@ async function ragChat(
         }
 
         // กรองให้เหลือเฉพาะสถานที่ที่ AI พูดถึงจริงในคำตอบ เรียงตามลำดับที่ถูกกล่าวถึง
-        // ถ้าจับคู่ชื่อไม่ได้เลย จะ fallback เป็นผล RAG 2 อันดับแรก
-        const citedPlaces = pickPlacesMentionedInAnswer(fullAnswer, places);
-        const sourcePlaces = citedPlaces.length > 0 ? citedPlaces : places.slice(0, 2);
+        // ถ้าไม่มีสถานที่ไหนถูกพูดถึงเลยจะไม่มี card
+        const sourcePlaces = pickPlacesMentionedInAnswer(fullAnswer, places);
         sourceChunkIds = sourcePlaces.map((place) => place.id);
 
         let userMessageId;

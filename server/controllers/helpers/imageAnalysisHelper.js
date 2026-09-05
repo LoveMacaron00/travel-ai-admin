@@ -570,6 +570,9 @@ async function classifyThaiFood(imageBuffer) {
 }
 
 // วิเคราะห์สถานที่จากภาพและพิกัดด้วย Gemini
+// แบ่งเป็นสองรอบ: รอบแรกให้ vision ระบุจากภาพล้วน ๆ ไม่มี hint ชี้นำ
+// แล้วเอาชื่อที่ระบุได้ไปค้นเว็บเพื่อยืนยันในรอบสอง — ป้องกัน GPS คลาดเคลื่อน
+// หรือชื่อสถานที่ใกล้เคียงดันให้ตอบผิดสถานที่
 async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, languageCode }) {
     const copy = imageCopyFor(languageCode);
     // พิกัดเป็น context ช่วยยืนยัน landmark ไม่ใช่หลักฐานว่าภาพคือสถานที่นั้นแน่นอน
@@ -585,39 +588,68 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, langua
     const placeContext = nearbyPlaces.length
         ? formatPlacesContext(nearbyPlaces)
         : 'No verified nearby destination data was available.';
-    // ใช้ชื่อสถานที่ใกล้เคียงเป็น webQuery ประหยัด credit (ไม่มี nearby = ข้าม web search)
-    const placeWebQuery = nearbyPlaces
-        .slice(0, 3)
-        .map((place) => String(place.name || '').trim())
-        .filter(Boolean)
-        .join(', ');
-    const result = await generateGeminiJsonPreferSearch({
-        systemPrompt:
-            `You are a careful Thai cultural guide. ${responseLanguageInstruction(languageCode)} ` +
-            'Use the supplemental web search context (if provided) to verify what the photo shows, especially when the verified destination ' +
-            'context is insufficient or does not match the visual evidence. ' +
-            'Do not claim an exact landmark unless visual evidence, web context, or the nearby destination ' +
-            'context support it. If the landmark is not in the verified context, still identify it from visual ' +
-            'and web evidence, and say in identificationNote that it is not yet in the verified database. ' +
-            'When uncertain, describe what is visible and say what additional photo would help. ' +
-            'If matchedDestinationName is present, copy that destination name exactly from the verified context.',
-        userPrompt:
-            `Analyze this travel photo. GPS: ${latitude ?? 'unknown'}, ${longitude ?? 'unknown'}.\n\n` +
-            `Verified nearby destination context:\n${placeContext}`,
+    const placeSystemPrompt =
+        `You are a careful Thai cultural guide. ${responseLanguageInstruction(languageCode)} ` +
+        'Use the supplemental web search context (if provided) to verify what the photo shows, especially when the verified destination ' +
+        'context is insufficient or does not match the visual evidence. ' +
+        'Do not claim an exact landmark unless visual evidence, web context, or the nearby destination ' +
+        'context support it. If the landmark is not in the verified context, still identify it from visual ' +
+        'and web evidence, and say in identificationNote that it is not yet in the verified database. ' +
+        'When uncertain, describe what is visible and say what additional photo would help. ' +
+        'GPS and the nearby destination context are weak hints only: the photo itself is the primary evidence, ' +
+        'so if the visual evidence contradicts every nearby name, identify the place from the image instead. ' +
+        'Set matchedDestinationName ONLY to a verified context destination that truly matches what is visible ' +
+        'in the photo; if nothing matches, leave matchedDestinationName as an empty string. ' +
+        'Never guess a matchedDestinationName that is not literally present in the verified context. ' +
+        'If matchedDestinationName is present, copy that destination name exactly from the verified context.';
+    const placeUserPrompt =
+        `Analyze this travel photo. GPS: ${latitude ?? 'unknown'}, ${longitude ?? 'unknown'}.\n\n` +
+        `Verified nearby destination context (weak hint, may be unrelated to the photo):\n${placeContext}`;
+
+    // รอบแรก: ระบุจากภาพล้วน ๆ เพื่อไม่ให้ hint ใดชี้นำคำตอบ
+    const firstPass = await generateGeminiJson({
+        systemPrompt: placeSystemPrompt,
+        userPrompt: placeUserPrompt,
         schema: PLACE_SCHEMA,
         imageBuffer,
         mimeType,
-        webQuery: placeWebQuery,
     });
+
+    // รอบสอง: เอาชื่อที่ระบุได้ไปค้นเว็บแล้วยืนยันซ้ำ
+    // เลือกผลรอบสองเมื่อความมั่นใจเท่ากันหรือดีกว่า ไม่งั้นคงผลรอบแรก
+    let result = firstPass;
+    const identifiedName = String(firstPass.title || '')
+        .replace(/\s*\([^)]*\)\s*/g, ' ')
+        .replace(/['"]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (identifiedName.length >= 4 && config.webSearch.enabled) {
+        try {
+            const secondPass = await generateGeminiJsonWithWebContext({
+                systemPrompt: placeSystemPrompt,
+                userPrompt:
+                    `${placeUserPrompt}\n\nFirst-pass identification from the image alone: "${identifiedName}". ` +
+                    'Verify or correct it with the web context below — do not follow it if it contradicts the image.',
+                schema: PLACE_SCHEMA,
+                imageBuffer,
+                mimeType,
+                webQuery: identifiedName,
+            });
+            if (clampConfidence(secondPass.confidence) >= clampConfidence(firstPass.confidence)) {
+                result = secondPass;
+            }
+        } catch (error) {
+            console.warn('[image-analysis] place verification pass failed:', error.message);
+        }
+    }
 
     let matched = nearbyPlaces.find((place) =>
         String(place.name).toLowerCase() === String(result.matchedDestinationName || '').toLowerCase(),
     );
-    if (!matched && clampConfidence(result.confidence) >= 0.8) {
-        matched = await findDestinationByNames([
-            result.matchedDestinationName,
-            result.title,
-        ]);
+    // ผูกการ์ดเฉพาะเมื่อโมเดลยืนยันชื่อจาก verified context เท่านั้น
+    // ไม่ใช้ title กว้าง ๆ ค้นเอง เพื่อไม่ให้การ์ดไปผูกสถานที่ที่ไม่เกี่ยว
+    if (!matched && result.matchedDestinationName && clampConfidence(result.confidence) >= 0.8) {
+        matched = await findDestinationByNames([result.matchedDestinationName]);
     }
     const analysis = buildAnalysis({
         mode: 'place',
