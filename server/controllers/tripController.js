@@ -110,6 +110,52 @@ const getTripById = async (req, res) => {
     }
 };
 
+// PUT /api/trips/:id/plan — บันทึกการแก้ไขแผนของผู้ใช้ (ลบ/เพิ่ม/สลับลำดับสถานที่)
+// รับ plan_data ทั้งก้อนจาก mobile app แล้ว upsert ลง trip_plans
+const updateTripPlan = async (req, res) => {
+    try {
+        const tripId = Number.parseInt(req.params.id, 10);
+        if (!Number.isInteger(tripId) || tripId <= 0) {
+            return res.status(400).json({ message: 'trip id ไม่ถูกต้อง' });
+        }
+
+        const planData = req.body?.days ? req.body : null;
+        if (!planData || !Array.isArray(planData.days)) {
+            return res.status(400).json({ message: 'รูปแบบแผนการเดินทางไม่ถูกต้อง' });
+        }
+        sanitizePlaceholderPlanImages(planData);
+
+        const owned = await pool.query(
+            `SELECT 1 FROM trips WHERE id = $1 AND user_id = $2`,
+            [tripId, req.user?.id]
+        );
+        if (owned.rowCount === 0) {
+            return res.status(404).json({ message: 'ไม่พบแผนเที่ยวหรือคุณไม่มีสิทธิ์แก้ไข' });
+        }
+
+        // trip_plans ไม่มี unique constraint บน trip_id จึงอัปเดตก่อนแล้วค่อย insert เมื่อยังไม่มีแถว
+        const planJson = JSON.stringify(planData);
+        const updated = await pool.query(
+            `UPDATE trip_plans
+             SET plan_data = $2, markdown_cache = NULL, version = version + 1, generated_at = NOW()
+             WHERE trip_id = $1`,
+            [tripId, planJson]
+        );
+        if (updated.rowCount === 0) {
+            await pool.query(
+                `INSERT INTO trip_plans (trip_id, plan_data, markdown_cache)
+                 VALUES ($1, $2, NULL)`,
+                [tripId, planJson]
+            );
+        }
+
+        res.json({ message: 'บันทึกแผนการเดินทางสำเร็จ' });
+    } catch (err) {
+        console.error('[tripController] updateTripPlan:', err.message);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกแผนการเดินทาง' });
+    }
+};
+
 // DELETE /api/trips/:id — ลบแผนเที่ยวตาม ID
 // ลบแผนเที่ยวเมื่อเป็นเจ้าของรายการนั้น
 const deleteTrip = async (req, res) => {
@@ -128,4 +174,4 @@ const deleteTrip = async (req, res) => {
     }
 };
 
-module.exports = { createTrip, getUserTrips, getTripById, deleteTrip };
+module.exports = { createTrip, getUserTrips, getTripById, deleteTrip, updateTripPlan };
