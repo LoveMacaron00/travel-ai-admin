@@ -33,8 +33,7 @@ const getSummary = async (range, timeZone) => {
             (
                 SELECT COUNT(DISTINCT user_id)::int
                 FROM app_usage_sessions
-                WHERE ended_at IS NULL
-                  AND last_seen_at >= NOW() - INTERVAL '2 minutes'
+                WHERE last_seen_at >= NOW() - INTERVAL '2 minutes'
             ) AS active_users_now,
             (
                 SELECT COUNT(DISTINCT sessions.user_id)::int

@@ -18,7 +18,7 @@ const createRecordDestinationView = (database) => async (req, res) => {
             ), valid_session AS (
                 SELECT id
                 FROM app_usage_sessions
-                WHERE id = $3 AND user_id = $2 AND ended_at IS NULL
+                WHERE id = $3 AND user_id = $2
             ), inserted AS (
                 INSERT INTO destination_view_events (
                     destination_id,
@@ -43,7 +43,7 @@ const createRecordDestinationView = (database) => async (req, res) => {
             return res.status(404).json({ message: 'ไม่พบสถานที่' });
         }
         if (!result.session_exists) {
-            return res.status(409).json({ message: 'activity session หมดอายุแล้ว' });
+            return res.status(409).json({ message: 'ไม่พบ activity session' });
         }
 
         return res.status(result.recorded ? 201 : 200).json({

@@ -162,8 +162,7 @@ CREATE TABLE IF NOT EXISTS app_usage_sessions (
     id BIGSERIAL PRIMARY KEY,
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    ended_at TIMESTAMPTZ
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- การเปิดรายละเอียดสถานที่ นับหนึ่งครั้งต่อ activity session

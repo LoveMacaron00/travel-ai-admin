@@ -37,7 +37,6 @@
 | PUT | `/api/users/profile` | `AuthService.updateProfile` |
 | POST | `/api/users/profile/upload-image` | `AuthService.uploadProfileImage` |
 | POST | `/api/activity/heartbeat` | `ActivityService` ต่ออายุ foreground session ทุก 1 นาที |
-| POST | `/api/activity/end` | `ActivityService` ปิด session เมื่อเข้า background/logout |
 | GET | `/api/mobile/destinations` | `DestinationService.getDestinations`; เลือก translation ด้วย `Accept-Language: th|en` และ fallback เป็นไทย |
 | GET | `/api/mobile/destinations/:id` | `DestinationService.getDestinationDetails`; เลือก translation ด้วย `Accept-Language: th|en` และ fallback เป็นไทย |
 | POST | `/api/mobile/destinations/:id/view` | `ActivityService.recordDestinationView` นับหนึ่งครั้งต่อ activity session |
