@@ -75,8 +75,6 @@
 | --- | --- | --- |
 | POST | `/api/admin/embed/:id` | maintenance: บังคับ re-embed สถานที่เดียว (ยังไม่มีปุ่มเรียกใน admin client) |
 | POST | `/api/admin/sync/tat/translations` | เติม English translation เฉพาะสถานที่ TAT เดิม (ยังไม่มีปุ่มเรียกใน admin client) |
-| POST | `/api/feedback` | legacy/duplicate ของ `POST /api/mobile/feedback` — mobile ย้ายไปใช้ฝั่ง `/mobile/*` หมดแล้ว |
-| GET | `/api/feedback/my` | legacy/duplicate ของ `GET /api/mobile/feedback/my` — mobile ย้ายไปใช้ฝั่ง `/mobile/*` หมดแล้ว |
 
 endpoint กลุ่ม maintenance ต้องใช้ admin token และปกติเรียกด้วยเครื่องมือดูแลระบบ
 จึงไม่ควรถูกตีความว่าเป็น dead endpoint
