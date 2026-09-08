@@ -234,11 +234,10 @@ CREATE TABLE IF NOT EXISTS trip_plans (
     generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- chat_sessions (1 session ต่อ 1 trip)
+-- chat_sessions (session แชททั่วไปของผู้ใช้)
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE SET NULL,
-    trip_id INT REFERENCES trips(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -357,7 +356,6 @@ CREATE INDEX IF NOT EXISTS idx_travel_diary_destination
     ON travel_diary_entries(destination_id);
 
 -- chat
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_trip ON chat_sessions(trip_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_sess ON chat_messages(session_id);
 
 -- feedback

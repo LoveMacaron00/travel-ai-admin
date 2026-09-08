@@ -9,7 +9,6 @@ const {
     getLatestSession,
     getMessageImage,
     getMessages,
-    getSessionByTrip,
     sendMessage,
     updateMessage,
     logNavigation,
@@ -20,7 +19,6 @@ const imageUpload = require('../config/imageUpload');
 // POST /api/chat/sessions — สร้าง session ใหม่
 // POST /api/chat/sessions/:sessionId/messages — ส่งข้อความ + stream (SSE)
 // GET /api/chat/sessions/:sessionId/messages — ดึงประวัติ
-// GET /api/chat/trips/:tripId/session — ดึง session ล่าสุดของ trip
 
 router.post('/sessions', requireUserAuth, createSession);
 router.get('/sessions/latest', requireUserAuth, getLatestSession);
@@ -30,7 +28,6 @@ router.get('/sessions/:sessionId/messages', requireUserAuth, getMessages);
 router.get('/messages/:messageId/image', requireUserAuth, getMessageImage);
 router.patch('/messages/:messageId', requireUserAuth, updateMessage);
 router.delete('/messages/:messageId', requireUserAuth, deleteMessage);
-router.get('/trips/:tripId/session', requireUserAuth, getSessionByTrip);
 router.post('/navigation', requireUserAuth, logNavigation);
 
 module.exports = router;

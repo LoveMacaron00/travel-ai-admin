@@ -56,7 +56,6 @@
 | Method | Endpoint | Reason |
 | --- | --- | --- |
 | GET | `/api/trips` | รองรับหน้าประวัติแผนในอนาคต; query และ authorization พร้อมแล้ว |
-| GET | `/api/chat/trips/:tripId/session` | รองรับแชทที่ผูกกับ trip ซึ่ง data model รองรับอยู่ |
 | POST | `/api/admin/embed/bulk` | maintenance: เติม embedding ที่ขาดหลัง import/migration |
 | POST | `/api/admin/embed/:id` | maintenance: บังคับ re-embed สถานที่เดียว |
 

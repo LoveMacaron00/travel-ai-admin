@@ -857,31 +857,22 @@ function isTravelRelatedQuery(message) {
 // สร้างคำตอบแชทจากบริบทสถานที่ RAG และ stream ผลลัพธ์ให้ผู้ใช้
 async function ragChat(
     sessionId,
-    tripId,
     userMessage,
     chatHistory,
     res,
     { existingUserMessageId = null } = {},
 ) {
-    // ดึง trip context
-    const { rows: tripRows } = await query(
-        'SELECT destination, province, interests FROM trips WHERE id = $1',
-        [tripId]
-    );
-    const trip = tripRows[0];
-
     // ตรวจสอบว่าเป็นคำถามเกี่ยวกับการท่องเที่ยวหรือไม่
     const isTravelQuery = isTravelRelatedQuery(userMessage);
-    
+
     let places = [];
     let placesContext = '';
     let sourceChunkIds = [];
-    
+
     // ใช้ RAG เฉพาะเมื่อเป็นคำถามเกี่ยวกับการท่องเที่ยว
     if (isTravelQuery) {
         // RAG: embed คำถาม → ดึง relevant places
         places = await retrieveRelevantPlaces(userMessage, {
-            province: trip?.province,
             limit: 8,
         });
 

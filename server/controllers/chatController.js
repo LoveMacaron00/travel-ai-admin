@@ -73,25 +73,16 @@ const validateEditableMessage = (value, languageCode = 'th') => {
     return { message };
 };
 
-// POST /api/chat/sessions — สร้าง session ใหม่สำหรับ trip
+// POST /api/chat/sessions — สร้าง session ใหม่
 // สร้าง chat session ใหม่ให้ผู้ใช้ที่ล็อกอินอยู่
 const createSession = async (req, res) => {
     try {
-        const { trip_id } = req.body;
         const userId = req.user?.id || null;
 
-        if (trip_id) {
-            const { rows: tripRows } = await pool.query(
-                'SELECT id FROM trips WHERE id = $1 AND user_id = $2',
-                [trip_id, userId],
-            );
-            if (!tripRows[0]) return res.status(404).json({ message: 'ไม่พบแผนเที่ยว' });
-        }
-
         const { rows } = await pool.query(
-            `INSERT INTO chat_sessions (user_id, trip_id)
-             VALUES ($1, $2) RETURNING id, created_at`,
-            [userId, trip_id]
+            `INSERT INTO chat_sessions (user_id)
+             VALUES ($1) RETURNING id, created_at`,
+            [userId]
         );
         const session = rows[0];
 
@@ -112,15 +103,13 @@ const sendMessage = async (req, res) => {
         const validated = validateEditableMessage(message, languageCode);
         if (validated.error) return res.status(400).json({ message: validated.error });
 
-        // ดึง session + trip_id
+        // ดึง session
         const { rows: sessionRows } = await pool.query(
-            'SELECT id, trip_id FROM chat_sessions WHERE id = $1 AND user_id = $2',
+            'SELECT id FROM chat_sessions WHERE id = $1 AND user_id = $2',
             [sessionId, req.user?.id]
         );
         const session = sessionRows[0] || null;
         if (!session) return res.status(404).json({ message: 'ไม่พบ session' });
-
-        const { trip_id } = session;
 
         // ดึง chat history ย้อนหลัง 10 messages (5 คู่)
         const { rows: historyRows } = await pool.query(
@@ -133,7 +122,7 @@ const sendMessage = async (req, res) => {
         const chatHistory = historyRows.reverse();
 
         // stream คำตอบจาก RAG + Gemini
-        await ragChat(sessionId, trip_id, validated.message, chatHistory, res);
+        await ragChat(sessionId, validated.message, chatHistory, res);
 
     } catch (err) {
         console.error('[chatController] sendMessage:', err.message);
@@ -328,8 +317,7 @@ const updateMessage = async (req, res) => {
 
     try {
         const { rows } = await pool.query(
-            `SELECT cm.id, cm.session_id, cm.image_path, cm.created_at,
-                    cs.trip_id
+            `SELECT cm.id, cm.session_id, cm.image_path, cm.created_at
              FROM chat_messages cm
              JOIN chat_sessions cs ON cs.id = cm.session_id
              WHERE cm.id = $1
@@ -359,7 +347,6 @@ const updateMessage = async (req, res) => {
 
         await ragChat(
             target.session_id,
-            target.trip_id,
             validated.message,
             historyRows.reverse(),
             res,
@@ -478,13 +465,13 @@ const getMessageImage = async (req, res) => {
     }
 };
 
-// GET /api/chat/sessions/latest — session แชททั่วไปล่าสุดของ user
+// GET /api/chat/sessions/latest — session แชทล่าสุดของ user
 // คืน chat session ล่าสุดของผู้ใช้ หรือ 404 เมื่อยังไม่มี
 const getLatestSession = async (req, res) => {
     try {
         const { rows } = await pool.query(
-            `SELECT id, trip_id, created_at FROM chat_sessions
-             WHERE user_id = $1 AND trip_id IS NULL
+            `SELECT id, created_at FROM chat_sessions
+             WHERE user_id = $1
              ORDER BY created_at DESC LIMIT 1`,
             [req.user?.id],
         );
@@ -492,27 +479,6 @@ const getLatestSession = async (req, res) => {
         res.json(rows[0]);
     } catch (err) {
         console.error('[chatController] getLatestSession:', err.message);
-        res.status(500).json({ message: 'เกิดข้อผิดพลาด' });
-    }
-};
-
-// GET /api/chat/trips/:tripId/session — ดึง session ล่าสุดของ trip
-// คืน chat session ที่ผูกกับ trip ของผู้ใช้
-const getSessionByTrip = async (req, res) => {
-    try {
-        const userId = req.user?.id || null;
-        const { rows } = await pool.query(
-            `SELECT id, trip_id, created_at FROM chat_sessions
-             WHERE trip_id = $1 AND ($2::int IS NULL OR user_id = $2)
-             ORDER BY created_at DESC LIMIT 1`,
-            [req.params.tripId, userId]
-        );
-        const session = rows[0] || null;
-
-        if (!session) return res.status(404).json({ message: 'ไม่พบ session' });
-        res.json(session);
-    } catch (err) {
-        console.error('[chatController] getSessionByTrip:', err.message);
         res.status(500).json({ message: 'เกิดข้อผิดพลาด' });
     }
 };
@@ -553,7 +519,6 @@ module.exports = {
     getMessageImage,
     getMessages,
     getLatestSession,
-    getSessionByTrip,
     updateMessage,
     logNavigation,
 };
