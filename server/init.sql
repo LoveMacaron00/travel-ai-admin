@@ -138,7 +138,6 @@ CREATE TABLE IF NOT EXISTS destination_images (
     id SERIAL PRIMARY KEY,
     destination_id INT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
     image_url TEXT NOT NULL,
-    caption TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
