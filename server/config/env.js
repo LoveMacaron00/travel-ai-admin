@@ -53,12 +53,40 @@ const config = {
         userSecret: process.env.USER_JWT_SECRET,
     },
     gemini: {
-        apiKey: process.env.GEMINI_API_KEY,
+        // รองรับ 9router (OpenAI-compatible gateway) ผ่านชื่อเดิม GEMINI_* เพื่อไม่ต้องแก้โค้ดที่เรียกใช้
+        // ตั้งค่าใหม่แนะนำ: AI_API_BASE_URL / AI_API_KEY / AI_MODEL / AI_EMBEDDING_MODEL
+        // แต่ถ้ามี GEMINI_* อยู่จะใช้ค่านั้นก่อน (backward compatible)
+        apiKey:
+            process.env.AI_API_KEY
+            || process.env.NINEROUTER_API_KEY
+            || process.env.GEMINI_API_KEY,
         apiBaseUrl: withoutTrailingSlash(
-            process.env.GEMINI_API_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+            process.env.AI_API_BASE_URL
+            || process.env.NINEROUTER_API_BASE_URL
+            || process.env.GEMINI_API_BASE_URL
+            || 'http://localhost:20128/v1',
         ),
-        model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
-        embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
+        model:
+            process.env.AI_MODEL
+            || process.env.NINEROUTER_MODEL
+            || process.env.GEMINI_MODEL
+            || 'gemini/gemini-3.6-flash',
+        // ใส่ได้หลายโมเดลคั่นด้วย comma ("model-a,model-b") — ตัวหลักล่ม/โควต้าหมดจะสลับตัวถัดไปอัตโนมัติ
+        embeddingModel:
+            process.env.AI_EMBEDDING_MODEL
+            || process.env.NINEROUTER_EMBEDDING_MODEL
+            || process.env.GEMINI_EMBEDDING_MODEL
+            || 'gemini-embedding-001',
+        // ขนาดเวกเตอร์ใน DB (place_embeddings.embedding vector(1536))
+        // 9router คืน 3072 dims — provider จะตัดเหลือเท่านี้ (Matryoshka prefix) ให้อัตโนมัติ
+        embeddingDimensions: Math.max(
+            128,
+            asNumber(
+                process.env.AI_EMBEDDING_DIMENSIONS
+                || process.env.GEMINI_EMBEDDING_DIMENSIONS,
+                1536,
+            ),
+        ),
         maxRetries: Math.max(0, asNumber(process.env.GEMINI_MAX_RETRIES, 3)),
         planThinkingBudget: Math.max(0, asNumber(process.env.GEMINI_PLAN_THINKING_BUDGET, 0)),
     },

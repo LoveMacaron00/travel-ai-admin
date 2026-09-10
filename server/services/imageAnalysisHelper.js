@@ -49,7 +49,7 @@ const IMAGE_COPY = {
 // เลือกชุดข้อความตอบกลับสำหรับการวิเคราะห์ภาพตามภาษา
 const imageCopyFor = (languageCode) => IMAGE_COPY[resolveAppLanguage(languageCode)];
 
-// สร้างคำสั่งภาษาเพื่อบังคับให้ Gemini ตอบในภาษาที่ร้องขอ
+// สร้างคำสั่งภาษาเพื่อบังคับให้ AI ตอบในภาษาที่ร้องขอ
 const responseLanguageInstruction = (languageCode) => (
     resolveAppLanguage(languageCode) === 'th'
         ? 'Write all visitor-facing explanatory fields in natural Thai. Keep Thai proper names accurate and do not translate JSON property names.'
@@ -206,18 +206,24 @@ const requestWithTimeout = async (url, options, label) => {
     }
 };
 
-// แกะ JSON ที่ Gemini อาจส่งพร้อม markdown code fence
+// แกะ JSON ที่ AI อาจส่งพร้อม markdown code fence (9router มักห่อ ```json มาให้)
 const parseGeminiJson = (text) => {
     const cleaned = String(text || '').replace(/```json|```/gi, '').trim();
     const firstBrace = cleaned.indexOf('{');
     const lastBrace = cleaned.lastIndexOf('}');
     if (firstBrace < 0 || lastBrace <= firstBrace) {
-        throw new Error('Gemini returned no JSON object');
+        throw new Error('AI returned no JSON object');
     }
     return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
 };
 
-// ขอผลวิเคราะห์ JSON จาก Gemini พร้อมการตรวจ status และ retry
+// ย้ำ schema ใน prompt เพราะ 9router (OpenAI-compatible) ไม่รับ responseJsonSchema แบบ Gemini
+const withSchemaHint = (userPrompt, schema) => {
+    if (!schema) return userPrompt;
+    return `${userPrompt}\n\nReturn JSON only matching this schema (no markdown, no extra text):\n${JSON.stringify(schema)}`;
+};
+
+// ขอผลวิเคราะห์ JSON ผ่าน 9router (chat completions + vision) พร้อม retry
 async function generateGeminiJson({
     systemPrompt,
     userPrompt,
@@ -227,53 +233,32 @@ async function generateGeminiJson({
 }) {
     if (!config.gemini.apiKey) {
         throw new ImageAnalysisError(
-            'GEMINI_API_KEY is missing',
+            'AI API key is missing',
             'Image explanation is not configured yet.',
             503,
         );
     }
 
-    const parts = [{ text: userPrompt }];
-    if (imageBuffer) {
-        parts.push({
-            inlineData: {
-                mimeType,
-                data: imageBuffer.toString('base64'),
-            },
-        });
-    }
-
-    const body = {
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts }],
-        generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 2048,
-            responseMimeType: 'application/json',
-            responseJsonSchema: schema,
-        },
-    };
-
-    const url = `${config.gemini.apiBaseUrl}/models/${config.gemini.model}:generateContent`;
+    const { chatCompletion, toVisionUserContent } = require('./aiProvider');
+    const promptWithSchema = withSchemaHint(userPrompt, schema);
     let lastError;
 
     for (let attempt = 0; attempt <= config.gemini.maxRetries; attempt++) {
         try {
-            const response = await requestWithTimeout(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    // ไม่วาง key ใน query string เพื่อป้องกันค่าติด URL log
-                    'x-goog-api-key': config.gemini.apiKey,
-                },
-                body: JSON.stringify(body),
-            }, 'AI Guide');
-            const payload = await response.json();
-            const text = payload.candidates?.[0]?.content?.parts
-                ?.map((part) => part.text || '')
-                .join('');
-            if (!text) throw new Error('Gemini returned no content');
-            return parseGeminiJson(text);
+            const result = await chatCompletion({
+                systemPrompt,
+                messages: imageBuffer
+                    ? undefined
+                    : [{ role: 'user', content: promptWithSchema }],
+                userContent: imageBuffer
+                    ? toVisionUserContent(promptWithSchema, imageBuffer, mimeType)
+                    : undefined,
+                maxTokens: 2048,
+                temperature: 0.2,
+                jsonMode: true,
+            });
+            if (!result.text) throw new Error('AI returned no content');
+            return parseGeminiJson(result.text);
         } catch (error) {
             lastError = error;
             // HTTP 200 ที่ content ว่าง/JSON ไม่ครบ และ 5xx สามารถ retry ได้
@@ -287,13 +272,13 @@ async function generateGeminiJson({
 
     if (lastError instanceof ImageAnalysisError) throw lastError;
     throw new ImageAnalysisError(
-        `Gemini analysis failed: ${lastError?.message || 'unknown error'}`,
+        `AI analysis failed: ${lastError?.message || 'unknown error'}`,
         'AI Guide could not analyze this image. Please try another photo.',
     );
 }
 
-// ขอผลวิเคราะห์ JSON จาก Gemini พร้อม context จาก free web search (Tavily หลัก)
-// แทน Google Search grounding เดิมที่ต้องเปิด billing — ใช้ responseMimeType JSON ได้ปกติ
+// ขอผลวิเคราะห์ JSON ผ่าน 9router พร้อม context จาก free web search (Tavily หลัก)
+// แทน Google Search grounding เดิมที่ต้องเปิด billing — ใช้ response_format JSON ได้ปกติ
 async function generateGeminiJsonWithWebContext({
     systemPrompt,
     userPrompt,
@@ -304,7 +289,7 @@ async function generateGeminiJsonWithWebContext({
 }) {
     if (!config.gemini.apiKey) {
         throw new ImageAnalysisError(
-            'GEMINI_API_KEY is missing',
+            'AI API key is missing',
             'Image explanation is not configured yet.',
             503,
         );
@@ -327,44 +312,24 @@ async function generateGeminiJsonWithWebContext({
         }
     }
 
-    const parts = [{ text: enrichedUserPrompt }];
-    if (imageBuffer) {
-        parts.push({
-            inlineData: {
-                mimeType,
-                data: imageBuffer.toString('base64'),
-            },
-        });
-    }
-
-    const body = {
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts }],
-        generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 2048,
-            responseMimeType: 'application/json',
-            responseJsonSchema: schema,
-        },
-    };
-
-    const url = `${config.gemini.apiBaseUrl}/models/${config.gemini.model}:generateContent`;
-    const response = await requestWithTimeout(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': config.gemini.apiKey,
-        },
-        body: JSON.stringify(body),
-    }, 'AI Guide web');
-    const payload = await response.json();
-    const text = payload.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text || '')
-        .join('');
-    if (!text) throw new Error('Gemini returned no content');
-    const parsed = parseGeminiJson(text);
+    const { chatCompletion, toVisionUserContent } = require('./aiProvider');
+    const promptWithSchema = withSchemaHint(enrichedUserPrompt, schema);
+    const result = await chatCompletion({
+        systemPrompt,
+        messages: imageBuffer
+            ? undefined
+            : [{ role: 'user', content: promptWithSchema }],
+        userContent: imageBuffer
+            ? toVisionUserContent(promptWithSchema, imageBuffer, mimeType)
+            : undefined,
+        maxTokens: 2048,
+        temperature: 0.2,
+        jsonMode: true,
+    });
+    if (!result.text) throw new Error('AI returned no content');
+    const parsed = parseGeminiJson(result.text);
     if (!parsed || typeof parsed !== 'object') {
-        throw new Error('Gemini web-context search returned no JSON object');
+        throw new Error('AI web-context search returned no JSON object');
     }
     return parsed;
 }
@@ -687,7 +652,7 @@ async function analyzeSign({ imageBuffer, mimeType, languageCode }) {
         });
         return { analysis, answer: analysisToAnswer(analysis, languageCode), sourceChunkIds: [] };
     } catch (primaryError) {
-        // Gemini เป็น fallback เพื่อให้ผู้ใช้ยังอ่านป้ายได้เมื่อ AI for Thai ล่ม
+        // AI vision เป็น fallback เพื่อให้ผู้ใช้ยังอ่านป้ายได้เมื่อ AI for Thai ล่ม
         // หรือภาพไม่ตรงข้อจำกัดด้านชนิดและขนาดไฟล์ของ T-OCR
         console.warn('[image-analysis] AI for Thai sign flow failed:', primaryError.message);
         const result = await generateGeminiJson({
@@ -726,7 +691,7 @@ const mergeFoodCandidates = (visionResult, candidates) => {
     return merged.slice(0, 3);
 };
 
-// ให้ Gemini ดูภาพและระบุอาหารเองเป็นตัวหลัก โดยใช้ผลจำแนกของ T-Food เป็นเพียง hint
+// ให้ AI vision ดูภาพและระบุอาหารเองเป็นตัวหลัก โดยใช้ผลจำแนกของ T-Food เป็นเพียง hint
 // พร้อมบังคับตรวจความสอดคล้องของประเภทจาน เช่น ห้ามตอบน้ำพริก/จิ้มสำหรับภาพก๋วยเตี๋ยวน้ำ
 async function identifyFoodFromImage(
     candidates,
@@ -799,7 +764,7 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
     }
     const tFoodTop = candidates[0] || null;
 
-    // 2) ให้ Gemini ดูภาพและสรุปเอง (free web search) โดยไม่ยอมรับ hint ที่ขัดกับภาพ
+    // 2) ให้ AI ดูภาพและสรุปเอง (free web search) โดยไม่ยอมรับ hint ที่ขัดกับภาพ
     const result = await identifyFoodFromImage(
         candidates,
         languageCode,
@@ -807,7 +772,7 @@ async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
         mimeType,
     );
 
-    // 3) ถ้า Gemini เห็นพ้องกับ T-Food ให้เชื่อมั่นขึ้นตามคะแนน classifier เสริม
+    // 3) ถ้า AI เห็นพ้องกับ T-Food ให้เชื่อมั่นขึ้นตามคะแนน classifier เสริม
     const visionName = String(result.thaiName || '').trim().toLowerCase();
     if (tFoodTop && visionName === tFoodTop.name.trim().toLowerCase()) {
         result.confidence = Math.max(

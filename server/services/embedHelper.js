@@ -2,48 +2,25 @@
 
 const { config } = require('../config/env');
 const embeddingRepository = require('../repositories/embeddingRepository');
-const GEMINI_API_KEY = config.gemini.apiKey;
-const GEMINI_API_BASE = config.gemini.apiBaseUrl;
-const EMBED_MODEL = config.gemini.embeddingModel;
-const EMBED_DIMENSIONS = 1536;
+const { getEmbeddingVector } = require('./aiProvider');
+const EMBED_DIMENSIONS = config.gemini.embeddingDimensions || 1536;
 const { stripHtml, buildPlaceFacts } = require('./tatPlaceFormatter');
 
-// taskType ต้องต่างกันระหว่างเอกสารกับคำค้นตามสัญญาของ embedding model
-// ขอเวกเตอร์ embedding จาก Gemini สำหรับข้อความและประเภทงานที่กำหนด
+// taskType เก็บไว้เพื่อคงลายเซ็นเดิม (9router/OpenAI embeddings ไม่ใช้ taskType/outputDimensionality)
+// ขอเวกเตอร์ embedding ผ่าน 9router สำหรับข้อความที่กำหนด
 async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
-    if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
-        throw new Error('ไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ (.env)');
+    if (!config.gemini.apiKey) {
+        throw new Error('ไม่ได้ตั้งค่า AI API key ในระบบ (.env: AI_API_KEY หรือ GEMINI_API_KEY)');
     }
 
-    const response = await fetch(`${GEMINI_API_BASE}/models/${EMBED_MODEL}:embedContent`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-            taskType,
-            outputDimensionality: EMBED_DIMENSIONS,
-            content: {
-                parts: [{ text }],
-            },
-        }),
-    });
-    if (!response.ok) {
-        const error = new Error(`Gemini embedding error: ${response.status} — ${await response.text()}`);
-        error.status = response.status;
-        throw error;
-    }
-
-    const data = await response.json();
-    const values = data.embedding?.values;
+    const values = await getEmbeddingVector(text);
     if (!Array.isArray(values) || values.length !== EMBED_DIMENSIONS) {
-        throw new Error(`Gemini embedding returned invalid vector size: ${values?.length || 0}`);
+        throw new Error(`AI embedding returned invalid vector size: ${values?.length || 0}`);
     }
     return values;
 }
 
-// รวมข้อมูลสำคัญทั้งหมดเป็นเอกสารเดียว เพื่อลด Gemini quota เหลือหนึ่ง request ต่อสถานที่
+// รวมข้อมูลสำคัญทั้งหมดเป็นเอกสารเดียว เพื่อลด quota เหลือหนึ่ง request ต่อสถานที่
 function buildChunks(dest) {
     const facts = buildPlaceFacts(dest);
 
@@ -108,7 +85,7 @@ async function bulkEmbedMissing() {
             console.error(`[embed] ✗ destination ${row.id}:`, err.message);
             if (err.status === 429) {
                 quotaExhausted = true;
-                console.error('[embed] หยุดคิวชั่วคราวเพราะ Gemini quota เต็ม');
+                console.error('[embed] หยุดคิวชั่วคราวเพราะ AI quota เต็ม');
                 break;
             }
         }

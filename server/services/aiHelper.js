@@ -16,11 +16,12 @@ const {
     formatWebSearchContext,
     toGroundingChunks,
 } = require('./webSearchHelper');
-const GEMINI_API_KEY = config.gemini.apiKey;
-const GEMINI_API_BASE = config.gemini.apiBaseUrl;
-const GEMINI_MODEL = config.gemini.model;
-const GEMINI_MAX_RETRIES = config.gemini.maxRetries;
-const GEMINI_PLAN_THINKING_BUDGET = config.gemini.planThinkingBudget;
+const {
+    chatCompletion,
+    chatCompletionStream,
+} = require('./aiProvider');
+// เดิมเรียก Gemini native ตรง ตอนนี้วิ่งผ่าน 9router (OpenAI-compatible) ผ่าน aiProvider
+// (model/key/base URL อ่านจาก config.gemini ซึ่ง map ไป 9router แล้วใน env.js)
 const SUPPORTED_TRANSPORT_MODES = new Set([
     'car',
     'walking',
@@ -30,13 +31,8 @@ const SUPPORTED_TRANSPORT_MODES = new Set([
     'flight',
 ]);
 const LONG_DISTANCE_TRANSPORT_MODES = new Set(['train', 'ferry', 'flight']);
-const GEMINI_HEADERS = {
-    'Content-Type': 'application/json',
-    // ส่ง key ใน header เพื่อไม่ให้ค่าลับติด URL หรือ access log
-    'x-goog-api-key': GEMINI_API_KEY,
-};
 
-// หน่วงเวลาแบบ async สำหรับการ retry request ไปยัง Gemini
+// หน่วงเวลาแบบ async สำหรับการ retry request ไปยัง AI
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // รวมแหล่งอ้างอิงเว็บจากผล free web search (Tavily/Wikipedia/DuckDuckGo)
@@ -437,153 +433,43 @@ const PLAN_RESPONSE_SCHEMA = {
 
 // คืน async generator ที่ yield text delta เพื่อส่งต่อเป็น SSE โดยไม่รอคำตอบทั้งหมด
 // ค้นเว็บด้วย freeWebSearch (Tavily หลัก) แล้วฝาก webContext มากับ systemPrompt แทน
-// Gemini grounding (tools google_search) — เลิกใช้เพราะต้องเปิด billing
+// วิ่งผ่าน 9router (OpenAI-compatible streaming) — logic เดิมของ Gemini ย้ายไป aiProvider แล้ว
 async function* streamGemini(
     systemPrompt,
     messages,
     maxTokens = 4096,
     { jsonMode = false, webContext = '' } = {},
 ) {
-
-    const contents = messages.map(m => ({
-        role: m.role === 'assistant' ? 'model' : m.role,
-        parts: [{ text: m.content }]
-    }));
-
-    const body = {
-        contents,
-        generationConfig: {
-            maxOutputTokens: maxTokens,
-            temperature: 0.7,
-        }
-    };
-
-    if (jsonMode) {
-        body.generationConfig.responseMimeType = 'application/json';
-        body.generationConfig.temperature = 0.35;
-    }
-
-    if (systemPrompt || webContext) {
-        const combinedPrompt = webContext
-            ? `${systemPrompt}\n\nข้อมูลเสริมจากเว็บ (ยังไม่ยืนยันในฐานข้อมูล ใช้ประกอบการตอบเท่านั้น):\n${webContext}`
-            : systemPrompt;
-        body.systemInstruction = {
-            parts: [{ text: combinedPrompt }]
-        };
-    }
-
-    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse`;
-
-    let response;
-    for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
-        response = await fetch(url, {
-            method: 'POST',
-            headers: GEMINI_HEADERS,
-            body: JSON.stringify(body),
-        });
-
-        if (response.ok) break;
-
-        const errorBody = await response.text();
-        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
-        if (!retryable || attempt === GEMINI_MAX_RETRIES) {
-            const error = new Error(`Gemini API error: ${response.status} — ${errorBody}`);
-            error.statusCode = response.status;
-            throw error;
-        }
-
-        const exponentialDelay = 1000 * (2 ** attempt);
-        const jitter = Math.floor(Math.random() * 500);
-        console.warn(`[ai] Gemini ${response.status}; retry ${attempt + 1}/${GEMINI_MAX_RETRIES} in ${exponentialDelay + jitter}ms`);
-        await wait(exponentialDelay + jitter);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // บรรทัดสุดท้ายอาจยังไม่ครบ
-
-        for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const jsonStr = line.slice(6).trim();
-            if (jsonStr === '[DONE]') return;
-
-            try {
-                const event = JSON.parse(jsonStr);
-                const candidate = event.candidates?.[0];
-                const text = candidate?.content?.parts?.[0]?.text;
-                if (text) {
-                    yield text;
-                }
-            } catch {
-                // ข้ามเฉพาะ SSE event ที่ถูกตัดกลางทาง แล้วอ่าน event ถัดไปต่อ
-            }
-        }
-    }
+    const combinedPrompt = webContext
+        ? `${systemPrompt}\n\nข้อมูลเสริมจากเว็บ (ยังไม่ยืนยันในฐานข้อมูล ใช้ประกอบการตอบเท่านั้น):\n${webContext}`
+        : systemPrompt;
+    yield* chatCompletionStream({
+        systemPrompt: combinedPrompt,
+        messages,
+        maxTokens,
+        // แชททั่วไปตอบเป็นธรรมชาติ แผน/JSON จะส่ง jsonMode มาเอง
+        temperature: jsonMode ? 0.35 : 0.7,
+        jsonMode,
+    });
 }
 
 // แผนเที่ยวขอเป็น response เดียวเพื่อไม่ต้องต่อ JSON ที่ถูกแบ่งเป็น SSE หลายชิ้น
-// ขอ JSON ที่ซ่อมรูปแบบแล้วจาก Gemini พร้อม retry เมื่อเกิดข้อผิดพลาดชั่วคราว
+// ขอ JSON จาก 9router (response_format json_object) พร้อม retry ใน aiProvider
 async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
-    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent`;
-    const body = {
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: {
-            maxOutputTokens: maxTokens,
-            temperature: 0.25,
-            responseMimeType: 'application/json',
-            responseJsonSchema: PLAN_RESPONSE_SCHEMA,
-        },
+    // 9router ไม่รองรับ responseJsonSchema แบบ Gemini จึงย้ำ schema ใน prompt แทน
+    // (PLAN_RESPONSE_SCHEMA ยังใช้เป็นเอกสารอ้างอิง + ส่งย้ำรูปแบบใน userPrompt ของ generateTripPlan)
+    const result = await chatCompletion({
+        systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        maxTokens,
+        jsonMode: true,
+        temperature: 0.25,
+    });
+    return {
+        text: result.text,
+        finishReason: result.finishReason,
+        usageMetadata: result.usage || null,
     };
-
-    // โมเดลใหม่บางรุ่นปฏิเสธ thinkingBudget เป็น 0 (400 INVALID_ARGUMENT)
-    // จึงส่ง thinkingConfig เฉพาะเมื่อตั้งค่า budget มากกว่า 0 เท่านั้น
-    if (GEMINI_PLAN_THINKING_BUDGET > 0) {
-        body.generationConfig.thinkingConfig = {
-            thinkingBudget: GEMINI_PLAN_THINKING_BUDGET,
-        };
-    }
-
-    for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: GEMINI_HEADERS,
-            body: JSON.stringify(body),
-        });
-
-        if (response.ok) {
-            const payload = await response.json();
-            const candidate = payload.candidates?.[0];
-            const text = candidate?.content?.parts?.map(part => part.text || '').join('') || '';
-            if (!text) {
-                throw new Error(`Gemini returned no plan content (finishReason=${candidate?.finishReason || 'unknown'})`);
-            }
-            return {
-                text,
-                finishReason: candidate?.finishReason || 'UNKNOWN',
-                usageMetadata: payload.usageMetadata || null,
-            };
-        }
-
-        const errorBody = await response.text();
-        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
-        if (!retryable || attempt === GEMINI_MAX_RETRIES) {
-            const error = new Error(`Gemini API error: ${response.status} — ${errorBody}`);
-            error.statusCode = response.status;
-            throw error;
-        }
-        const delay = 1000 * (2 ** attempt) + Math.floor(Math.random() * 500);
-        console.warn(`[ai] Gemini ${response.status}; JSON retry ${attempt + 1}/${GEMINI_MAX_RETRIES} in ${delay}ms`);
-        await wait(delay);
-    }
 }
 
 // สร้างแผนแล้ว stream สถานะกลับ Flutter ก่อนบันทึก JSON ที่ normalize ลงฐานข้อมูล
@@ -737,7 +623,7 @@ async function generateTripPlan(tripId, tripInput, res) {
                 const firstBrace = withoutFences.indexOf('{');
                 const lastBrace = withoutFences.lastIndexOf('}');
                 if (firstBrace < 0 || lastBrace <= firstBrace) {
-                    throw new SyntaxError('Gemini returned no complete JSON object');
+                    throw new SyntaxError('AI returned no complete JSON object');
                 }
                 const jsonText = withoutFences.slice(firstBrace, lastBrace + 1);
                 try {
@@ -749,7 +635,7 @@ async function generateTripPlan(tripId, tripInput, res) {
                 }
                 if (!Array.isArray(planData.days) || planData.days.length === 0) {
                     throw new SyntaxError(
-                        `Gemini plan JSON is missing days (keys=${Object.keys(planData).join(',')})`,
+                        `AI plan JSON is missing days (keys=${Object.keys(planData).join(',')})`,
                     );
                 }
                 normalizePlanTransportModes(planData, allowedTransportModes);
