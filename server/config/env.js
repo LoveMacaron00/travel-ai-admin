@@ -120,6 +120,14 @@ const config = {
         maxResults: Math.min(10, Math.max(1, asNumber(process.env.WEB_SEARCH_MAX_RESULTS, 5))),
         cacheTtlMs: Math.max(0, asNumber(process.env.WEB_SEARCH_CACHE_TTL_MS, 600000)),
     },
+    rag: {
+        // เกณฑ์ cosine similarity ขั้นต่ำของแชท — ต่ำกว่านี้ถือว่า DB ไม่มีข้อมูลที่เกี่ยวข้อง แล้วไปค้นเว็บแทน
+        // (vector search คืนผลใกล้เคียงสุดเสมอแม้ไม่เกี่ยว ถ้าไม่มี threshold web search จะไม่มีวันทำงาน)
+        chatSimilarityThreshold: Math.min(
+            0.95,
+            Math.max(0.3, asNumber(process.env.RAG_CHAT_SIMILARITY_THRESHOLD, 0.72)),
+        ),
+    },
 };
 
 const requiredEnvironmentVariables = [

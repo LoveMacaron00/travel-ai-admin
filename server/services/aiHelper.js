@@ -14,7 +14,6 @@ const { config } = require('../config/env');
 const {
     freeWebSearch,
     formatWebSearchContext,
-    toGroundingChunks,
 } = require('./webSearchHelper');
 const {
     chatCompletion,
@@ -34,25 +33,6 @@ const LONG_DISTANCE_TRANSPORT_MODES = new Set(['train', 'ferry', 'flight']);
 
 // หน่วงเวลาแบบ async สำหรับการ retry request ไปยัง AI
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// รวมแหล่งอ้างอิงเว็บจากผล free web search (Tavily/Wikipedia/DuckDuckGo)
-// เป็นข้อความธรรมดาท้ายคำตอบ — รูปแบบเดียวกับ grounding เดิม
-const formatWebCitations = (chunks, userMessage) => {
-    const seen = new Set();
-    const citations = [];
-    for (const chunk of chunks) {
-        const uri = chunk?.web?.uri;
-        if (!uri || seen.has(uri)) continue;
-        seen.add(uri);
-        citations.push(`${chunk.web.title || uri} (${uri})`);
-        if (citations.length >= 3) break;
-    }
-    if (!citations.length) return '';
-    const label = /[\u0E00-\u0E7F]/.test(userMessage)
-        ? 'อ้างอิงจากเว็บ:'
-        : 'Web sources:';
-    return `${label}\n${citations.join('\n')}`;
-};
 
 // คัดเฉพาะรูปแบบการเดินทางที่ระบบรองรับจากข้อมูลนำเข้าของผู้ใช้
 const getAllowedTransportModes = (modes) => {
@@ -757,14 +737,31 @@ async function ragChat(
         places = await retrieveRelevantPlaces(userMessage, {
             limit: 8,
         });
-
-        placesContext = formatPlacesContext(places);
-        sourceChunkIds = places.map(p => p.id);
     }
 
-    // ค้นเว็บฟรี (Tavily หลัก + Wikipedia/DuckDuckGo สำรอง) เฉพาะเมื่อ RAG
-    // ไม่ได้ข้อมูลจากฐานข้อมูลเลย — ประหยัดเครดิต Tavily (1 call ต่อ 1 เทิร์น)
-    const useWebSearch = isTravelQuery && places.length === 0 && config.webSearch.enabled;
+    // vector search คืนผลใกล้เคียงสุดเสมอแม้ไม่เกี่ยว (SQL ไม่มี threshold)
+    // จึงดูคะแนนสูงสุด: ต่ำกว่าเกณฑ์ = DB ไม่มีข้อมูลที่เกี่ยวข้อง → ไปค้นเว็บแทน
+    // (เดิมเช็คแค่ places.length === 0 ซึ่งแทบไม่เกิด ทำให้ web search ไม่มีวันทำงาน)
+    const maxSimilarity = places.reduce(
+        (best, place) => Math.max(best, Number(place.similarity) || 0),
+        0,
+    );
+    const hasRelevantDbData = isTravelQuery
+        && places.length > 0
+        && maxSimilarity >= config.rag.chatSimilarityThreshold;
+    const relevantPlaces = hasRelevantDbData ? places : [];
+    if (isTravelQuery && places.length > 0 && !hasRelevantDbData) {
+        console.warn(
+            `[ai] RAG top similarity ${maxSimilarity.toFixed(4)} < ${config.rag.chatSimilarityThreshold} — ถือว่า DB ไม่มีข้อมูล ไปค้นเว็บแทน`,
+        );
+    }
+
+    placesContext = formatPlacesContext(relevantPlaces);
+    sourceChunkIds = relevantPlaces.map((place) => place.id);
+
+    // ค้นเว็บฟรี (Tavily หลัก + Wikipedia/DuckDuckGo สำรอง) เฉพาะเมื่อ DB
+    // ไม่มีข้อมูลที่เกี่ยวข้อง — ประหยัดเครดิต Tavily (1 call ต่อ 1 เทิร์น)
+    const useWebSearch = isTravelQuery && !hasRelevantDbData && config.webSearch.enabled;
     let webResults = [];
     let webContext = '';
     if (useWebSearch) {
@@ -790,12 +787,13 @@ async function ragChat(
     const webAnswerRules = webResults.length > 0
         ? `ไม่พบข้อมูลสถานที่ที่เกี่ยวข้องในฐานข้อมูลของแอป ให้ใช้ข้อมูลเสริมจากเว็บด้านล่างช่วยตอบคำถาม
     สรุปจากผลค้นหาอย่างระมัดระวัง และระบุให้ผู้ใช้ทราบว่าข้อมูลนี้มาจากเว็บ ไม่ใช่สถานที่ที่ยืนยันในฐานข้อมูลของแอป
-    ถ้าผลค้นหาไม่ชัดเจนหรือขัดแย้งกัน ให้แจ้งข้อจำกัดนั้นแทนการเดา`
+    ถ้าผลค้นหาไม่ชัดเจนหรือขัดแย้งกัน ให้แจ้งข้อจำกัดนั้นแทนการเดา
+    ห้ามแปะ URL หรือลิงก์ดิบๆ ในคำตอบ ให้อ้างอิงแค่ชื่อแหล่งข้อมูลพอ`
         : `ไม่พบข้อมูลสถานที่ที่เกี่ยวข้องในฐานข้อมูลของแอป และค้นเว็บไม่พบผลลัพธ์
     ให้บอกผู้ใช้ตรงๆ ว่ายังไม่มีข้อมูลยืนยันสำหรับคำถามนี้ แนะนำให้ถามให้ชัดเจนเฉพาะเจาะจงเพิ่มเติม`;
 
     const systemPrompt = isTravelQuery ?
-    (places.length > 0 ?
+    (hasRelevantDbData ?
     `${travelGuideRules}
     สำหรับข้อมูลสถานที่ ให้ยึด context จากฐานข้อมูลเป็นหลัก ถ้าข้อมูลไม่อยู่ใน context ให้บอกตรงๆ ว่าไม่มีข้อมูลยืนยัน
     หากมีข้อมูลบางส่วนหรือสถานที่ย่อยที่เกี่ยวข้องกันในพื้นที่ ให้แจ้งข้อมูลนั้นโดยตรงทันที
@@ -830,9 +828,7 @@ async function ragChat(
             { role: 'user', content: userMessage },
         ];
 
-        // เก็บแหล่งอ้างอิงเว็บจากผล freeWebSearch เพื่อแนบท้ายคำตอบ
-        const groundingChunks = toGroundingChunks(webResults);
-
+        // ไม่แนบลิงก์ดิบในคำตอบ (แสดงผลไม่สวยในแชท) — โมเดลจะระบุเองว่าข้อมูลมาจากเว็บ
         for await (const token of streamGemini(systemPrompt, messages, 2048, {
             webContext,
         })) {
@@ -840,18 +836,9 @@ async function ragChat(
             res.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
         }
 
-        // ส่ง citation เป็น token สุดท้ายเพื่อให้ผู้ใช้เห็นในแชทและบันทึกลงประวัติด้วย
-        const webCitations = formatWebCitations(groundingChunks, userMessage);
-        if (webCitations) {
-            fullAnswer += `\n\n${webCitations}`;
-            res.write(
-                `data: ${JSON.stringify({ type: 'token', text: `\n\n${webCitations}` })}\n\n`,
-            );
-        }
-
         // กรองให้เหลือเฉพาะสถานที่ที่ AI พูดถึงจริงในคำตอบ เรียงตามลำดับที่ถูกกล่าวถึง
-        // ถ้าไม่มีสถานที่ไหนถูกพูดถึงเลยจะไม่มี card
-        const sourcePlaces = pickPlacesMentionedInAnswer(fullAnswer, places);
+        // ถ้าไม่มีสถานที่ไหนถูกพูดถึงเลยจะไม่มี card (เคสตอบจากเว็บจะไม่ผูก card ของ DB ที่ไม่เกี่ยว)
+        const sourcePlaces = pickPlacesMentionedInAnswer(fullAnswer, relevantPlaces);
         sourceChunkIds = sourcePlaces.map((place) => place.id);
 
         let userMessageId;
