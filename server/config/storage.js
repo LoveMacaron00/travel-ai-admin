@@ -1,7 +1,7 @@
 // server/config/storage.js
 // Centralized storage paths — previously duplicated in 3 places:
 // - config/multer.js: path.join(__dirname, '..', 'uploads')
-// - controllers/helpers/chatImageStorage.js: path.join(__dirname, '../..', 'uploads', 'chat-images')
+// - services/chatImageStorage.js: path.join(__dirname, '..', 'uploads', 'chat-images')
 // - routes/preferenceRoutes.js: path.join(__dirname, '..', 'uploads', 'preferences')
 // Now single source of truth; behavior identical (same resolved paths).
 const path = require('path');

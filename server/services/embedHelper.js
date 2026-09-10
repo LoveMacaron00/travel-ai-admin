@@ -1,8 +1,7 @@
-// server/controllers/helpers/embedHelper.js
+// server/services/embedHelper.js
 
-const pool = require('../../config/db');
-const query = pool.query.bind(pool);
-const { config } = require('../../config/env');
+const { config } = require('../config/env');
+const embeddingRepository = require('../repositories/embeddingRepository');
 const GEMINI_API_KEY = config.gemini.apiKey;
 const GEMINI_API_BASE = config.gemini.apiBaseUrl;
 const EMBED_MODEL = config.gemini.embeddingModel;
@@ -72,19 +71,11 @@ function buildChunks(dest) {
 
 // สร้างและบันทึก embedding ใหม่ของสถานที่หนึ่งแห่ง
 async function embedDestination(destinationId) {
-    const { rows } = await query(
-        `SELECT id, name, province, description, category, tags,
-                latitude, longitude, address, district, sub_district, postcode,
-                opening_time, closing_time,
-                opening_hours, tat_raw
-         FROM destinations WHERE id = $1 AND status = 'approved'`,
-        [destinationId]
-    );
-    if (rows.length === 0) {
+    const dest = await embeddingRepository.findEmbeddableDestination(destinationId);
+    if (!dest) {
         console.log(`[embed] skip: destination ${destinationId} ไม่พบหรือยังไม่ approved`);
         return false;
     }
-    const dest = rows[0];
     const chunks = buildChunks(dest);
     const embeddedChunks = [];
     for (const chunk of chunks) {
@@ -95,38 +86,14 @@ async function embedDestination(destinationId) {
 
     // ขอเวกเตอร์ให้ครบก่อนลบชุดเก่า เพื่อไม่ให้ quota/network error
     // ทำให้สถานที่ที่เคยค้นหาได้สูญเสีย embedding เดิม
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
-        await client.query('DELETE FROM place_embeddings WHERE destination_id = $1', [destinationId]);
-        for (const chunk of embeddedChunks) {
-            await client.query(
-                `INSERT INTO place_embeddings (destination_id, chunk_text, chunk_field, embedding)
-                 VALUES ($1, $2, $3, $4::vector)`,
-                [destinationId, chunk.text, chunk.field, JSON.stringify(chunk.vector)]
-            );
-        }
-        await client.query('COMMIT');
-    } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-    } finally {
-        client.release();
-    }
+    await embeddingRepository.replaceDestinationEmbeddings(destinationId, embeddedChunks);
     console.log(`[embed] ✓ ${dest.name} (id:${destinationId}) — ${embeddedChunks.length} chunks`);
     return true;
 }
 
 // สร้าง embedding ให้สถานที่ approved ทุกแห่งที่ยังไม่มีข้อมูล
 async function bulkEmbedMissing() {
-    const { rows } = await query(
-        `SELECT d.id FROM destinations d
-         WHERE d.status = 'approved'
-           AND NOT EXISTS (
-               SELECT 1 FROM place_embeddings pe WHERE pe.destination_id = d.id
-           )
-         ORDER BY d.id ASC`
-    );
+    const rows = await embeddingRepository.findApprovedWithoutEmbeddings();
     console.log(`[embed] bulk: พบ ${rows.length} destinations ที่ยังไม่ได้ embed`);
     let success = 0;
     let failed = 0;
@@ -154,7 +121,7 @@ async function bulkEmbedMissing() {
 
 // ลบ embedding เดิมของสถานที่เพื่อเตรียมสร้างใหม่
 async function clearDestinationEmbedding(destinationId) {
-    await query('DELETE FROM place_embeddings WHERE destination_id = $1', [destinationId]);
+    await embeddingRepository.deleteDestinationEmbeddings(destinationId);
 }
 
 module.exports = { getEmbedding, embedDestination, bulkEmbedMissing, clearDestinationEmbedding };

@@ -1,10 +1,10 @@
-// server/controllers/helpers/tatPlaceIndex.js
+// server/services/tatPlaceIndex.js
 //
 // TAT API ค้นด้วย keyword ไม่เจอเมื่อคำค้นเป็นคำไทยคำเดียวที่ใช้บ่อย
 // (เช่น "วัด", "เกาะ", "หาด", "ตลาด" คืน total = 0 ทั้งที่มีข้อมูลอยู่จริง)
 // จึงต้องมีดัชนีสถานที่ของเราเองไว้ค้นแบบ substring เมื่อ TAT คืนผลว่าง
 
-const { tatHeadersFor } = require('./tatLanguage');
+const { tatHeadersFor } = require('../utils/tatLanguage');
 
 const TAT_PAGE_SIZE = 500;
 const MAX_INDEX_PAGES = 100;

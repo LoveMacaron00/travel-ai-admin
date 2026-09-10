@@ -1,4 +1,4 @@
-// server/controllers/helpers/webSearchHelper.js
+// server/services/webSearchHelper.js
 // แทน Gemini Google Search grounding (ต้องเปิด billing) ด้วยการค้นเว็บเองข้างนอก
 // แล้วเอาข้อความยัดเข้า Gemini prompt — ใช้ Gemini Free Tier เดิมได้เลย
 //
@@ -7,7 +7,7 @@
 // ประหยัดเครดิต: DB-first (เรียกเฉพาะตอน DB ว่าง), cache 10 นาที, 1 call ต่อ 1 เทิร์น,
 // search_depth=basic (1 credit) ห้ามใช้ advanced (2 credits)
 
-const { config } = require('../../config/env');
+const { config } = require('../config/env');
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 const DDG_API_URL = 'https://api.duckduckgo.com/';

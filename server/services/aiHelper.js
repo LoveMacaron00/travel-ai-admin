@@ -1,7 +1,7 @@
-// server/controllers/helpers/aiHelper.js
+// server/services/aiHelper.js
 
-const pool = require('../../config/db');
-const query = pool.query.bind(pool);
+const tripRepository = require('../repositories/tripRepository');
+const chatRepository = require('../repositories/chatRepository');
 const { jsonrepair } = require('jsonrepair');
 const {
     retrieveRelevantPlaces,
@@ -9,8 +9,8 @@ const {
     retrievePlacesByIds,
     formatPlacesContext,
 } = require('./ragHelper');
-const { ensureMustVisitStops, normalizePlanPlaces } = require('./planPlaceNormalizer');
-const { config } = require('../../config/env');
+const { ensureMustVisitStops, normalizePlanPlaces } = require('../utils/planPlaceNormalizer');
+const { config } = require('../config/env');
 const {
     freeWebSearch,
     formatWebSearchContext,
@@ -805,19 +805,15 @@ async function generateTripPlan(tripId, tripInput, res) {
         }
 
         // บันทึกแผนการเดินทางลง trip_plans
-        await query(
-            `INSERT INTO trip_plans (trip_id, plan_data, markdown_cache)
-             VALUES ($1, $2, $3)`,
-            [tripId, JSON.stringify(planData), fullText]
-        );
+        await tripRepository.saveGeneratedPlan(tripId, planData, fullText);
 
         // อัปเดตสถานะการเดินทางเป็นเสร็จสิ้น
-        await query(`UPDATE trips SET status = 'done' WHERE id = $1`, [tripId]);
+        await tripRepository.markTripDone(tripId);
 
         res.write(`data: ${JSON.stringify({ type: 'done', tripId })}\n\n`);
     } catch (err) {
         console.error('[ai] generateTripPlan error:', err.message);
-        await query(`UPDATE trips SET status = 'failed' WHERE id = $1`, [tripId]);
+        await tripRepository.markTripFailed(tripId);
         const transient = err instanceof SyntaxError || err.statusCode === 429 || err.statusCode >= 500;
         const message = err.code === 'NO_DATABASE_PLACES'
             ? 'ไม่พบสถานที่จากฐานข้อมูลเพียงพอสำหรับสร้างแผน กรุณาเพิ่มหรือนำเข้าข้อมูลสถานที่ก่อน'
@@ -979,70 +975,25 @@ async function ragChat(
         if (existingUserMessageId) {
             // อัปเดต prompt, ลบคำตอบเดิม และเพิ่มคำตอบใหม่ใน statement เดียว
             // จึงไม่ทิ้งบทสนทนาไว้ครึ่งทางหากบันทึกฐานข้อมูลล้มเหลว
-            const { rows } = await query(
-                `WITH updated_user AS (
-                    UPDATE chat_messages
-                    SET content = $2, edited_at = NOW()
-                    WHERE id = $5
-                      AND session_id = $1
-                      AND role = 'user'
-                      AND image_path IS NULL
-                    RETURNING id, created_at
-                 ), deleted_assistants AS (
-                    DELETE FROM chat_messages
-                    WHERE session_id = $1
-                      AND role = 'assistant'
-                      AND reply_to_message_id IN (SELECT id FROM updated_user)
-                    RETURNING id
-                 ), new_assistant AS (
-                    INSERT INTO chat_messages (
-                        session_id, role, content, source_chunk_ids,
-                        reply_to_message_id, created_at
-                    )
-                    SELECT $1, 'assistant', $3, $4, id, created_at
-                    FROM updated_user
-                    RETURNING id, reply_to_message_id
-                 )
-                 SELECT new_assistant.id AS assistant_message_id,
-                        new_assistant.reply_to_message_id AS user_message_id,
-                        COALESCE(
-                            (SELECT array_agg(id) FROM deleted_assistants),
-                            '{}'::int[]
-                        ) AS deleted_assistant_message_ids
-                 FROM new_assistant`,
-                [sessionId, userMessage, fullAnswer, sourceChunkIds, existingUserMessageId],
-            );
-            if (!rows[0]) throw new Error('Editable chat message no longer exists');
-            userMessageId = rows[0].user_message_id;
-            assistantMessageId = rows[0].assistant_message_id;
-            deletedAssistantMessageIds = rows[0].deleted_assistant_message_ids || [];
+            const saved = await chatRepository.replaceEditedMessage(sessionId, {
+                userMessage,
+                fullAnswer,
+                sourceChunkIds,
+                existingUserMessageId,
+            });
+            if (!saved) throw new Error('Editable chat message no longer exists');
+            userMessageId = saved.user_message_id;
+            assistantMessageId = saved.assistant_message_id;
+            deletedAssistantMessageIds = saved.deleted_assistant_message_ids || [];
         } else {
-            const { rows } = await query(
-                `WITH new_user AS (
-                    INSERT INTO chat_messages (
-                        session_id, role, content, source_chunk_ids
-                    )
-                    VALUES ($1, 'user', $2, '{}')
-                    RETURNING id
-                 ), new_assistant AS (
-                    INSERT INTO chat_messages (
-                        session_id, role, content, source_chunk_ids,
-                        reply_to_message_id
-                    )
-                    SELECT $1, 'assistant', $3, $4, id
-                    FROM new_user
-                    RETURNING id, reply_to_message_id
-                 )
-                 SELECT new_user.id AS user_message_id,
-                        new_assistant.id AS assistant_message_id
-                 FROM new_user
-                 JOIN new_assistant
-                   ON new_assistant.reply_to_message_id = new_user.id`,
-                [sessionId, userMessage, fullAnswer, sourceChunkIds],
-            );
-            if (!rows[0]) throw new Error('Chat messages could not be saved');
-            userMessageId = rows[0].user_message_id;
-            assistantMessageId = rows[0].assistant_message_id;
+            const saved = await chatRepository.insertChatMessagePair(sessionId, {
+                userMessage,
+                fullAnswer,
+                sourceChunkIds,
+            });
+            if (!saved) throw new Error('Chat messages could not be saved');
+            userMessageId = saved.user_message_id;
+            assistantMessageId = saved.assistant_message_id;
         }
 
         const sources = sourcePlaces.map(place => ({

@@ -1,4 +1,4 @@
-const { config } = require('../../config/env');
+const { config } = require('../config/env');
 const {
     freeWebSearch,
     formatWebSearchContext,
@@ -8,7 +8,7 @@ const {
     formatPlacesContext,
     retrieveNearbyPlaces,
 } = require('./ragHelper');
-const { resolveAppLanguage } = require('./appLanguage');
+const { resolveAppLanguage } = require('../utils/appLanguage');
 
 const SCAN_MODES = new Set(['place', 'sign', 'food']);
 const T_OCR_MAX_FILE_SIZE = 1024 * 1024;

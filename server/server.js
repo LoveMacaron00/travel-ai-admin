@@ -10,7 +10,9 @@ const morgan = require('morgan');
 const { createCorsOptions } = require('./config/corsOptions');
 const { requireAdminAuth } = require('./middleware/adminAuth');
 const { secureUploads } = require('./middleware/secureUploads');
-const { warmPlaceIndex } = require('./controllers/helpers/tatPlaceIndex');
+const { notFound } = require('./middleware/notFound');
+const { errorHandler } = require('./middleware/errorHandler');
+const { warmPlaceIndex } = require('./services/tatPlaceIndex');
 
 
 const app = express();
@@ -61,10 +63,9 @@ app.use('/api/preferences', requireAdminAuth, preferenceRoutes);
 
 app.get('/', (req, res) => res.send('Smart Travel API กำลังทำงาน'));
 
-// แปลง error จาก middleware (โดยเฉพาะ Multer) เป็น JSON รูปเดียวกัน
-app.use((err, _req, res, _next) => {
-    res.status(400).json({ message: err.message || 'คำขอไม่ถูกต้อง' });
-});
+// 404 กลาง + แปลง error จาก middleware (โดยเฉพาะ Multer) เป็น JSON รูปเดียวกัน
+app.use(notFound);
+app.use(errorHandler);
 
 app.listen(config.port, () => {
     console.log(`เซิร์ฟเวอร์กำลังทำงานบนพอร์ต ${config.port}`);

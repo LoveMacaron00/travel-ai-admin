@@ -2,22 +2,20 @@
 
 const fs = require('fs');
 const path = require('path');
-const pool = require('../config/db');
-const { embedDestination, clearDestinationEmbedding } = require('./helpers/embedHelper');
-
-const PLACE_STATUSES = ['pending', 'approved', 'rejected'];
-const ADMIN_PLACE_CATEGORIES = ['attraction', 'accommodation', 'restaurant', 'shop', 'other'];
-// แปลงสถานะสถานที่ให้เหลือค่าที่ระบบรองรับ
-const normalizePlaceStatus = (status) => {
-    const cleanStatus = String(status || 'approved').trim().toLowerCase();
-    return PLACE_STATUSES.includes(cleanStatus) ? cleanStatus : 'approved';
-};
-
-// จำกัดหมวดหมู่ที่ AdminAdd บันทึกให้ตรงกับตัวกรองและแผนที่ในแอป
-const normalizeAdminPlaceCategory = (category) => {
-    const cleanCategory = String(category || 'attraction').trim().toLowerCase();
-    return ADMIN_PLACE_CATEGORIES.includes(cleanCategory) ? cleanCategory : 'attraction';
-};
+const { embedDestination, clearDestinationEmbedding } = require('../services/embedHelper');
+const destinationRepository = require('../repositories/destinationRepository');
+const {
+    normalizePlaceStatus,
+    normalizeAdminPlaceCategory,
+    normalizeImageUrls,
+    normalizeStoredImages,
+    normalizeAdmissionFee,
+    nullableText,
+    nullableLocationId,
+    normalizeLocationInput,
+    getRemovedImages,
+    validateCoordinates,
+} = require('../validators/destinationValidator');
 
 // การบันทึกสถานที่ต้องสำเร็จได้แม้บริการ embedding ภายนอกขัดข้อง
 // โดยส่งคำเตือนกลับให้หน้า Admin แทนการรายงานว่าบันทึกข้อมูลล้มเหลว
@@ -52,105 +50,7 @@ const deleteUploadedFiles = (imagePaths) => {
     }
 };
 
-// ฟังก์ชันสำหรับ normalize ข้อมูลรูปภาพจาก request body (array ของ string)
-// แปลง input URL รูปให้เป็นรายการข้อความที่ไม่ว่างและไม่ซ้ำ
-const normalizeImageUrls = (images) => {
-    if (!Array.isArray(images)) return [];
-    return [...new Set(images.filter((image) => typeof image === 'string' && image.trim()).map((image) => image.trim()))];
-};
-
-// ฟังก์ชันสำหรับ normalize ข้อมูลรูปภาพจากฐานข้อมูล (JSON หรือ array)
-// แปลงค่ารูปที่เก็บในฐานข้อมูลเป็น array ที่ใช้งานได้เสมอ
-const normalizeStoredImages = (images) => {
-    if (!Array.isArray(images)) return [];
-    return images
-        .map((image) => {
-            if (typeof image === 'string') return image.trim();
-            if (image && typeof image === 'object') {
-                return String(image.image_url || image.url || '').trim();
-            }
-            return '';
-        })
-        .filter(Boolean);
-};
-
-// ฟังก์ชันสำหรับทำให้ค่า admission_fee เป็น object ที่มี key-value ที่ถูกต้อง
-// ทำให้ข้อมูลค่าเข้าชมอยู่ในรูปแบบ object ที่ปลอดภัยต่อการบันทึก
-const normalizeAdmissionFee = (fee) => {
-    if (!fee || typeof fee !== 'object' || Array.isArray(fee)) return {};
-    const result = {};
-    for (const key of ['thaiAdult', 'thaiChild', 'foreignerAdult', 'foreignerChild']) {
-        const value = fee[key];
-        if (value !== null && value !== undefined && String(value).trim() !== '') {
-            result[key] = String(value).trim();
-        }
-    }
-    if (fee.detail && String(fee.detail).trim()) result.detail = String(fee.detail).trim();
-    return result;
-};
-
-// ฟังก์ชันสำหรับทำให้ค่า admission_fee เป็น JSON string สำหรับเก็บในฐานข้อมูล
-// คืนข้อความที่ trim แล้ว หรือ null เมื่อไม่มีค่า
-const nullableText = (value) => {
-    if (value === null || value === undefined) return null;
-    const text = String(value).trim();
-    return text || null;
-};
-
-// ฟังก์ชันสำหรับทำให้ค่า location_id เป็น number หรือ null
-// แปลงรหัสพื้นที่เป็นจำนวนเต็มไม่ติดลบ หรือ null
-const nullableLocationId = (value) => {
-    if (value === null || value === undefined || String(value).trim() === '') return null;
-    const parsed = Number(value);
-    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
-};
-
-// ฟังก์ชันสำหรับ normalize ข้อมูล location จาก request body
-// จัดรูปแบบ field ที่อยู่จาก request ก่อนส่งเข้า query
-const normalizeLocationInput = (data = {}) => {
-    const location = data.location && typeof data.location === 'object' ? data.location : {};
-    const province = location.province && typeof location.province === 'object' ? location.province : {};
-    const district = location.district && typeof location.district === 'object' ? location.district : {};
-    const subDistrict = location.subDistrict && typeof location.subDistrict === 'object'
-        ? location.subDistrict
-        : {};
-
-    return {
-        address: location.address ?? data.address,
-        provinceId: province.provinceId ?? data.province_id,
-        province: province.name ?? data.province,
-        districtId: district.districtId ?? data.district_id,
-        district: district.name ?? data.district,
-        subDistrictId: subDistrict.subDistrictId ?? data.sub_district_id,
-        subDistrict: subDistrict.name ?? data.sub_district,
-        postcode: location.postcode ?? data.postcode,
-    };
-};
-
-// ฟังก์ชันสำหรับหาภาพที่ถูกลบออกจากรายการภาพปัจจุบัน
-// หารูปเก่าที่ถูกนำออกจากรายการใหม่
-const getRemovedImages = (currentImages, nextImages) => {
-    const nextSet = new Set(nextImages);
-    return currentImages.filter((image) => image && !nextSet.has(image));
-};
-
-// ฟังก์ชันสำหรับตรวจสอบค่าละติจูดและลองจิจูด
-// ตรวจละติจูดและลองจิจูดให้อยู่ในขอบเขตพิกัดโลก
-const validateCoordinates = (latitude, longitude) => {
-    if (latitude !== undefined && latitude !== '' && latitude !== null) {
-        const lat = parseFloat(latitude);
-        if (isNaN(lat) || lat < -90 || lat > 90) {
-            return { isValid: false, message: 'ค่าละติจูด (Latitude) ต้องอยู่ระหว่าง -90 ถึง 90' };
-        }
-    }
-    if (longitude !== undefined && longitude !== '' && longitude !== null) {
-        const lng = parseFloat(longitude);
-        if (isNaN(lng) || lng < -180 || lng > 180) {
-            return { isValid: false, message: 'ค่าลองจิจูด (Longitude) ต้องอยู่ระหว่าง -180 ถึง 180' };
-        }
-    }
-    return { isValid: true };
-};
+const parseLatitude = (value) => (value !== '' && value != null ? parseFloat(value) : null);
 
 /**
  * ดึงรายการสถานที่ทั้งหมด (รองรับตัวกรอง)
@@ -160,8 +60,6 @@ const validateCoordinates = (latitude, longitude) => {
 const getAllDestinations = async (req, res) => {
     try {
         const { province, status, search, source } = req.query;
-        const allowedStatuses = ['pending', 'approved', 'rejected'];
-        const allowedSources = ['admin', 'tat'];
         const paginationRequested = req.query.page !== undefined || req.query.limit !== undefined;
         const parsedPage = Number.parseInt(req.query.page, 10);
         const parsedLimit = Number.parseInt(req.query.limit, 10);
@@ -170,87 +68,16 @@ const getAllDestinations = async (req, res) => {
             ? Math.min(parsedLimit, 100)
             : 10;
 
-        const baseConditions = [];
-        const baseParams = [];
-
-        if (source && allowedSources.includes(String(source).trim().toLowerCase())) {
-            baseParams.push(String(source).trim().toLowerCase());
-            baseConditions.push(`source = $${baseParams.length}`);
-        }
-
-        if (province && typeof province === 'string' && province.trim()) {
-            const cleanProvince = province.trim();
-            if (/^[a-zA-Z0-9ก-๙\s.-]+$/.test(cleanProvince)) {
-                baseParams.push(cleanProvince);
-                baseConditions.push(`province = $${baseParams.length}`);
-            }
-        }
-
-        if (search && String(search).trim()) {
-            baseParams.push(`%${String(search).trim()}%`);
-            const searchParam = `$${baseParams.length}`;
-            baseConditions.push(`(
-                name ILIKE ${searchParam}
-                OR COALESCE(province, '') ILIKE ${searchParam}
-                OR COALESCE(address, '') ILIKE ${searchParam}
-                OR COALESCE(district, '') ILIKE ${searchParam}
-                OR COALESCE(sub_district, '') ILIKE ${searchParam}
-                OR COALESCE(category, '') ILIKE ${searchParam}
-            )`);
-        }
-
-        const conditions = [...baseConditions];
-        const params = [...baseParams];
-        if (status && typeof status === 'string') {
-            const cleanStatus = status.trim().toLowerCase();
-            if (allowedStatuses.includes(cleanStatus)) {
-                params.push(cleanStatus);
-                conditions.push(`status = $${params.length}`);
-            }
-        }
-
-        const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-        const baseWhereClause = baseConditions.length > 0
-            ? ` WHERE ${baseConditions.join(' AND ')}`
-            : '';
-        let sql = `
-            SELECT id, name, province, category, image_url, status, source, created_at
-            FROM destinations${whereClause}
-            ORDER BY created_at DESC
-        `;
-
-        if (!paginationRequested) {
-            const { rows } = await pool.query(sql, params);
-            return res.json(rows);
-        }
-
-        const paginatedParams = [...params, limit, (page - 1) * limit];
-        sql += ` LIMIT $${paginatedParams.length - 1} OFFSET $${paginatedParams.length}`;
-
-        const [itemsResult, totalResult, statusResult] = await Promise.all([
-            pool.query(sql, paginatedParams),
-            pool.query(`SELECT COUNT(*)::int AS total FROM destinations${whereClause}`, params),
-            pool.query(
-                `SELECT
-                    COUNT(*) FILTER (WHERE status = 'approved')::int AS approved,
-                    COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
-                    COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected
-                 FROM destinations${baseWhereClause}`,
-                baseParams
-            )
-        ]);
-
-        const total = totalResult.rows[0]?.total || 0;
-        res.json({
-            data: itemsResult.rows,
-            pagination: {
-                page,
-                limit,
-                total,
-                totalPages: Math.max(1, Math.ceil(total / limit))
-            },
-            statusCounts: statusResult.rows[0] || { approved: 0, pending: 0, rejected: 0 }
+        const result = await destinationRepository.searchAdminDestinations({
+            source,
+            province,
+            search,
+            status,
+            page,
+            limit,
+            paginationRequested,
         });
+        return res.json(result);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงรายการสถานที่:', err);
         res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
@@ -265,20 +92,13 @@ const getAllDestinations = async (req, res) => {
 const getDestinationById = async (req, res) => {
     try {
         const destId = parseInt(req.params.id, 10);
-        const { rows: destRows } = await pool.query(
-            'SELECT * FROM destinations WHERE id = $1',
-            [destId]
-        );
-        const destination = destRows[0] || null;
+        const destination = await destinationRepository.findAdminDestinationById(destId);
 
         if (!destination) {
             return res.status(404).json({ message: 'ไม่พบสถานที่' });
         }
 
-        const { rows: imageRows } = await pool.query(
-            'SELECT id, destination_id, image_url, created_at FROM destination_images WHERE destination_id = $1',
-            [destId]
-        );
+        const imageRows = await destinationRepository.findAdminDestinationImageRows(destId);
         const jsonImages = normalizeStoredImages(destination.images);
         const tableImages = imageRows.map((image) => image.image_url).filter(Boolean);
         const combinedUrls = [...new Set([
@@ -321,68 +141,27 @@ const createDestination = async (req, res) => {
 
         const data = req.body;
         const location = normalizeLocationInput(data);
-        const images = req.body.images;
-        const client = await pool.connect();
-        let destId;
-        try {
-            await client.query('BEGIN');
-
-            const { rows } = await client.query(
-                `INSERT INTO destinations (
-                    name, address, province_id, province, district_id, district,
-                    sub_district_id, sub_district, postcode,
-                    description, category, latitude, longitude, opening_time, closing_time,
-                    status, source, image_url, admission_fee
-                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'admin',$17,$18)
-                 RETURNING id`,
-                [
-                    data.name.trim(),
-                    nullableText(location.address),
-                    nullableLocationId(location.provinceId),
-                    nullableText(location.province),
-                    nullableLocationId(location.districtId),
-                    nullableText(location.district),
-                    nullableLocationId(location.subDistrictId),
-                    nullableText(location.subDistrict),
-                    nullableText(location.postcode),
-                    nullableText(data.description),
-                    normalizeAdminPlaceCategory(data.category),
-                    data.latitude !== '' && data.latitude != null ? parseFloat(data.latitude) : null,
-                    data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
-                    data.opening_time || '00:00 AM',
-                    data.closing_time || '00:00 PM',
-                    normalizePlaceStatus(data.status),
-                    data.image_url || null,
-                    JSON.stringify(normalizeAdmissionFee(data.admission_fee)),
-                ]
-            );
-
-            destId = rows[0].id;
-
-            if (Array.isArray(images) && images.length > 0) {
-                const validUrls = images.filter(Boolean);
-                if (validUrls.length > 0) {
-                    const values = [];
-                    const placeholders = [];
-                    validUrls.forEach((url, i) => {
-                        const offset = i * 2;
-                        placeholders.push(`($${offset + 1}, $${offset + 2})`);
-                        values.push(destId, url);
-                    });
-                    await client.query(
-                        `INSERT INTO destination_images (destination_id, image_url) VALUES ${placeholders.join(', ')}`,
-                        values
-                    );
-                }
-            }
-
-            await client.query('COMMIT');
-        } catch (err) {
-            await client.query('ROLLBACK');
-            throw err;
-        } finally {
-            client.release();
-        }
+        const destId = await destinationRepository.createDestinationWithImages({
+            name: data.name.trim(),
+            address: nullableText(location.address),
+            provinceId: nullableLocationId(location.provinceId),
+            province: nullableText(location.province),
+            districtId: nullableLocationId(location.districtId),
+            district: nullableText(location.district),
+            subDistrictId: nullableLocationId(location.subDistrictId),
+            subDistrict: nullableText(location.subDistrict),
+            postcode: nullableText(location.postcode),
+            description: nullableText(data.description),
+            category: normalizeAdminPlaceCategory(data.category),
+            latitude: parseLatitude(data.latitude),
+            longitude: parseLatitude(data.longitude),
+            openingTime: data.opening_time || '00:00 AM',
+            closingTime: data.closing_time || '00:00 PM',
+            status: normalizePlaceStatus(data.status),
+            imageUrl: data.image_url || null,
+            admissionFeeJson: JSON.stringify(normalizeAdmissionFee(data.admission_fee)),
+            galleryUrls: data.images,
+        });
 
         const warning = await refreshDestinationEmbedding(destId, data.status);
         res.status(201).json({
@@ -413,90 +192,30 @@ const updateDestination = async (req, res) => {
 
         const data = req.body;
         const location = normalizeLocationInput(data);
-        const client = await pool.connect();
-        let result;
-        try {
-            await client.query('BEGIN');
+        const result = await destinationRepository.updateDestinationWithImages(destId, {
+            name: data.name,
+            address: nullableText(location.address),
+            provinceId: nullableLocationId(location.provinceId),
+            province: nullableText(location.province),
+            districtId: nullableLocationId(location.districtId),
+            district: nullableText(location.district),
+            subDistrictId: nullableLocationId(location.subDistrictId),
+            subDistrict: nullableText(location.subDistrict),
+            postcode: nullableText(location.postcode),
+            description: nullableText(data.description),
+            category: normalizeAdminPlaceCategory(data.category),
+            latitude: parseLatitude(data.latitude),
+            longitude: parseLatitude(data.longitude),
+            openingTime: data.opening_time,
+            closingTime: data.closing_time,
+            status: normalizePlaceStatus(data.status),
+            imageUrl: data.image_url || null,
+            admissionFee: normalizeAdmissionFee(data.admission_fee),
+            galleryUrls: nextImages,
+        });
 
-            const { rows: existingRows } = await client.query(
-                'SELECT id, image_url, admission_fee FROM destinations WHERE id = $1 AND source = $2 LIMIT 1',
-                [destId, 'admin']
-            );
-
-            if (existingRows.length === 0) {
-                await client.query('ROLLBACK');
-                return res.status(404).json({ message: 'ไม่พบสถานที่ หรือไม่ใช่ข้อมูลของ Admin' });
-            }
-
-            await client.query(
-                `UPDATE destinations
-                 SET name = $1, address = $2, province_id = $3, province = $4,
-                     district_id = $5, district = $6,
-                     sub_district_id = $7, sub_district = $8,
-                     postcode = $9, description = $10, category = $11,
-                     latitude = $12, longitude = $13, opening_time = $14,
-                     closing_time = $15, status = $16, image_url = $17,
-                     admission_fee = $18, updated_at = NOW()
-                 WHERE id = $19`,
-                [
-                    data.name,
-                    nullableText(location.address),
-                    nullableLocationId(location.provinceId),
-                    nullableText(location.province),
-                    nullableLocationId(location.districtId),
-                    nullableText(location.district),
-                    nullableLocationId(location.subDistrictId),
-                    nullableText(location.subDistrict),
-                    nullableText(location.postcode),
-                    nullableText(data.description),
-                    normalizeAdminPlaceCategory(data.category),
-                    data.latitude !== '' && data.latitude != null ? parseFloat(data.latitude) : null,
-                    data.longitude !== '' && data.longitude != null ? parseFloat(data.longitude) : null,
-                    data.opening_time,
-                    data.closing_time,
-                    normalizePlaceStatus(data.status),
-                    data.image_url || null,
-                    JSON.stringify({
-                        ...normalizeAdmissionFee(existingRows[0].admission_fee),
-                        ...normalizeAdmissionFee(data.admission_fee),
-                    }),
-                    destId
-                ]
-            );
-
-            const { rows: oldImgs } = await client.query(
-                'SELECT image_url FROM destination_images WHERE destination_id = $1',
-                [destId]
-            );
-            const currentGalleryImages = oldImgs.map((row) => row.image_url).filter(Boolean);
-
-            await client.query('DELETE FROM destination_images WHERE destination_id = $1', [destId]);
-
-            if (nextImages && nextImages.length > 0) {
-                const values = [];
-                const placeholders = [];
-                nextImages.forEach((url, i) => {
-                    const offset = i * 2;
-                    placeholders.push(`($${offset + 1}, $${offset + 2})`);
-                    values.push(destId, url);
-                });
-                await client.query(
-                    `INSERT INTO destination_images (destination_id, image_url) VALUES ${placeholders.join(', ')}`,
-                    values
-                );
-            }
-
-            await client.query('COMMIT');
-
-            result = {
-                previousMainImage: existingRows[0].image_url,
-                currentGalleryImages
-            };
-        } catch (err) {
-            await client.query('ROLLBACK');
-            throw err;
-        } finally {
-            client.release();
+        if (!result) {
+            return res.status(404).json({ message: 'ไม่พบสถานที่ หรือไม่ใช่ข้อมูลของ Admin' });
         }
 
         const removedImagePaths = getRemovedImages(result.currentGalleryImages, nextImages);
@@ -528,31 +247,11 @@ const deleteDestination = async (req, res) => {
     try {
         const destId = parseInt(req.params.id, 10);
 
-        const { rows: existingRows } = await pool.query(
-            'SELECT id FROM destinations WHERE id = $1 LIMIT 1',
-            [destId]
-        );
+        const imagePaths = await destinationRepository.removeDestination(destId);
 
-        if (existingRows.length === 0) {
+        if (!imagePaths) {
             return res.status(404).json({ message: 'ไม่พบสถานที่' });
         }
-
-        const { rows: destRows } = await pool.query(
-            'SELECT image_url FROM destinations WHERE id = $1',
-            [destId]
-        );
-        const { rows: imgRows } = await pool.query(
-            'SELECT image_url FROM destination_images WHERE destination_id = $1',
-            [destId]
-        );
-
-        const imagePaths = [];
-        if (destRows.length > 0 && destRows[0].image_url) imagePaths.push(destRows[0].image_url);
-        imgRows.forEach((row) => {
-            if (row.image_url) imagePaths.push(row.image_url);
-        });
-
-        await pool.query('DELETE FROM destinations WHERE id = $1', [destId]);
 
         deleteUploadedFiles(imagePaths);
         await clearDestinationEmbedding(destId);

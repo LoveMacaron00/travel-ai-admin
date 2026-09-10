@@ -1,8 +1,8 @@
 // server/controllers/tatController.js
 
 const { config } = require('../config/env');
-const { resolveTatLanguage, tatHeadersFor } = require('./helpers/tatLanguage');
-const { searchPlaceIndex } = require('./helpers/tatPlaceIndex');
+const { resolveTatLanguage, tatHeadersFor } = require('../utils/tatLanguage');
+const { searchPlaceIndex } = require('../services/tatPlaceIndex');
 const TAT_API_KEY = config.tat.apiKey;
 const TAT_API_BASE = config.tat.apiBaseUrl;
 
