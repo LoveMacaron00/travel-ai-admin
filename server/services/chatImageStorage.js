@@ -1,8 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs/promises');
 const path = require('path');
-
-const chatImagesDir = path.join(__dirname, '..', '..', 'uploads', 'chat-images');
+const { chatImagesDir } = require('../config/storage');
 const extensionByMimeType = {
     'image/jpeg': '.jpg',
     'image/png': '.png',

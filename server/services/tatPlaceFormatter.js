@@ -1,4 +1,4 @@
-// server/controllers/helpers/tatPlaceFormatter.js
+// server/services/tatPlaceFormatter.js
 
 // ลบ HTML และช่องว่างส่วนเกินออกจากข้อความที่มาจาก TAT
 const stripHtml = (value = '') => String(value).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();

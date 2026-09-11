@@ -1,16 +1,7 @@
-// server/config/multer.js
-
+// server/config/multer.js — now reuses centralized storage.js (behavior identical)
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
-
-// กำหนดโฟลเดอร์สำหรับเก็บรูปภาพ
-const uploadsDir = path.join(__dirname, '..', 'uploads');
-
-// สร้างโฟลเดอร์ uploads หากยังไม่มี
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
+const { uploadsDir } = require('./storage');
 
 // ตั้งค่าการจัดเก็บไฟล์
 const storage = multer.diskStorage({
