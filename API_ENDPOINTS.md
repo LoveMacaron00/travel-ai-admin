@@ -48,6 +48,7 @@
 | POST | `/api/trips` | `TripService.createTravelPlan` |
 | GET | `/api/trips` | `TripService.listMyPlans` ประวัติแผนของ user |
 | GET | `/api/trips/:id` | โหลดผลหลังสร้างแผนผ่าน `TripService.getTravelPlan` |
+| PATCH | `/api/trips/:id` | `TripService.renamePlan` เปลี่ยนชื่อแผน (body: `{title}` สูงสุด 120 ตัวอักษร) |
 | PUT | `/api/trips/:id/plan` | `TripService.updateTravelPlan` บันทึกการแก้แผน (ลบ/เพิ่ม/สลับลำดับ) |
 | DELETE | `/api/trips/:id` | `TripService.deletePlan` ลบแผน |
 | GET | `/api/mobile/media?url=` | `MediaService.fullUrl` proxy รูป CDN ภายนอกเฉพาะ Flutter Web (แก้ CORS/mixed content) |

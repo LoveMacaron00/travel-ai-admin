@@ -13,9 +13,19 @@ const findApprovedPlanPlaces = async (db = pool) => {
     return rows;
 };
 
+// เติมคอลัมน์ title ให้ DB เก่าที่สร้างจาก init.sql ก่อนจะมีคอลัมน์นี้
+// รันครั้งเดียวต่อ process (flag ใน memory) — ถ้า DB ใหม่มีคอลัมน์อยู่แล้วจะเป็น no-op
+let _tripsTitleEnsured = false;
+const ensureTripsTitleColumn = async (db = pool) => {
+    if (_tripsTitleEnsured) return;
+    await db.query(`ALTER TABLE trips ADD COLUMN IF NOT EXISTS title VARCHAR(255)`);
+    _tripsTitleEnsured = true;
+};
+
 // สร้าง trip ใหม่สถานะ generating คืน id
 const createGeneratingTrip = async ({
     userId,
+    title,
     destination,
     province,
     days,
@@ -25,14 +35,16 @@ const createGeneratingTrip = async ({
     groupType,
     interests,
 }, db = pool) => {
+    await ensureTripsTitleColumn(db);
     const { rows } = await db.query(
         `INSERT INTO trips
-            (user_id, destination, province, days, budget, currency,
+            (user_id, title, destination, province, days, budget, currency,
              travel_style, group_type, interests, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'generating')
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'generating')
          RETURNING id`,
         [
             userId,
+            (typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : null),
             destination || 'Near current location',
             province || null,
             days || 3,
@@ -67,8 +79,9 @@ const saveGeneratedPlan = async (tripId, planData, fullText, db = pool) => {
 
 // ประวัติแผนเที่ยวของ user พร้อม plan_data ล่าสุด 20 รายการ
 const findUserTripsWithPlans = async (userId, db = pool) => {
+    await ensureTripsTitleColumn(db);
     const { rows } = await db.query(
-        `SELECT t.id, t.destination, t.province, t.days, t.budget,
+        `SELECT t.id, t.title, t.destination, t.province, t.days, t.budget,
                 t.travel_style, t.group_type, t.status, t.created_at,
                 tp.plan_data
          FROM trips t
@@ -120,6 +133,16 @@ const upsertTripPlan = async (tripId, planJson, db = pool) => {
     }
 };
 
+// เปลี่ยนชื่อแผนของผู้ใช้ คืนจำนวนแถวที่อัปเดต (0 = ไม่มีสิทธิ์/ไม่มี trip)
+const renameTripById = async (tripId, userId, title, db = pool) => {
+    await ensureTripsTitleColumn(db);
+    const { rowCount } = await db.query(
+        `UPDATE trips SET title = $3 WHERE id = $1 AND user_id = $2`,
+        [tripId, userId, title],
+    );
+    return rowCount;
+};
+
 // ลบ trip ของผู้ใช้ คืนจำนวนแถวที่ลบ
 const deleteTripById = async (tripId, userId, db = pool) => {
     const { rowCount } = await db.query(
@@ -139,5 +162,6 @@ module.exports = {
     findTripWithPlanById,
     isTripOwnedByUser,
     upsertTripPlan,
+    renameTripById,
     deleteTripById,
 };

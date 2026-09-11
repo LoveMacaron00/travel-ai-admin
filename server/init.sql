@@ -210,6 +210,7 @@ CREATE TABLE IF NOT EXISTS trips (
     user_id INT REFERENCES users(id) ON DELETE SET NULL,
 
     -- input จาก user
+    title VARCHAR(255), -- ชื่อแผนที่ผู้ใช้ตั้งเอง (NULL = ใช้ destination/province แทน)
     destination VARCHAR(255) NOT NULL,
     province VARCHAR(255),
     days INT NOT NULL DEFAULT 3,

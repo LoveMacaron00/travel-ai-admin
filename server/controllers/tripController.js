@@ -23,6 +23,7 @@ const createTripHandler = ({ database = pool, planGenerator = generateTripPlan }
         tripId = await tripRepository.createGeneratingTrip(
             {
                 userId,
+                title: req.body.title,
                 destination: req.body.destination,
                 province: req.body.province,
                 days: req.body.days,
@@ -109,6 +110,32 @@ const updateTripPlan = async (req, res) => {
     }
 };
 
+// PATCH /api/trips/:id — เปลี่ยนชื่อแผนเที่ยว
+// รับ { title } แล้วอัปเดตเฉพาะคอลัมน์ title ของ trip ที่เป็นเจ้าของ
+const renameTrip = async (req, res) => {
+    try {
+        const tripId = Number.parseInt(req.params.id, 10);
+        if (!Number.isInteger(tripId) || tripId <= 0) {
+            return res.status(400).json({ message: 'trip id ไม่ถูกต้อง' });
+        }
+        const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+        if (!title) {
+            return res.status(400).json({ message: 'กรุณาตั้งชื่อแผน' });
+        }
+        if (title.length > 120) {
+            return res.status(400).json({ message: 'ชื่อแผนยาวเกินไป (สูงสุด 120 ตัวอักษร)' });
+        }
+        const rowCount = await tripRepository.renameTripById(tripId, req.user?.id, title);
+        if (rowCount === 0) {
+            return res.status(404).json({ message: 'ไม่พบแผนเที่ยวหรือคุณไม่มีสิทธิ์แก้ไข' });
+        }
+        res.json({ message: 'เปลี่ยนชื่อแผนสำเร็จ', title });
+    } catch (err) {
+        console.error('[tripController] renameTrip:', err.message);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการเปลี่ยนชื่อแผน' });
+    }
+};
+
 // DELETE /api/trips/:id — ลบแผนเที่ยวตาม ID
 // ลบแผนเที่ยวเมื่อเป็นเจ้าของรายการนั้น
 const deleteTrip = async (req, res) => {
@@ -124,4 +151,4 @@ const deleteTrip = async (req, res) => {
     }
 };
 
-module.exports = { createTrip, getUserTrips, getTripById, deleteTrip, updateTripPlan };
+module.exports = { createTrip, getUserTrips, getTripById, deleteTrip, updateTripPlan, renameTrip };
