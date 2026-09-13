@@ -138,7 +138,45 @@ const searchByVector = async ({ vectorJson, province, categories, limit }, db = 
     return rows;
 };
 
-// สถานที่ approved ใกล้พิกัดตามลำดับระยะทาง (Haversine)
+// สถานที่ approved ใกล้พิกัดตามลำดับระยะทาง (Haversine) พร้อมกรองหมวดหมู่
+// ใช้หาที่พักค้างคืนจากฐานข้อมูลก่อน (หมวด accommodation/hotel) แล้วค่อย fallback OSM
+const findNearbyByCategory = async ({ latitude, longitude, limit, categories }, db = pool) => {
+    const { rows } = await db.query(
+        `SELECT
+            d.id, d.name, d.province, d.description, d.category, d.tags,
+            d.latitude, d.longitude, d.address, d.district,
+            d.sub_district, d.postcode,
+            COALESCE(
+                d.image_url,
+                (
+                    SELECT di.image_url
+                    FROM destination_images di
+                    WHERE di.destination_id = d.id
+                    ORDER BY di.id ASC
+                    LIMIT 1
+                )
+            ) AS image_url,
+            d.opening_time, d.closing_time, d.opening_hours,
+            d.tat_raw,
+            d.admission_fee,
+            (6371 * acos(LEAST(1, GREATEST(-1,
+                cos(radians($1)) * cos(radians(d.latitude))
+                * cos(radians(d.longitude) - radians($2))
+                + sin(radians($1)) * sin(radians(d.latitude))
+            )))) AS distance_km
+         FROM destinations d
+         WHERE d.status = 'approved'
+           AND d.latitude IS NOT NULL
+           AND d.longitude IS NOT NULL
+           AND ($4::text[] IS NULL OR d.category = ANY($4))
+         ORDER BY distance_km ASC, d.created_at DESC
+         LIMIT $3`,
+        [latitude, longitude, limit, categories],
+    );
+    return rows;
+};
+
+// สถานที่ approved ใกล้พิกัดตามลำดับระยะทาง (Haversine) — ไม่กรองหมวด (คงพฤติกรรมเดิม)
 const findNearby = async ({ latitude, longitude, limit }, db = pool) => {
     const { rows } = await db.query(
         `SELECT
@@ -233,6 +271,7 @@ module.exports = {
     searchByKeywords,
     searchByVector,
     findNearby,
+    findNearbyByCategory,
     findByIds,
     findByNames,
 };

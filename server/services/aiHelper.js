@@ -359,23 +359,34 @@ const regroupIslandsToMinimizeCrossings = (planData, allPlaces) => {
 // จัดลำดับจุดแวะในแต่ละวันจากจุดเริ่มต้นจริง (greedy nearest-neighbor)
 // แล้วเดินโซ่เวลา arrivalTime/segments จากระยะทางจริง — เขียนทับเวลาที่ AI เดามาทั้งหมด
 // วันแรก anchor ที่ GPS ของผู้ใช้ วันถัดไป anchor ที่จุดสุดท้ายของวันก่อนหน้า (ค้างคืนตรงนั้น)
+// startMinutes คือเวลาออกเดินทาง (departure) — ส่ง origin ทุกวันให้ chainDayTimes คิดขาแรกจริง
 // แต่เวลาเริ่มนับใหม่ทุกวันตามเวลาเริ่มเดินทาง (เช่น ออก 08:30 ทุกวัน)
-const applyDeterministicSchedule = (planData, { startLat, startLng, startMinutes }) => {
+const applyDeterministicSchedule = (planData, { startLat, startLng, startMinutes, startName, primaryMode }) => {
     let anchorLat = finiteCoord(startLat);
     let anchorLng = finiteCoord(startLng);
+    let anchorName = String(startName || '').trim() || 'จุดเริ่มต้น';
+    let anchorMode = String(primaryMode || 'car').toLowerCase();
     for (const day of planData?.days || []) {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
         if (stops.length === 0) continue;
         if (anchorLat != null && anchorLng != null) {
             day.stops = orderStopsNearestNeighbor(stops, anchorLat, anchorLng);
         }
-        chainDayTimes(day, startMinutes);
+        const hasAnchor = anchorLat != null && anchorLng != null;
+        chainDayTimes(
+            day,
+            startMinutes,
+            hasAnchor ? { lat: anchorLat, lng: anchorLng, name: anchorName, mode: anchorMode } : undefined,
+        );
         const last = day.stops[day.stops.length - 1];
         const lastLat = finiteCoord(last?.latitude);
         const lastLng = finiteCoord(last?.longitude);
         if (lastLat != null && lastLng != null) {
             anchorLat = lastLat;
             anchorLng = lastLng;
+            // วันถัดไป anchor ที่จุดสุดท้ายของวันนี้ (ที่พักค้างคืน) — ใช้ชื่อจุดเป็นต้นทางขาแรก
+            anchorName = String(last?.place || '').trim() || anchorName;
+            anchorMode = String(last?.transportMode || anchorMode || 'car').toLowerCase();
         }
     }
     return planData;
@@ -608,6 +619,7 @@ async function generateTripPlan(tripId, tripInput, res) {
     - พยายามให้ข้ามระหว่างเกาะกับฝั่งไม่เกินหนึ่งครั้งต่อวัน ไม่ว่าจะใช้พาหนะชนิดใด (car/bus/train/ferry/flight/walking) ถ้าเกินให้ระบุใน tips ว่าอาจเหนื่อยจากการข้ามบ่อย เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
     - กรอบเวลาต่อวัน ~10 ชม. รวมเที่ยว+เดินทาง+พัก วันละไม่เกิน 5 จุด อย่ายัดหลายแห่งจนเวลาซ้อนกัน
     - ขาขับรถ/รถโดยสารยาว ≥2 ชม. ระบบจะแทรกจุดแวะพักจริงจาก OpenStreetMap ให้เอง จึงไม่ต้องสร้าง stop แวะพักเอง — คิดเวลาพักคร่าว ๆ ในแผนได้ตามเหมาะสม
+    - ตอนท้ายของแต่ละวัน (ยกเว้นวันสุดท้าย) ระบบจะแทรกที่พักค้างคืนจากฐานข้อมูลที่พัก (หมวด accommodation/hotel) ให้เอง ถ้าไม่พบจึงค้นจาก OpenStreetMap จึงห้ามสร้าง stop ที่พักเองเด็ดขาด
     - arrivalTime กับ segments จะถูกระบบคำนวณใหม่จากระยะทางจริงหลัง AI ตอบ จึงไม่ต้องเดาเวลาเดินทางเอง แต่ทุก stop ต้องใส่ arrivalTime "HH:MM" กับ durationMinutes (20-300 นาที) ที่สมเหตุสมผลมาด้วย
 
     ข้อมูลสถานที่จากฐานข้อมูล:
@@ -746,16 +758,21 @@ async function generateTripPlan(tripId, tripInput, res) {
                 }
                 // ---- จัดลำดับ + เดินโซ่เวลา deterministic (เขียนทับเวลาที่ AI เดามา) ----
                 // จัดลำดับจากจุดเริ่มต้นจริงแล้วเดินโซ่ ถึง→เที่ยว→ออก→เดินทาง→ถึง ต่อเนื่องทั้งวัน
+                // วันแรก origin = GPS ผู้ใช้, วันถัดไป origin = จุดสุดท้ายของวันก่อน (ที่พักค้างคืน)
                 applyDeterministicSchedule(planData, {
                     startLat: tripInput.start_latitude,
                     startLng: tripInput.start_longitude,
                     startMinutes: dayStartMinutes,
+                    startName: 'จุดเริ่มต้น',
+                    primaryMode: allowedTransportModes[0] || 'car',
                 });
                 // ---- แทรกจุดแวะพักจริง (OSM/Overpass) กลางขาขับยาว ≥2 ชม. ----
                 // best-effort: Overpass ล่ม/หมดเวลาจะได้แผนเดิมพร้อมเวลาพักโดยประมาณ ไม่ล้มทั้งทริป
                 try {
                     await enrichPlanWithRestStops(planData, {
                         primaryMode: allowedTransportModes[0] || 'car',
+                        startLat: tripInput.start_latitude,
+                        startLng: tripInput.start_longitude,
                     });
                 } catch (restError) {
                     console.warn(`[ai] rest-stop enrichment skipped: ${restError.message}`);

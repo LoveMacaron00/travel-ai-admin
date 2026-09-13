@@ -30,9 +30,19 @@ const ensureTripsStartTimeColumn = async (db = pool) => {
     _tripsStartTimeEnsured = true;
 };
 
+// เติมคอลัมน์ start_date ("YYYY-MM-DD", NULL = ไม่ระบุ) ให้ DB เก่า — pattern เดียวกับ title
+// ใช้แสดงหัวข้อแต่ละวันเป็นวันที่จริง (start + day - 1) แม้เปิดแผนเก่าจาก Profile
+let _tripsStartDateEnsured = false;
+const ensureTripsStartDateColumn = async (db = pool) => {
+    if (_tripsStartDateEnsured) return;
+    await db.query(`ALTER TABLE trips ADD COLUMN IF NOT EXISTS start_date DATE`);
+    _tripsStartDateEnsured = true;
+};
+
 const ensureTripsPlanColumns = async (db = pool) => {
     await ensureTripsTitleColumn(db);
     await ensureTripsStartTimeColumn(db);
+    await ensureTripsStartDateColumn(db);
 };
 
 // "HH:MM" ที่ใช้ได้เท่านั้น — อย่างอื่นถือว่าไม่ได้ส่งมา (backend ใช้ 09:00 แทน)
@@ -44,6 +54,21 @@ const normalizeStartTime = (value) => {
     const minutes = Number(match[2]);
     if (hours > 23 || minutes > 59) return null;
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+// "YYYY-MM-DD" ที่ใช้ได้เท่านั้น — อย่างอื่นถือว่าไม่ได้ส่งมา (เก็บ NULL แทน)
+// รับทั้งแบบ zero-padded (2026-09-05) และเลขหลักเดียว (2026-9-5) แล้ว pad ให้ก่อนเก็บ
+// รวมทั้ง ISO เต็มจาก client เก่า (2026-09-13T00:00:00.000) — ตัดเอาแค่วันที่
+const normalizeStartDate = (value) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    const match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+    if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
 // days เก็บ 1..7 เสมอ — client เก่าที่ไม่ส่งมาถือว่า 3 วัน (คงพฤติกรรมเดิม)
@@ -61,6 +86,7 @@ const createGeneratingTrip = async ({
     province,
     days,
     startTime,
+    startDate,
     budget,
     currency,
     travelStyle,
@@ -70,9 +96,9 @@ const createGeneratingTrip = async ({
     await ensureTripsPlanColumns(db);
     const { rows } = await db.query(
         `INSERT INTO trips
-            (user_id, title, destination, province, days, start_time, budget, currency,
+            (user_id, title, destination, province, days, start_time, start_date, budget, currency,
              travel_style, group_type, interests, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'generating')
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'generating')
          RETURNING id`,
         [
             userId,
@@ -81,6 +107,7 @@ const createGeneratingTrip = async ({
             province || null,
             normalizeDays(days),
             normalizeStartTime(startTime),
+            normalizeStartDate(startDate),
             budget || null,
             currency || 'THB',
             travelStyle || null,
@@ -114,7 +141,7 @@ const saveGeneratedPlan = async (tripId, planData, fullText, db = pool) => {
 const findUserTripsWithPlans = async (userId, db = pool) => {
     await ensureTripsPlanColumns(db);
     const { rows } = await db.query(
-        `SELECT t.id, t.title, t.destination, t.province, t.days, t.start_time, t.budget,
+        `SELECT t.id, t.title, t.destination, t.province, t.days, t.start_time, t.start_date, t.budget,
                 t.travel_style, t.group_type, t.status, t.created_at,
                 tp.plan_data
          FROM trips t
@@ -216,6 +243,7 @@ const deleteTripById = async (tripId, userId, db = pool) => {
 module.exports = {
     ensureTripsPlanColumns,
     normalizeStartTime,
+    normalizeStartDate,
     normalizeDays,
     findApprovedPlanPlaces,
     createGeneratingTrip,

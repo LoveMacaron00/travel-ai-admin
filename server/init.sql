@@ -215,6 +215,7 @@ CREATE TABLE IF NOT EXISTS trips (
     province VARCHAR(255),
     days INT NOT NULL DEFAULT 3,
     start_time VARCHAR(5), -- เวลาเริ่มเดินทาง "HH:MM" (NULL = 09:00)
+    start_date DATE, -- วันที่เริ่มทริป "YYYY-MM-DD" (NULL = ไม่ระบุ ใช้โชว์หัวข้อแต่ละวันเป็นวันที่จริง)
     budget NUMERIC(12,2),
     currency VARCHAR(10) NOT NULL DEFAULT 'THB',
     travel_style VARCHAR(50), -- 'backpacker'|'comfort'|'luxury'

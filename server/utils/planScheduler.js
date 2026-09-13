@@ -126,16 +126,74 @@ const orderStopsNearestNeighbor = (stops, startLat, startLng) => {
     return ordered;
 };
 
+// ประเมินค่าพาหนะต่อขาจากระยะทางจริง — mirror ฝั่ง Flutter estimateTransportCost
+// walking ฟรี, car 20/กม., bus 7/กม., train 12/กม., ferry 25/กม., flight 35/กม., อื่น ๆ 15/กม.
+// km null/ไม่ finite → 0, ระยะสั้นกว่า 0.5 กม. → 50 ขั้นต่ำ, นอกนั้นปัดเศษพร้อมขั้นต่ำ 50
+const estimateLegCostKm = (km, modeRaw) => {
+    if (km == null) return 0;
+    const distance = Number(km);
+    if (!Number.isFinite(distance) || distance < 0) return 0;
+    const mode = String(modeRaw || 'car').toLowerCase();
+    if (mode === 'walking') return 0;
+    if (distance < 0.5) return 50;
+    const rates = {
+        car: 20,
+        bus: 7,
+        train: 12,
+        ferry: 25,
+        flight: 35,
+    };
+    const rate = rates[mode] ?? 15;
+    return Math.max(50, Math.round(distance * rate));
+};
+
 // เดินโซ่เวลา arrivalTime ต่อเนื่องทั้งวัน (mutate day):
 // ถึง → เที่ยว durationMinutes → ออก → เดินทาง (segments นาทีจริง) → ถึงจุดถัดไป
+// startMinutes คือเวลาออกเดินทาง (departure) — arrival จุดแรก = start + ขาแรกจาก origin
+// origin { lat, lng, name, mode } ใช้คำนวณขาแรกจากจุดเริ่มต้นจริงเข้าจุดแรก
+// ไม่มี origin: คงพฤติกรรมเดิม arrival0 = startMinutes (ยกเว้นสาขา preservation ข้างล่าง)
 // คืนเวลาที่ใช้รวมของวัน + นาทีเดินทางรวม
-const chainDayTimes = (day, startMinutes) => {
+const chainDayTimes = (day, startMinutes, origin) => {
     const stops = Array.isArray(day?.stops) ? day.stops : [];
     let cursor = startMinutes;
     let travelTotal = 0;
+    // origin ใช้ได้เมื่อพิกัด origin ครบและจุดแรกมีพิกัดจริง
+    const originLat = finiteCoord(origin?.lat ?? origin?.latitude);
+    const originLng = finiteCoord(origin?.lng ?? origin?.longitude);
+    const hasOriginCoords = originLat != null && originLng != null;
     stops.forEach((stop, index) => {
         if (!stop || typeof stop !== 'object') return;
-        if (index > 0) {
+        if (index === 0) {
+            const firstLat = finiteCoord(stop.latitude);
+            const firstLng = finiteCoord(stop.longitude);
+            if (hasOriginCoords && firstLat != null && firstLng != null) {
+                // ขาแรก: จุดเริ่มต้น → จุดแรก (departure semantics)
+                const mode = String(stop.transportMode || origin?.mode || 'car').toLowerCase();
+                const km = haversineKm(originLat, originLng, firstLat, firstLng);
+                const { travelMinutes } = computeLegMinutes(km, mode);
+                const cost = estimateLegCostKm(km, mode);
+                const originName = String(origin?.name || '').trim() || 'จุดเริ่มต้น';
+                stop.segments = [{
+                    mode,
+                    from: originName,
+                    to: String(stop.place || ''),
+                    estimatedMinutes: travelMinutes,
+                    estimatedCost: cost,
+                }];
+                // ค่า AI ของจุดแรกมาจากไหนก็ไม่รู้ — เขียนทับด้วยขาจริงจาก origin
+                stop.transportCost = cost;
+                cursor += travelMinutes;
+                travelTotal += travelMinutes;
+            } else if (!hasOriginCoords) {
+                // เส้น PUT/re-chain ไม่มี origin: คงขาแรกเดิมไว้กันเวลาขยับ
+                const keptMinutes = Number(stop.segments?.[0]?.estimatedMinutes);
+                if (Number.isFinite(keptMinutes) && keptMinutes > 0) {
+                    cursor += keptMinutes;
+                    travelTotal += keptMinutes;
+                }
+                // ไม่มีขาแรกเดิมก็ไม่แตะ segments จุดแรก (พฤติกรรมเดิม)
+            }
+        } else if (index > 0) {
             const prev = stops[index - 1] || {};
             const km = haversineKm(prev.latitude, prev.longitude, stop.latitude, stop.longitude);
             const mode = String(stop.transportMode || 'car').toLowerCase();
@@ -148,13 +206,21 @@ const chainDayTimes = (day, startMinutes) => {
             const restMinutes = isRestLeg ? 0 : rawRestMinutes;
             const legTotal = travelMinutes + restMinutes;
             const keepCost = Number(stop.segments?.[0]?.estimatedCost);
+            // ค่า leg จริงจากระยะทาง — คงค่า AI ที่เป็นบวกไว้ ไม่เขียนทับ (กันยอดรวมร่วง)
+            const legCost = Number.isFinite(keepCost) && keepCost > 0
+                ? keepCost
+                : estimateLegCostKm(km, mode);
             stop.segments = [{
                 mode,
                 from: String(prev.place || ''),
                 to: String(stop.place || ''),
                 estimatedMinutes: legTotal,
-                estimatedCost: Number.isFinite(keepCost) && keepCost > 0 ? keepCost : 0,
+                estimatedCost: legCost,
             }];
+            const existingTransport = Number(stop.transportCost);
+            stop.transportCost = Number.isFinite(existingTransport) && existingTransport > 0
+                ? existingTransport
+                : legCost;
             if (restMinutes > 0) stop.tip = appendRestNote(stop.tip, travelMinutes, restMinutes);
             cursor += legTotal;
             travelTotal += legTotal;
@@ -201,8 +267,9 @@ const validateDayFit = (planData, { dayBudgetMinutes = DAY_BUDGET_MINUTES } = {}
     for (const day of planData?.days || []) {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
         let used = 0;
-        stops.forEach((stop, index) => {
-            if (index > 0) used += Number(stop?.segments?.[0]?.estimatedMinutes) || 0;
+        stops.forEach((stop) => {
+            // นับขาแรกของจุดแรกด้วย (departure semantics: stop0.segments มีขาจาก origin)
+            used += Number(stop?.segments?.[0]?.estimatedMinutes) || 0;
             used += Number(stop?.durationMinutes) || 0;
         });
         totalUsedMinutes += used;
@@ -217,6 +284,8 @@ const validateDayFit = (planData, { dayBudgetMinutes = DAY_BUDGET_MINUTES } = {}
 };
 
 // เดินโซ่เวลาทุกวันโดยคงลำดับเดิมทุกจุด (ใช้ตอน PUT — เคารพลำดับที่ผู้ใช้จัดเอง)
+// จุดแรก: arrival ที่เก็บไว้รวมขาแรกแล้ว จึงหักขาแรกออกเป็น departure ก่อนเดินโซ่ใหม่
+// แล้ว chainDayTimes สาขา preservation จะคงขาแรกนั้นไว้ (เวลา/ราคาไม่ขยับ)
 // คืน warnings ของวันที่แน่นเกินไป
 const chainAllDaysPreservingOrder = (
     planData,
@@ -225,8 +294,13 @@ const chainAllDaysPreservingOrder = (
     for (const day of planData?.days || []) {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
         if (stops.length === 0) continue;
-        const anchor = parseClockToMinutes(stops[0]?.arrivalTime) ?? defaultStartMinutes;
-        chainDayTimes(day, anchor);
+        const arrival0 = parseClockToMinutes(stops[0]?.arrivalTime);
+        const firstLegMinutes = Number(stops[0]?.segments?.[0]?.estimatedMinutes);
+        // arrival0 รวมขาแรกแล้ว → หักออกได้ departure; ไม่มีขาแรกก็ใช้ arrival ตรง ๆ
+        const departure = arrival0 != null && Number.isFinite(firstLegMinutes) && firstLegMinutes > 0
+            ? arrival0 - firstLegMinutes
+            : (arrival0 ?? defaultStartMinutes);
+        chainDayTimes(day, departure);
     }
     return validateDayFit(planData, { dayBudgetMinutes }).warnings;
 };
@@ -241,6 +315,7 @@ module.exports = {
     finiteCoord,
     haversineKm,
     computeLegMinutes,
+    estimateLegCostKm,
     orderStopsNearestNeighbor,
     chainDayTimes,
     estimateRecommendedDays,

@@ -34,6 +34,8 @@ const createTripHandler = ({ database = pool, planGenerator = generateTripPlan }
                 // client เก่าส่ง days อย่างเดียว = ใช้ค่านั้นตรง ๆ (default 3)
                 days: req.body.auto_days ? null : req.body.days,
                 startTime: req.body.start_time,
+                // start_date "YYYY-MM-DD" จาก DateRangePicker — เก็บลง trips เพื่อให้แผนเก่าโชว์วันที่จริงได้
+                startDate: req.body.start_date,
                 budget: req.body.budget,
                 currency: req.body.currency,
                 travelStyle: req.body.travel_style,
