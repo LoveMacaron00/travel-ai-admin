@@ -10,6 +10,19 @@ const {
     formatPlacesContext,
 } = require('./ragHelper');
 const { ensureMustVisitStops, normalizePlanPlaces } = require('../utils/planPlaceNormalizer');
+const {
+    DAY_BUDGET_MINUTES,
+    MAX_STOPS_PER_DAY,
+    parseStartTimeInput,
+    formatClock,
+    finiteCoord,
+    computeLegMinutes,
+    orderStopsNearestNeighbor,
+    chainDayTimes,
+    estimateRecommendedDays,
+    maxDistanceFromStart,
+    validateDayFit,
+} = require('../utils/planScheduler');
 const { config } = require('../config/env');
 const {
     freeWebSearch,
@@ -342,6 +355,31 @@ const regroupIslandsToMinimizeCrossings = (planData, allPlaces) => {
     return fixedAny;
 };
 
+// จัดลำดับจุดแวะในแต่ละวันจากจุดเริ่มต้นจริง (greedy nearest-neighbor)
+// แล้วเดินโซ่เวลา arrivalTime/segments จากระยะทางจริง — เขียนทับเวลาที่ AI เดามาทั้งหมด
+// วันแรก anchor ที่ GPS ของผู้ใช้ วันถัดไป anchor ที่จุดสุดท้ายของวันก่อนหน้า (ค้างคืนตรงนั้น)
+// แต่เวลาเริ่มนับใหม่ทุกวันตามเวลาเริ่มเดินทาง (เช่น ออก 08:30 ทุกวัน)
+const applyDeterministicSchedule = (planData, { startLat, startLng, startMinutes }) => {
+    let anchorLat = finiteCoord(startLat);
+    let anchorLng = finiteCoord(startLng);
+    for (const day of planData?.days || []) {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        if (stops.length === 0) continue;
+        if (anchorLat != null && anchorLng != null) {
+            day.stops = orderStopsNearestNeighbor(stops, anchorLat, anchorLng);
+        }
+        chainDayTimes(day, startMinutes);
+        const last = day.stops[day.stops.length - 1];
+        const lastLat = finiteCoord(last?.latitude);
+        const lastLng = finiteCoord(last?.longitude);
+        if (lastLat != null && lastLng != null) {
+            anchorLat = lastLat;
+            anchorLng = lastLng;
+        }
+    }
+    return planData;
+};
+
 const PLAN_RESPONSE_SCHEMA = {
     type: 'object',
     required: ['summary', 'totalEstimatedCost', 'budgetBreakdown', 'days', 'tips'],
@@ -408,6 +446,7 @@ const PLAN_RESPONSE_SCHEMA = {
         },
         mustEat: { type: 'array', items: { type: 'string' } },
         tips: { type: 'array', items: { type: 'string' } },
+        warnings: { type: 'array', items: { type: 'string' } },
     },
 };
 
@@ -502,6 +541,53 @@ async function generateTripPlan(tripId, tripInput, res) {
     }
 
     places = mergePlaces(mustVisitPlaces, places);
+
+    // ---- เวลาเริ่ม + จำนวนวัน (resolve ก่อนสร้าง prompt) ----
+    // start_time "HH:MM" จากฟอร์ม — ใช้ไม่ได้ให้เริ่ม 09:00
+    const dayStartMinutes = parseStartTimeInput(tripInput.start_time);
+    const dayStartClock = formatClock(dayStartMinutes);
+    // auto_days (หรือ days หาย/invalid) = ให้ระบบประเมินจากระยะทาง+สถานที่
+    // client เก่าส่ง days อย่างเดียว = ใช้ค่านั้นตรง ๆ 1..7
+    const autoDays = tripInput.auto_days === true || tripInput.autoDays === true;
+    const requestedDaysRaw = Number.parseInt(String(tripInput.days ?? ''), 10);
+    const requestedDays = Number.isInteger(requestedDaysRaw)
+        ? Math.min(7, Math.max(1, requestedDaysRaw))
+        : null;
+    // ระยะไกลสุดจากจุดเริ่มต้นจริงถึงสถานที่บังคับ (ใช้พิกัด DB ก่อน, fallback พิกัดที่ client ส่งมา)
+    const mustVisitCoords = (mustVisitPlaces.length > 0 ? mustVisitPlaces : mustVisitRequests)
+        .map((place) => ({ latitude: place.latitude, longitude: place.longitude }))
+        .filter((place) => finiteCoord(place.latitude) != null && finiteCoord(place.longitude) != null);
+    const farthestKm = maxDistanceFromStart(
+        tripInput.start_latitude,
+        tripInput.start_longitude,
+        mustVisitCoords,
+    );
+    const recommended = estimateRecommendedDays({
+        mustVisitCount: Math.max(mustVisitPlaces.length, mustVisitRequests.length),
+        maxDistanceKm: farthestKm,
+        placeCount: places.length,
+    });
+    const effectiveDays = autoDays || requestedDays == null ? recommended.days : requestedDays;
+    // สัญญาณเตือนล่วงหน้า (place-first): ขาไกลสุดกินเวลากว่าครึ่งวัน หรือวันที่กำหนดน้อยกว่าที่ประเมิน
+    const earlyWarnings = [];
+    if (farthestKm > 0) {
+        const primaryMode = allowedTransportModes[0] || 'car';
+        const { travelMinutes } = computeLegMinutes(farthestKm, primaryMode);
+        if (travelMinutes > DAY_BUDGET_MINUTES / 2) {
+            earlyWarnings.push(
+                `สถานที่ที่เลือกอยู่ไกลจากจุดเริ่มต้น ~${Math.round(farthestKm)} กม. ` +
+                `ใช้เวลาเดินทางขาเดียว ~${(travelMinutes / 60).toFixed(1)} ชม. ด้วย${primaryMode} ` +
+                `— ควรเพิ่มวันหรือเลือกสถานที่ใกล้ขึ้น`,
+            );
+        }
+    }
+    if (!autoDays && requestedDays != null && requestedDays < recommended.days) {
+        earlyWarnings.push(
+            `กำหนด ${requestedDays} วัน แต่อาจต้องใช้ ~${recommended.days} วัน ` +
+            `(ระยะไกลสุด ~${recommended.maxDistanceKm} กม.) — แผนอาจแน่นเกินไป`,
+        );
+    }
+
     const placesContext = formatPlacesContext(places);
     const mustVisitDescription = formatMustVisitList(
         mustVisitPlaces,
@@ -519,12 +605,14 @@ async function generateTripPlan(tripId, tripInput, res) {
     - ถ้าข้อมูลมีน้อย ให้สร้างแผนจากรายการที่มีเท่านั้น ห้ามเติมสถานที่อื่นให้ครบจำนวนวัน
     - พยายามจัดกลุ่มสถานที่บนเกาะและบนฝั่งเป็นช่วงเดียวกัน เลี่ยงลำดับ เกาะ → ฝั่ง → เกาะ หรือ ฝั่ง → เกาะ → ฝั่ง ในวันเดียวกัน (ไม่ว่าจะใช้พาหนะชนิดใด) แต่ถ้าจำเป็นต้องข้ามให้ใส่ได้
     - พยายามให้ข้ามระหว่างเกาะกับฝั่งไม่เกินหนึ่งครั้งต่อวัน ไม่ว่าจะใช้พาหนะชนิดใด (car/bus/train/ferry/flight/walking) ถ้าเกินให้ระบุใน tips ว่าอาจเหนื่อยจากการข้ามบ่อย เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
+    - กรอบเวลาต่อวัน ~10 ชม. รวมเที่ยว+เดินทาง+พัก วันละไม่เกิน 5 จุด อย่ายัดหลายแห่งจนเวลาซ้อนกัน
+    - arrivalTime กับ segments จะถูกระบบคำนวณใหม่จากระยะทางจริงหลัง AI ตอบ จึงไม่ต้องเดาเวลาเดินทางเอง แต่ทุก stop ต้องใส่ arrivalTime "HH:MM" กับ durationMinutes (20-300 นาที) ที่สมเหตุสมผลมาด้วย
 
     ข้อมูลสถานที่จากฐานข้อมูล:
     ${placesContext}`;
 
     const userPrompt =
-        `สร้างแผนเที่ยว ${tripInput.days} วัน โดยเริ่มจาก GPS ${tripInput.start_latitude}, ${tripInput.start_longitude}
+        `สร้างแผนเที่ยว ${effectiveDays} วัน โดยเริ่มออกเดินทาง ${dayStartClock} ของทุกวัน จาก GPS ${tripInput.start_latitude}, ${tripInput.start_longitude}
 
     ข้อมูลผู้เดินทาง:
     - งบประมาณ: ${tripInput.budget} ${tripInput.currency || 'THB'}
@@ -535,6 +623,8 @@ async function generateTripPlan(tripId, tripInput, res) {
     - วิธีเดินทางที่ยอมรับ: ${allowedTransportModes.join(', ')}
     - สถานที่ที่ผู้ใช้บังคับเลือก: ${mustVisitDescription}
     - สถานที่ที่ผู้ใช้ลบและห้ามเสนอซ้ำ: ${(tripInput.excluded_places || []).join(', ') || 'ไม่มี'}
+    - เวลาเริ่มเดินทางแต่ละวัน: ${dayStartClock}
+    - กรอบเวลาต่อวัน ~10 ชม. (รวมเที่ยว เดินทาง และพัก) วันละไม่เกิน ${MAX_STOPS_PER_DAY} จุด
 
     สถานที่ที่ผู้ใช้บังคับเลือกทั้งหมดต้องอยู่ใน stops ของทริปอย่างน้อย 1 ครั้ง และมีความสำคัญเหนือความสนใจ วิธีเดินทาง งบประมาณ และรายการที่ลบซ้ำถ้าขัดกัน
     เลือกสถานที่อื่นจากฐานข้อมูลเท่านั้น ให้เหมาะกับความสนใจและงบประมาณ จัดลำดับจากจุดเริ่ม GPS เพื่อลดการย้อนเส้นทาง
@@ -571,7 +661,8 @@ async function generateTripPlan(tripId, tripInput, res) {
         }
     ],
     "mustEat": ["อาหารที่ต้องลอง 1", "อาหารที่ต้องลอง 2"],
-    "tips": ["เคล็ดลับการเดินทาง 1", "เคล็ดลับ 2"]
+    "tips": ["เคล็ดลับการเดินทาง 1", "เคล็ดลับ 2"],
+    "warnings": ["คำเตือนถ้าวันแน่นหรือระยะไกลเกิน (ถ้าไม่มีให้เป็น [])"]
     }`;
 
     // ตั้ง SSE headers
@@ -622,7 +713,7 @@ async function generateTripPlan(tripId, tripInput, res) {
                 normalizePlanPlaces(planData, places);
                 ensureMustVisitStops(planData, mustVisitPlaces, {
                     allowedTransportModes,
-                    days: tripInput.days,
+                    days: effectiveDays,
                 });
                 normalizePlanTransportModes(planData, allowedTransportModes);
                 normalizePlanPlaces(planData, places);
@@ -651,6 +742,24 @@ async function generateTripPlan(tripId, tripInput, res) {
                         console.warn('[ai] island crossings fixed by regrouping');
                     }
                 }
+                // ---- จัดลำดับ + เดินโซ่เวลา deterministic (เขียนทับเวลาที่ AI เดามา) ----
+                // จัดลำดับจากจุดเริ่มต้นจริงแล้วเดินโซ่ ถึง→เที่ยว→ออก→เดินทาง→ถึง ต่อเนื่องทั้งวัน
+                applyDeterministicSchedule(planData, {
+                    startLat: tripInput.start_latitude,
+                    startLng: tripInput.start_longitude,
+                    startMinutes: dayStartMinutes,
+                });
+                const { warnings: fitWarnings } = validateDayFit(planData);
+                const allWarnings = [...new Set([...earlyWarnings, ...fitWarnings])];
+                if (allWarnings.length > 0) {
+                    planData.warnings = allWarnings;
+                    planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+                    for (const warning of allWarnings) {
+                        if (!planData.tips.includes(warning)) planData.tips.push(warning);
+                    }
+                } else if (planData.warnings != null && !Array.isArray(planData.warnings)) {
+                    delete planData.warnings;
+                }
                 if (planData.days.length === 0) {
                     const noVerifiedStops = new Error(
                         'The generated plan contained no database-backed destinations',
@@ -670,12 +779,18 @@ async function generateTripPlan(tripId, tripInput, res) {
             }
         }
 
+        // เก็บจำนวนวันที่ resolve แล้ว (auto_days คำนวณได้กี่วันก็เก็บเท่านั้น)
+        await tripRepository.updateTripDays(tripId, effectiveDays);
+
         // บันทึกแผนการเดินทางลง trip_plans
         await tripRepository.saveGeneratedPlan(tripId, planData, fullText);
 
         // อัปเดตสถานะการเดินทางเป็นเสร็จสิ้น
         await tripRepository.markTripDone(tripId);
 
+        if (Array.isArray(planData.warnings) && planData.warnings.length > 0) {
+            res.write(`data: ${JSON.stringify({ type: 'warning', warnings: planData.warnings })}\n\n`);
+        }
         res.write(`data: ${JSON.stringify({ type: 'done', tripId })}\n\n`);
     } catch (err) {
         console.error('[ai] generateTripPlan error:', err.message);

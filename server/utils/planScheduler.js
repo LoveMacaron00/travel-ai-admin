@@ -1,0 +1,244 @@
+// server/utils/planScheduler.js
+//
+// คำนวณตารางเวลาทริปแบบ deterministic จากพิกัดจริงใน DB (ไม่ใช่ให้ AI เดาเวลา)
+// ใช้ 2 จุด:
+//  1. aiHelper.generateTripPlan — จัดลำดับในแต่ละวันจากจุดเริ่มต้นจริง + เดินโซ่เวลา
+//  2. tripController.updateTripPlan (PUT) — คำนวณเวลาใหม่โดยคงลำดับที่ผู้ใช้จัดเอง
+
+const MODE_SPEEDS_KMH = {
+    walking: 5,
+    car: 50,
+    bus: 40,
+    train: 70,
+    ferry: 28,
+    flight: 550,
+};
+
+// เวลา overhead ต่อขา (รอขึ้นเครื่อง/เรือ/รถไฟ) — รวมในนาทีเดินทางเลย
+const MODE_OVERHEAD_MINUTES = {
+    walking: 0,
+    car: 0,
+    bus: 10,
+    train: 30,
+    ferry: 30,
+    flight: 120,
+};
+
+// กรอบเวลาต่อวัน ~10 ชม. (เช่น 09:00–19:00) ใช้นับว่าแผนแน่นเกินไปหรือไม่
+const DAY_BUDGET_MINUTES = 600;
+const MAX_STOPS_PER_DAY = 5;
+const DEFAULT_DAY_START_MINUTES = 9 * 60;
+
+const clampDurationMinutes = (value, fallback = 90) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.min(300, Math.max(20, Math.round(parsed)));
+};
+
+// "09:30" → 570, แปลงไม่ได้ → null
+const parseClockToMinutes = (value) => {
+    const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours > 23 || minutes > 59) return null;
+    return hours * 60 + minutes;
+};
+
+// input start_time จาก mobile ("HH:MM") — ใช้ไม่ได้ให้เริ่ม 09:00
+const parseStartTimeInput = (value) => parseClockToMinutes(value) ?? DEFAULT_DAY_START_MINUTES;
+
+const formatClock = (totalMinutes) => {
+    const wrapped = ((Math.round(totalMinutes) % 1440) + 1440) % 1440;
+    return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`;
+};
+
+const finiteCoord = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const haversineKm = (aLat, aLng, bLat, bLng) => {
+    const lat1 = finiteCoord(aLat);
+    const lng1 = finiteCoord(aLng);
+    const lat2 = finiteCoord(bLat);
+    const lng2 = finiteCoord(bLng);
+    if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) return null;
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.sqrt(a));
+};
+
+// นาทีเดินทางตามระยะทางจริง + พาหนะ (รวม overhead) และนาทีพักสำหรับขายาว
+// ขายาวทางถนน (≥2 ชม.) เผื่อพัก 20 นาที/2 ชม. — เป็นจุดพักโดยประมาณ ไม่ใช่จุดตายตัว
+const computeLegMinutes = (km, modeRaw) => {
+    const mode = String(modeRaw || 'car').toLowerCase();
+    const distance = Number(km);
+    if (!Number.isFinite(distance) || distance < 0) return { travelMinutes: 30, restMinutes: 0 };
+    const speed = MODE_SPEEDS_KMH[mode] || 40;
+    const overhead = MODE_OVERHEAD_MINUTES[mode] || 0;
+    const travelMinutes = Math.max(5, Math.round((distance / speed) * 60 + overhead));
+    let restMinutes = 0;
+    if (['car', 'bus', 'train'].includes(mode) && travelMinutes >= 120) {
+        restMinutes = Math.floor(travelMinutes / 120) * 20;
+    }
+    return { travelMinutes, restMinutes };
+};
+
+const appendRestNote = (tip, travelMinutes, restMinutes) => {
+    const base = String(tip || '').trim();
+    if (base.includes('พักระหว่างทาง')) return base;
+    const hours = Math.round((travelMinutes / 60) * 10) / 10;
+    const note = `ขานี้เดินทางนาน ~${hours} ชม. เผื่อพักระหว่างทาง ${restMinutes} นาทีแล้ว`;
+    return base ? `${base} ${note}` : note;
+};
+
+// จัดลำดับจุดแวะในวันนั้นแบบ greedy nearest-neighbor จากจุดเริ่มต้นจริง
+// เพื่อลดการย้อนเส้นทาง — ไม่ fix ลำดับตายตัว
+const orderStopsNearestNeighbor = (stops, startLat, startLng) => {
+    const remaining = [...stops];
+    const ordered = [];
+    let lat = startLat;
+    let lng = startLng;
+    while (remaining.length > 0) {
+        let best = 0;
+        let bestKm = null;
+        for (let i = 0; i < remaining.length; i++) {
+            const km = haversineKm(lat, lng, remaining[i].latitude, remaining[i].longitude);
+            const score = km == null ? Number.MAX_SAFE_INTEGER : km;
+            if (bestKm == null || score < bestKm) {
+                bestKm = score;
+                best = i;
+            }
+        }
+        const [next] = remaining.splice(best, 1);
+        ordered.push(next);
+        const nextLat = finiteCoord(next.latitude);
+        const nextLng = finiteCoord(next.longitude);
+        if (nextLat != null && nextLng != null) {
+            lat = nextLat;
+            lng = nextLng;
+        }
+    }
+    return ordered;
+};
+
+// เดินโซ่เวลา arrivalTime ต่อเนื่องทั้งวัน (mutate day):
+// ถึง → เที่ยว durationMinutes → ออก → เดินทาง (segments นาทีจริง) → ถึงจุดถัดไป
+// คืนเวลาที่ใช้รวมของวัน + นาทีเดินทางรวม
+const chainDayTimes = (day, startMinutes) => {
+    const stops = Array.isArray(day?.stops) ? day.stops : [];
+    let cursor = startMinutes;
+    let travelTotal = 0;
+    stops.forEach((stop, index) => {
+        if (!stop || typeof stop !== 'object') return;
+        if (index > 0) {
+            const prev = stops[index - 1] || {};
+            const km = haversineKm(prev.latitude, prev.longitude, stop.latitude, stop.longitude);
+            const mode = String(stop.transportMode || 'car').toLowerCase();
+            const { travelMinutes, restMinutes } = computeLegMinutes(km, mode);
+            const legTotal = travelMinutes + restMinutes;
+            const keepCost = Number(stop.segments?.[0]?.estimatedCost);
+            stop.segments = [{
+                mode,
+                from: String(prev.place || ''),
+                to: String(stop.place || ''),
+                estimatedMinutes: legTotal,
+                estimatedCost: Number.isFinite(keepCost) && keepCost > 0 ? keepCost : 0,
+            }];
+            if (restMinutes > 0) stop.tip = appendRestNote(stop.tip, travelMinutes, restMinutes);
+            cursor += legTotal;
+            travelTotal += legTotal;
+        }
+        const duration = clampDurationMinutes(stop.durationMinutes);
+        stop.durationMinutes = duration;
+        stop.arrivalTime = formatClock(cursor);
+        cursor += duration;
+    });
+    return { usedMinutes: cursor - startMinutes, travelMinutes: travelTotal };
+};
+
+// ประเมินจำนวนวันที่เหมาะสมจากสถานที่บังคับ + ระยะทางไกลสุดจากจุดเริ่มต้น
+// (ใช้เมื่อผู้ใช้ไม่ได้กำหนดจำนวนวัน — frontend ส่ง auto_days หรือไม่ส่ง days มา)
+const estimateRecommendedDays = ({ mustVisitCount = 0, maxDistanceKm = 0, placeCount = 0 } = {}) => {
+    const must = Math.max(0, Number(mustVisitCount) || 0);
+    const byStops = Math.max(1, Math.ceil(must / MAX_STOPS_PER_DAY));
+    const distance = Number(maxDistanceKm) || 0;
+    const byDistance = distance > 400 ? 3 : distance > 200 ? 2 : 1;
+    const pool = Number(placeCount) || 0;
+    const byVolume = must === 0 ? (pool >= 12 ? 3 : pool >= 8 ? 2 : 1) : 1;
+    return {
+        days: Math.min(7, Math.max(1, byStops, byDistance, byVolume)),
+        maxDistanceKm: Math.round(distance),
+    };
+};
+
+const maxDistanceFromStart = (startLat, startLng, places) => {
+    const sLat = finiteCoord(startLat);
+    const sLng = finiteCoord(startLng);
+    if (sLat == null || sLng == null) return 0;
+    let max = 0;
+    for (const place of places || []) {
+        const km = haversineKm(sLat, sLng, place?.latitude, place?.longitude);
+        if (km != null && km > max) max = km;
+    }
+    return max;
+};
+
+// ตรวจว่าแต่ละวันแน่นเกินกรอบหรือไม่ (ไม่ mutate) — คืน warnings + เวลารวมทั้งทริป
+const validateDayFit = (planData, { dayBudgetMinutes = DAY_BUDGET_MINUTES } = {}) => {
+    const warnings = [];
+    let totalUsedMinutes = 0;
+    for (const day of planData?.days || []) {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        let used = 0;
+        stops.forEach((stop, index) => {
+            if (index > 0) used += Number(stop?.segments?.[0]?.estimatedMinutes) || 0;
+            used += Number(stop?.durationMinutes) || 0;
+        });
+        totalUsedMinutes += used;
+        if (stops.length > 0 && used > dayBudgetMinutes) {
+            warnings.push(
+                `วันที่ ${day?.day ?? '?'} ต้องใช้ ~${(used / 60).toFixed(1)} ชม. ` +
+                `เกินกรอบ ~${Math.round(dayBudgetMinutes / 60)} ชม./วัน — พิจารณาเพิ่มวันหรือลดสถานที่`,
+            );
+        }
+    }
+    return { warnings, totalUsedMinutes };
+};
+
+// เดินโซ่เวลาทุกวันโดยคงลำดับเดิมทุกจุด (ใช้ตอน PUT — เคารพลำดับที่ผู้ใช้จัดเอง)
+// คืน warnings ของวันที่แน่นเกินไป
+const chainAllDaysPreservingOrder = (
+    planData,
+    { defaultStartMinutes = DEFAULT_DAY_START_MINUTES, dayBudgetMinutes = DAY_BUDGET_MINUTES } = {},
+) => {
+    for (const day of planData?.days || []) {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        if (stops.length === 0) continue;
+        const anchor = parseClockToMinutes(stops[0]?.arrivalTime) ?? defaultStartMinutes;
+        chainDayTimes(day, anchor);
+    }
+    return validateDayFit(planData, { dayBudgetMinutes }).warnings;
+};
+
+module.exports = {
+    DAY_BUDGET_MINUTES,
+    MAX_STOPS_PER_DAY,
+    DEFAULT_DAY_START_MINUTES,
+    parseClockToMinutes,
+    parseStartTimeInput,
+    formatClock,
+    finiteCoord,
+    haversineKm,
+    computeLegMinutes,
+    orderStopsNearestNeighbor,
+    chainDayTimes,
+    estimateRecommendedDays,
+    maxDistanceFromStart,
+    validateDayFit,
+    chainAllDaysPreservingOrder,
+};

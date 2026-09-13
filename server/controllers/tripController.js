@@ -6,6 +6,10 @@ const {
     normalizePlanPlaces,
     sanitizePlaceholderPlanImages,
 } = require('../utils/planPlaceNormalizer');
+const {
+    parseStartTimeInput,
+    chainAllDaysPreservingOrder,
+} = require('../utils/planScheduler');
 const tripRepository = require('../repositories/tripRepository');
 
 const normalizeStoredPlan = (planData, places) => {
@@ -26,7 +30,10 @@ const createTripHandler = ({ database = pool, planGenerator = generateTripPlan }
                 title: req.body.title,
                 destination: req.body.destination,
                 province: req.body.province,
-                days: req.body.days,
+                // auto_days=true = ให้ AI ประเมินจำนวนวันที่เหมาะสม (resolve ใน aiHelper)
+                // client เก่าส่ง days อย่างเดียว = ใช้ค่านั้นตรง ๆ (default 3)
+                days: req.body.auto_days ? null : req.body.days,
+                startTime: req.body.start_time,
                 budget: req.body.budget,
                 currency: req.body.currency,
                 travelStyle: req.body.travel_style,
@@ -83,6 +90,8 @@ const getTripById = async (req, res) => {
 
 // PUT /api/trips/:id/plan — บันทึกการแก้ไขแผนของผู้ใช้ (ลบ/เพิ่ม/สลับลำดับสถานที่)
 // รับ plan_data ทั้งก้อนจาก mobile app แล้ว upsert ลง trip_plans
+// เดินโซ่เวลาใหม่แบบคงลำดับที่ผู้ใช้จัด (chainAllDaysPreservingOrder) แล้วคืน warnings
+// รับ start_time ("HH:MM") เสริมที่ top-level ได้ — ใช้เป็นเวลาเริ่มของวัน + บันทึกลง trips
 const updateTripPlan = async (req, res) => {
     try {
         const tripId = Number.parseInt(req.params.id, 10);
@@ -101,9 +110,34 @@ const updateTripPlan = async (req, res) => {
             return res.status(404).json({ message: 'ไม่พบแผนเที่ยวหรือคุณไม่มีสิทธิ์แก้ไข' });
         }
 
+        // ลำดับความสำคัญของเวลาเริ่มวัน: body.start_time > ค่าที่เก็บใน trips > arrivalTime จุดแรก
+        // ลบ start_time ออกจาก planData ก่อน upsert กัน field ส่วนเกินค้างใน JSONB
+        let defaultStartMinutes;
+        if (typeof req.body?.start_time === 'string' && req.body.start_time.trim()) {
+            defaultStartMinutes = parseStartTimeInput(req.body.start_time);
+            await tripRepository.updateTripStartTime(tripId, req.body.start_time);
+        } else {
+            const stored = await tripRepository.findTripStartTimeById(tripId);
+            defaultStartMinutes = stored != null
+                ? parseStartTimeInput(stored)
+                : undefined;
+        }
+        delete planData.start_time;
+        const warnings = chainAllDaysPreservingOrder(
+            planData,
+            defaultStartMinutes === undefined ? {} : { defaultStartMinutes },
+        );
+        if (warnings.length > 0) {
+            planData.warnings = [...new Set([...(planData.warnings || []), ...warnings])];
+            planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+            for (const warning of warnings) {
+                if (!planData.tips.includes(warning)) planData.tips.push(warning);
+            }
+        }
+
         await tripRepository.upsertTripPlan(tripId, JSON.stringify(planData));
 
-        res.json({ message: 'บันทึกแผนการเดินทางสำเร็จ' });
+        res.json({ message: 'บันทึกแผนการเดินทางสำเร็จ', warnings });
     } catch (err) {
         console.error('[tripController] updateTripPlan:', err.message);
         res.status(500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกแผนการเดินทาง' });

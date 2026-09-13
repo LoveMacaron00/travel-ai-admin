@@ -45,11 +45,11 @@
 | GET | `/api/mobile/destinations` | `DestinationService.getDestinations`; เลือก translation ด้วย `Accept-Language: th|en` และ fallback เป็นไทย |
 | GET | `/api/mobile/destinations/:id` | `DestinationService.getDestinationDetails`; เลือก translation ด้วย `Accept-Language: th|en` และ fallback เป็นไทย |
 | POST | `/api/mobile/destinations/:id/view` | `ActivityService.recordDestinationView` นับหนึ่งครั้งต่อ activity session |
-| POST | `/api/trips` | `TripService.createTravelPlan` |
+| POST | `/api/trips` | `TripService.createTravelPlan` สร้างแผน (SSE `done`/`warning`/`error`) — รับ `start_time: "HH:MM"` (default 09:00), `auto_days: true` ให้ระบบประเมินจำนวนวัน, `days` 1..7 โหมด manual; `plan_data` มี `warnings: string[]` เมื่อวันแน่น/ระยะไกลเกิน |
 | GET | `/api/trips` | `TripService.listMyPlans` ประวัติแผนของ user |
 | GET | `/api/trips/:id` | โหลดผลหลังสร้างแผนผ่าน `TripService.getTravelPlan` |
 | PATCH | `/api/trips/:id` | `TripService.renamePlan` เปลี่ยนชื่อแผน (body: `{title}` สูงสุด 120 ตัวอักษร) |
-| PUT | `/api/trips/:id/plan` | `TripService.updateTravelPlan` บันทึกการแก้แผน (ลบ/เพิ่ม/สลับลำดับ) |
+| PUT | `/api/trips/:id/plan` | `TripService.updateTravelPlan` บันทึกการแก้แผน (ลบ/เพิ่ม/สลับลำดับ) — เดินโซ่เวลาใหม่แบบคงลำดับ ตอบ `{message, warnings}`; รับ `start_time` เสริมเพื่อเปลี่ยนเวลาเริ่มวัน |
 | DELETE | `/api/trips/:id` | `TripService.deletePlan` ลบแผน |
 | GET | `/api/mobile/media?url=` | `MediaService.fullUrl` proxy รูป CDN ภายนอกเฉพาะ Flutter Web (แก้ CORS/mixed content) |
 | GET | `/api/mobile/plan-options` | `TripService.getPlanOptions` ตัวเลือกความสนใจ + วิธีเดินทาง (admin จัดการผ่าน `/api/preferences`) |

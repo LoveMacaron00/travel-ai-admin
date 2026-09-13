@@ -214,6 +214,7 @@ CREATE TABLE IF NOT EXISTS trips (
     destination VARCHAR(255) NOT NULL,
     province VARCHAR(255),
     days INT NOT NULL DEFAULT 3,
+    start_time VARCHAR(5), -- เวลาเริ่มเดินทาง "HH:MM" (NULL = 09:00)
     budget NUMERIC(12,2),
     currency VARCHAR(10) NOT NULL DEFAULT 'THB',
     travel_style VARCHAR(50), -- 'backpacker'|'comfort'|'luxury'

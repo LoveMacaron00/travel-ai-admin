@@ -22,6 +22,37 @@ const ensureTripsTitleColumn = async (db = pool) => {
     _tripsTitleEnsured = true;
 };
 
+// เติมคอลัมน์ start_time ("HH:MM", NULL = 09:00) ให้ DB เก่า — pattern เดียวกับ title
+let _tripsStartTimeEnsured = false;
+const ensureTripsStartTimeColumn = async (db = pool) => {
+    if (_tripsStartTimeEnsured) return;
+    await db.query(`ALTER TABLE trips ADD COLUMN IF NOT EXISTS start_time VARCHAR(5)`);
+    _tripsStartTimeEnsured = true;
+};
+
+const ensureTripsPlanColumns = async (db = pool) => {
+    await ensureTripsTitleColumn(db);
+    await ensureTripsStartTimeColumn(db);
+};
+
+// "HH:MM" ที่ใช้ได้เท่านั้น — อย่างอื่นถือว่าไม่ได้ส่งมา (backend ใช้ 09:00 แทน)
+const normalizeStartTime = (value) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    const match = text.match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours > 23 || minutes > 59) return null;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+// days เก็บ 1..7 เสมอ — client เก่าที่ไม่ส่งมาถือว่า 3 วัน (คงพฤติกรรมเดิม)
+const normalizeDays = (value, fallback = 3) => {
+    const parsed = Number.parseInt(String(value ?? fallback), 10);
+    if (!Number.isInteger(parsed)) return fallback;
+    return Math.min(7, Math.max(1, parsed));
+};
+
 // สร้าง trip ใหม่สถานะ generating คืน id
 const createGeneratingTrip = async ({
     userId,
@@ -29,25 +60,27 @@ const createGeneratingTrip = async ({
     destination,
     province,
     days,
+    startTime,
     budget,
     currency,
     travelStyle,
     groupType,
     interests,
 }, db = pool) => {
-    await ensureTripsTitleColumn(db);
+    await ensureTripsPlanColumns(db);
     const { rows } = await db.query(
         `INSERT INTO trips
-            (user_id, title, destination, province, days, budget, currency,
+            (user_id, title, destination, province, days, start_time, budget, currency,
              travel_style, group_type, interests, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'generating')
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'generating')
          RETURNING id`,
         [
             userId,
             (typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : null),
             destination || 'Near current location',
             province || null,
-            days || 3,
+            normalizeDays(days),
+            normalizeStartTime(startTime),
             budget || null,
             currency || 'THB',
             travelStyle || null,
@@ -79,9 +112,9 @@ const saveGeneratedPlan = async (tripId, planData, fullText, db = pool) => {
 
 // ประวัติแผนเที่ยวของ user พร้อม plan_data ล่าสุด 20 รายการ
 const findUserTripsWithPlans = async (userId, db = pool) => {
-    await ensureTripsTitleColumn(db);
+    await ensureTripsPlanColumns(db);
     const { rows } = await db.query(
-        `SELECT t.id, t.title, t.destination, t.province, t.days, t.budget,
+        `SELECT t.id, t.title, t.destination, t.province, t.days, t.start_time, t.budget,
                 t.travel_style, t.group_type, t.status, t.created_at,
                 tp.plan_data
          FROM trips t
@@ -96,6 +129,7 @@ const findUserTripsWithPlans = async (userId, db = pool) => {
 
 // แผนเที่ยวหนึ่งรายการเมื่อเป็นเจ้าของ คืน trip หรือ null
 const findTripWithPlanById = async (tripId, userId, db = pool) => {
+    await ensureTripsPlanColumns(db);
     const { rows } = await db.query(
         `SELECT t.*, tp.plan_data, tp.markdown_cache, tp.generated_at
          FROM trips t
@@ -104,6 +138,33 @@ const findTripWithPlanById = async (tripId, userId, db = pool) => {
         [tripId, userId],
     );
     return rows[0] || null;
+};
+
+// อ่าน start_time ที่เก็บไว้ของ trip (NULL = ใช้ 09:00)
+const findTripStartTimeById = async (tripId, db = pool) => {
+    await ensureTripsPlanColumns(db);
+    const { rows } = await db.query(
+        `SELECT start_time FROM trips WHERE id = $1`,
+        [tripId],
+    );
+    return rows[0]?.start_time ?? null;
+};
+
+// อัปเดตจำนวนวันที่ resolve แล้ว (เช่น auto_days คำนวณได้ 4 วันแต่ตอน insert เก็บ 3 ไว้ชั่วคราว)
+const updateTripDays = async (tripId, days, db = pool) => {
+    await db.query(`UPDATE trips SET days = $2 WHERE id = $1`, [tripId, normalizeDays(days)]);
+};
+
+// อัปเดตเวลาเริ่มเดินทาง ("HH:MM" ใช้ไม่ได้ = ไม่แตะค่าที่เก็บไว้)
+const updateTripStartTime = async (tripId, startTime, db = pool) => {
+    const normalized = normalizeStartTime(startTime);
+    if (!normalized) return 0;
+    await ensureTripsPlanColumns(db);
+    const { rowCount } = await db.query(
+        `UPDATE trips SET start_time = $2 WHERE id = $1`,
+        [tripId, normalized],
+    );
+    return rowCount;
 };
 
 // ตรวจว่า trip เป็นของผู้ใช้หรือไม่
@@ -153,6 +214,9 @@ const deleteTripById = async (tripId, userId, db = pool) => {
 };
 
 module.exports = {
+    ensureTripsPlanColumns,
+    normalizeStartTime,
+    normalizeDays,
     findApprovedPlanPlaces,
     createGeneratingTrip,
     markTripFailed,
@@ -160,6 +224,9 @@ module.exports = {
     saveGeneratedPlan,
     findUserTripsWithPlans,
     findTripWithPlanById,
+    findTripStartTimeById,
+    updateTripDays,
+    updateTripStartTime,
     isTripOwnedByUser,
     upsertTripPlan,
     renameTripById,
