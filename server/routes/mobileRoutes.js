@@ -9,6 +9,7 @@ const { requireUserAuth } = require('../middleware/userAuth');
 const travelDiaryController = require('../controllers/travelDiaryController');
 const preferenceController = require('../controllers/preferenceController');
 const feedbackController = require('../controllers/feedbackController');
+const { getRestStops } = require('../controllers/restStopController');
 const upload = require('../config/multer');
 
 // GET /api/mobile/media?url=... — proxy รูปจาก CDN ภายนอก (ตรวจ allow-list)
@@ -25,6 +26,8 @@ router.get('/destinations', mobileController.getDestinations);
 router.post('/destinations/:id/view', requireUserAuth, recordDestinationView);
 // GET /api/mobile/destinations/:id — รายละเอียดสถานที่หนึ่งแห่ง (หน้า Destination Detail)
 router.get('/destinations/:id', mobileController.getDestinationDetail);
+// GET /api/mobile/rest-stops — จุดแวะพัก OSM รอบพิกัด (ไม่ต้อง login, แสดง attribution ให้ผู้ใช้ดู)
+router.get('/rest-stops', getRestStops);
 // GET /api/mobile/diary — บันทึก Smart Diary ทั้งหมดของผู้ใช้
 router.get('/diary', requireUserAuth, travelDiaryController.getEntries);
 // POST /api/mobile/diary — เพิ่ม/อัปเดต (upsert) บันทึก diary หนึ่งรายการ

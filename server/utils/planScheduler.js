@@ -139,7 +139,13 @@ const chainDayTimes = (day, startMinutes) => {
             const prev = stops[index - 1] || {};
             const km = haversineKm(prev.latitude, prev.longitude, stop.latitude, stop.longitude);
             const mode = String(stop.transportMode || 'car').toLowerCase();
-            const { travelMinutes, restMinutes } = computeLegMinutes(km, mode);
+            const { travelMinutes, restMinutes: rawRestMinutes } = computeLegMinutes(km, mode);
+            // ขาที่มีปลายข้างใดเป็นจุดพัก OSM มีเวลาพักจริง (durationMinutes 20) อยู่แล้ว —
+            // ไม่บวกเวลาพักโดยประมาณซ้ำ ไม่งั้นจะนับพัก 2 รอบ (ทั้ง stop จริง + restMinutes)
+            const isRestLeg = prev.isRestStop === true || stop.isRestStop === true
+                || String(prev.destinationId ?? '').startsWith('osm:')
+                || String(stop.destinationId ?? '').startsWith('osm:');
+            const restMinutes = isRestLeg ? 0 : rawRestMinutes;
             const legTotal = travelMinutes + restMinutes;
             const keepCost = Number(stop.segments?.[0]?.estimatedCost);
             stop.segments = [{

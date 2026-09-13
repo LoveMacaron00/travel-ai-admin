@@ -28,6 +28,7 @@ const {
     freeWebSearch,
     formatWebSearchContext,
 } = require('./webSearchHelper');
+const { enrichPlanWithRestStops } = require('./restStopService');
 const {
     chatCompletion,
     chatCompletionStream,
@@ -606,6 +607,7 @@ async function generateTripPlan(tripId, tripInput, res) {
     - พยายามจัดกลุ่มสถานที่บนเกาะและบนฝั่งเป็นช่วงเดียวกัน เลี่ยงลำดับ เกาะ → ฝั่ง → เกาะ หรือ ฝั่ง → เกาะ → ฝั่ง ในวันเดียวกัน (ไม่ว่าจะใช้พาหนะชนิดใด) แต่ถ้าจำเป็นต้องข้ามให้ใส่ได้
     - พยายามให้ข้ามระหว่างเกาะกับฝั่งไม่เกินหนึ่งครั้งต่อวัน ไม่ว่าจะใช้พาหนะชนิดใด (car/bus/train/ferry/flight/walking) ถ้าเกินให้ระบุใน tips ว่าอาจเหนื่อยจากการข้ามบ่อย เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
     - กรอบเวลาต่อวัน ~10 ชม. รวมเที่ยว+เดินทาง+พัก วันละไม่เกิน 5 จุด อย่ายัดหลายแห่งจนเวลาซ้อนกัน
+    - ขาขับรถ/รถโดยสารยาว ≥2 ชม. ระบบจะแทรกจุดแวะพักจริงจาก OpenStreetMap ให้เอง จึงไม่ต้องสร้าง stop แวะพักเอง — คิดเวลาพักคร่าว ๆ ในแผนได้ตามเหมาะสม
     - arrivalTime กับ segments จะถูกระบบคำนวณใหม่จากระยะทางจริงหลัง AI ตอบ จึงไม่ต้องเดาเวลาเดินทางเอง แต่ทุก stop ต้องใส่ arrivalTime "HH:MM" กับ durationMinutes (20-300 นาที) ที่สมเหตุสมผลมาด้วย
 
     ข้อมูลสถานที่จากฐานข้อมูล:
@@ -749,6 +751,15 @@ async function generateTripPlan(tripId, tripInput, res) {
                     startLng: tripInput.start_longitude,
                     startMinutes: dayStartMinutes,
                 });
+                // ---- แทรกจุดแวะพักจริง (OSM/Overpass) กลางขาขับยาว ≥2 ชม. ----
+                // best-effort: Overpass ล่ม/หมดเวลาจะได้แผนเดิมพร้อมเวลาพักโดยประมาณ ไม่ล้มทั้งทริป
+                try {
+                    await enrichPlanWithRestStops(planData, {
+                        primaryMode: allowedTransportModes[0] || 'car',
+                    });
+                } catch (restError) {
+                    console.warn(`[ai] rest-stop enrichment skipped: ${restError.message}`);
+                }
                 const { warnings: fitWarnings } = validateDayFit(planData);
                 const allWarnings = [...new Set([...earlyWarnings, ...fitWarnings])];
                 if (allWarnings.length > 0) {
