@@ -6,6 +6,9 @@ const { tatHeadersFor } = require('../utils/tatLanguage');
 const { buildTATTranslation, getLocationParts } = require('./tatPlaceTranslation');
 const { bulkEmbedMissing } = require('./embedHelper');
 const tatSyncRepository = require('../repositories/tatSyncRepository');
+const fs = require('fs');
+const path = require('path');
+const { tatDir } = require('../config/storage');
 
 const TAT_API_KEY = config.tat.apiKey;
 const TAT_API_BASE = config.tat.apiBaseUrl;
@@ -20,6 +23,68 @@ const CATEGORY_MAP = {
 };
 // แปลง category จาก TAT เป็นหมวดมาตรฐานของระบบ
 const mapCategory = c => CATEGORY_MAP[c] ?? 'general';
+
+// ดาวน์โหลดรูปปก TAT มาเก็บ local /uploads/tat/<tatPlaceId>.<ext>
+// เพื่อให้ mobile/admin โหลดจาก origin เดียวกัน ไม่พึ่ง CDN ตอนแสดงผล
+// สำเร็จคืน path local, ล้มเหลวคืน remoteUrl เดิม (fallback ไม่ทำให้ sync พัง)
+async function mirrorTatCoverImage(tatPlaceId, remoteUrl) {
+    if (!tatPlaceId || !remoteUrl || typeof remoteUrl !== 'string') return remoteUrl;
+    const trimmed = remoteUrl.trim();
+    if (!trimmed) return remoteUrl;
+    if (trimmed.startsWith('/uploads/tat/')) return trimmed;
+    if (!/^https?:\/\//i.test(trimmed)) return remoteUrl;
+
+    const safeId = String(tatPlaceId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'tat-cover';
+    for (const ext of ['.jpg', '.jpeg', '.png', '.webp', '.gif']) {
+        try {
+            if (fs.existsSync(path.join(tatDir, `${safeId}${ext}`))) {
+                return `/uploads/tat/${safeId}${ext}`;
+            }
+        } catch {
+            // stat ล้มเหลวถือว่าไม่มีไฟล์ ไปโหลดใหม่
+        }
+    }
+
+    try {
+        const upstream = await fetch(trimmed, {
+            redirect: 'error',
+            signal: AbortSignal.timeout(config.mediaProxy.timeoutMs),
+            headers: {
+                Accept: 'image/*',
+                'Accept-Encoding': 'identity',
+                'User-Agent': 'GoThai-Media-Proxy/1.0',
+            },
+        });
+        if (!upstream.ok || !upstream.body) return remoteUrl;
+
+        const contentType = String(upstream.headers.get('content-type') || '')
+            .split(';', 1)[0]
+            .trim()
+            .toLowerCase();
+        const extByType = {
+            'image/jpeg': '.jpg',
+            'image/jpg': '.jpg',
+            'image/png': '.png',
+            'image/webp': '.webp',
+            'image/gif': '.gif',
+        };
+        const ext = extByType[contentType];
+        if (!ext) return remoteUrl;
+
+        const declared = Number(upstream.headers.get('content-length'));
+        if (Number.isFinite(declared) && declared > config.mediaProxy.maxBytes) return remoteUrl;
+
+        const buf = Buffer.from(await upstream.arrayBuffer());
+        if (buf.length === 0 || buf.length > config.mediaProxy.maxBytes) return remoteUrl;
+
+        const filename = `${safeId}${ext}`;
+        await fs.promises.writeFile(path.join(tatDir, filename), buf);
+        return `/uploads/tat/${filename}`;
+    } catch (err) {
+        console.error(`[tat-sync] mirror cover ${tatPlaceId} failed, fallback remote:`, err.message);
+        return remoteUrl;
+    }
+}
 
 // ดึงสถานที่หนึ่งหน้าจาก TAT API ตามตัวกรองที่กำหนด
 async function fetchTATPage(page, limit = 100, keyword = '', province = '', placeCategory = '', languageCode = 'th') {
@@ -112,6 +177,19 @@ async function upsertTATPlace(place) {
         postcode,
     } = getLocationParts(place);
 
+    // C: mirror รูปปกมาเก็บ local ก่อนบันทึก DB — สำเร็จได้ /uploads/tat/...
+    // ล้มเหลวได้ URL เดิม (remote) ระบบยังแสดงผ่าน proxy ได้เหมือนเดิม
+    const tatPlaceIdStr = String(place.placeId || place.id);
+    const mirroredCover = await mirrorTatCoverImage(tatPlaceIdStr, mainImageUrl);
+    if (mirroredCover && mirroredCover !== mainImageUrl) {
+        const coverIdx = uniqueImages.findIndex((img) => img.url === mainImageUrl);
+        if (coverIdx >= 0) {
+            uniqueImages[coverIdx] = { ...uniqueImages[coverIdx], url: mirroredCover };
+        } else {
+            uniqueImages.unshift({ url: mirroredCover, is_cover: true });
+        }
+    }
+
     const row = await tatSyncRepository.upsertPlace({
         name: place.name,
         address,
@@ -130,9 +208,9 @@ async function upsertTATPlace(place) {
         openingTime: place.openingHours?.[0]?.open || place.openingHours?.[0]?.openTime || '00:00',
         closingTime: place.openingHours?.[0]?.close || place.openingHours?.[0]?.closeTime || '00:00',
         openingHoursJson: JSON.stringify(place.openingHours || []),
-        mainImageUrl: mainImageUrl || null,
+        mainImageUrl: mirroredCover || null,
         imagesJson: JSON.stringify(uniqueImages),
-        tatPlaceId: String(place.placeId || place.id),
+        tatPlaceId: tatPlaceIdStr,
         tatRawJson: JSON.stringify(place),
         admissionFeeJson: JSON.stringify(place.information?.fee || place.fee || {}),
     });
@@ -298,6 +376,7 @@ function startBulkEmbeddingQueue() {
 }
 
 module.exports = {
+    mirrorTatCoverImage,
     syncAllTATPlaces,
     syncOneTATPlace,
     syncMissingTATTranslations,

@@ -10,9 +10,11 @@ const fs = require('fs');
 const uploadsDir = path.join(__dirname, '..', 'uploads');
 const chatImagesDir = path.join(uploadsDir, 'chat-images');
 const preferencesDir = path.join(uploadsDir, 'preferences');
+// รูปปก TAT ที่ mirror มาเก็บ local (ดู mirrorTatCoverImage ใน tatSyncService)
+const tatDir = path.join(uploadsDir, 'tat');
 
 // Ensure base dirs exist synchronously (same as multer.js did)
-for (const dir of [uploadsDir, chatImagesDir, preferencesDir]) {
+for (const dir of [uploadsDir, chatImagesDir, preferencesDir, tatDir]) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -22,4 +24,5 @@ module.exports = {
   uploadsDir,
   chatImagesDir,
   preferencesDir,
+  tatDir,
 };

@@ -14,6 +14,11 @@ const secureUploads = async (req, res, next) => {
         return next();
     }
 
+    // รูปปก TAT ที่ mirror ไว้ local เปิดสาธารณะเช่นกัน (รายการสถานที่ดูได้โดยไม่ต้อง login)
+    if (req.path === '/tat' || req.path.startsWith('/tat/')) {
+        return next();
+    }
+
     const token = extractBearer(req);
     if (!token) {
         return res.status(401).json({ message: 'จำเป็นต้องเข้าสู่ระบบเพื่อเข้าถึงไฟล์นี้' });
