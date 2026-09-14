@@ -226,7 +226,14 @@ const normalizePlanPlaces = (planData, places = []) => {
     }
 
     // Do not leave empty AI-invented days in the rendered itinerary.
-    planData.days = (planData?.days || []).filter(day => day.stops.length > 0);
+    // วันเปล่าเลขเรียง 1..N (user เพิ่มเองจากแอป) เก็บไว้ให้เติมสถานที่ทีหลัง —
+    // วันเปล่าเลขกระโดด (AI แต่งเลขมา เช่น วันที่ 9 ในทริป 3 วัน) กรองทิ้งเหมือนเดิม
+    planData.days = (planData?.days || []).filter(
+        (day, index) => day.stops.length > 0 || day.day === index + 1,
+    );
+
+    // เรียงเลขวันใหม่ 1..N กันเลขกระโดดหลัง user เพิ่ม/ลบวันเองจากแอป
+    planData.days.forEach((day, index) => { day.day = index + 1; });
 
     return planData;
 };

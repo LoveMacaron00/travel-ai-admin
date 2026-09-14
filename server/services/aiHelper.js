@@ -515,12 +515,15 @@ async function generateTripPlan(tripId, tripInput, res) {
         mustVisitRequests.map((place) => place.id),
     );
 
+    // ชื่อแผนที่ผู้ใช้กรอก (เช่น "เที่ยวเกาะทั่วไทย") — ใช้เป็นธีมหลักทั้งตอนค้น (RAG) และตอนสั่ง AI
+    const tripTitle = typeof tripInput.title === 'string' ? tripInput.title.trim().slice(0, 120) : '';
     // ดึง relevant places จาก RAG
     const ragQuery = [
+        tripTitle,
         tripInput.destination || 'สถานที่ท่องเที่ยวใกล้ฉัน',
         ...(tripInput.interests || []),
         tripInput.travel_style || '',
-    ].join(' ');
+    ].filter((part) => typeof part === 'string' && part.trim()).join(' ');
 
     let places;
     if (tripInput.province) {
@@ -627,6 +630,7 @@ async function generateTripPlan(tripId, tripInput, res) {
 
     const userPrompt =
         `สร้างแผนเที่ยว ${effectiveDays} วัน โดยเริ่มออกเดินทาง ${dayStartClock} ของทุกวัน จาก GPS ${tripInput.start_latitude}, ${tripInput.start_longitude}
+${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้ง: "${tripTitle}" — ใช้เป็นธีมหลักของทริป เลือกสถานที่และเขียน summary/theme ให้สอดคล้องกับชื่อนี้` : ''}
 
     ข้อมูลผู้เดินทาง:
     - งบประมาณ: ${tripInput.budget} ${tripInput.currency || 'THB'}

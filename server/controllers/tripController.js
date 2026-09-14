@@ -138,6 +138,9 @@ const updateTripPlan = async (req, res) => {
         }
 
         await tripRepository.upsertTripPlan(tripId, JSON.stringify(planData));
+        // user เพิ่ม/ลบวันเองจากแอปได้ — sync จำนวนวันกลับ trips.days ให้การ์ด Profile ตรง
+        // (normalizeDays clamp 1..7; วันเปล่า chainAllDaysPreservingOrder ข้ามให้อยู่แล้ว)
+        await tripRepository.updateTripDays(tripId, planData.days.length);
 
         res.json({ message: 'บันทึกแผนการเดินทางสำเร็จ', warnings });
     } catch (err) {
