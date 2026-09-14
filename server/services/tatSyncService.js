@@ -126,6 +126,13 @@ async function upsertDestinationTranslation(destinationId, languageCode, place) 
     return tatSyncRepository.upsertTranslation(destinationId, languageCode, translation);
 }
 
+// TAT list (/places) คืน thumbnailUrl เป็น array ส่วน detail (/places/:id) คืน string
+// normalize ให้เป็น string เสมอ กัน array หลุดลง DB เป็นรูปพัง
+const normalizeTatCoverUrl = (value) => {
+    const first = Array.isArray(value) ? value[0] : value;
+    return typeof first === 'string' && first.trim().length > 0 ? first.trim() : null;
+};
+
 // เพิ่มหรืออัปเดตสถานที่ TAT และข้อมูลร่วมในตารางหลัก
 async function upsertTATPlace(place) {
     // รวบรวมรูปภาพจากทุก field ที่เป็นไปได้
@@ -150,7 +157,7 @@ async function upsertTATPlace(place) {
 
     const images = allImageUrls.map(url => ({ url, is_cover: false }));
 
-    const mainImageUrl = place.thumbnailUrl || (images.length > 0 ? images[0].url : null);
+    const mainImageUrl = normalizeTatCoverUrl(place.thumbnailUrl) || (images.length > 0 ? images[0].url : null);
 
     if (mainImageUrl) {
         images.unshift({ url: mainImageUrl, is_cover: true });
@@ -377,6 +384,8 @@ function startBulkEmbeddingQueue() {
 
 module.exports = {
     mirrorTatCoverImage,
+    fetchTATPlaceDetail,
+    normalizeTatCoverUrl,
     syncAllTATPlaces,
     syncOneTATPlace,
     syncMissingTATTranslations,

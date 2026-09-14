@@ -59,7 +59,7 @@ const parseLatitude = (value) => (value !== '' && value != null ? parseFloat(val
 // ส่งรายการสถานที่ทั้งหมดสำหรับหน้า admin พร้อมตัวกรองและ pagination
 const getAllDestinations = async (req, res) => {
     try {
-        const { province, status, search, source } = req.query;
+        const { province, status, search, source, category } = req.query;
         const paginationRequested = req.query.page !== undefined || req.query.limit !== undefined;
         const parsedPage = Number.parseInt(req.query.page, 10);
         const parsedLimit = Number.parseInt(req.query.limit, 10);
@@ -73,6 +73,7 @@ const getAllDestinations = async (req, res) => {
             province,
             search,
             status,
+            category,
             page,
             limit,
             paginationRequested,

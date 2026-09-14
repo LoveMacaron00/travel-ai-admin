@@ -115,7 +115,7 @@ const DestinationsView = ({
                             </h3>
                             <button
                                 onClick={() =>
-                                    setFilters({ source: 'tat', status: 'all', placeCategory: 'all' })
+                                    setFilters({ source: 'tat', status: 'all', category: 'all', placeCategory: 'all' })
                                 }
                                 className="text-xs font-semibold text-yellow-500/80 px-2 py-1 bg-yellow-500/10 rounded-lg"
                             >
@@ -156,8 +156,8 @@ const DestinationsView = ({
                             </label>
                         </div>
 
-                        {/* Category Filter (TAT API only) */}
-                        {filters.source === 'tat' && (
+                        {/* Category Filter (TAT API: place_category / ผู้ดูแลระบบเพิ่ม: category) */}
+                        {filters.source === 'tat' ? (
                             <div className="mt-5 pt-4 border-t border-gray-800 space-y-2">
                                 <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">หมวดหมู่</p>
 
@@ -178,6 +178,31 @@ const DestinationsView = ({
                                                 <div className={`w-2.5 h-2.5 rounded-full ${filters.placeCategory === cat.id ? 'bg-yellow-500' : 'bg-gray-600'}`} />
                                             </div>
                                             <span className={`text-sm ${filters.placeCategory === cat.id ? 'text-yellow-400 font-medium' : 'text-gray-400'}`}>{cat.label}</span>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="mt-5 pt-4 border-t border-gray-800 space-y-2">
+                                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">หมวดหมู่</p>
+
+                                {placeCategories.map((cat) => (
+                                    <label
+                                        key={cat.id}
+                                        className={`flex items-center p-2.5 rounded-xl cursor-pointer group ${filters.category === cat.id ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <input
+                                                type="radio"
+                                                name="category-filter"
+                                                className="hidden"
+                                                checked={filters.category === cat.id}
+                                                onChange={() => setFilters({ ...filters, category: cat.id })}
+                                            />
+                                            <div className="w-4 h-4 flex items-center justify-center">
+                                                <div className={`w-2.5 h-2.5 rounded-full ${filters.category === cat.id ? 'bg-blue-500' : 'bg-gray-600'}`} />
+                                            </div>
+                                            <span className={`text-sm ${filters.category === cat.id ? 'text-blue-400 font-medium' : 'text-gray-400'}`}>{cat.label}</span>
                                         </div>
                                     </label>
                                 ))}

@@ -167,11 +167,16 @@ const findDestinationImageUrls = async (destinationId, db = pool) => {
 // ค้นหาสถานที่สำหรับหน้า admin พร้อมตัวกรอง
 // คืน array ตรงๆ เมื่อไม่ขอ pagination, คืน { data, pagination, statusCounts } เมื่อขอ
 const searchAdminDestinations = async (
-    { source, province, search, status, page, limit, paginationRequested },
+    { source, province, search, status, category, page, limit, paginationRequested },
     db = pool,
 ) => {
     const allowedStatuses = ['pending', 'approved', 'rejected'];
     const allowedSources = ['admin', 'tat'];
+    // ตัวกรองหมวดหมู่ฝั่ง admin ใช้ id เดียวกับ PLACE_CATEGORIES ฝั่ง client
+    // หมายเหตุ: แถวที่ sync จาก TAT ใช้ category='hotel' ส่วน admin เพิ่มเองใช้ 'accommodation'
+    // จึงให้ตัวกรองที่พักจับทั้งสองค่า (logic เดียวกับ overnight lookup)
+    const ADMIN_CATEGORY_ALIASES = { accommodation: ['accommodation', 'hotel'] };
+    const ALLOWED_EXACT_CATEGORIES = ['attraction', 'restaurant', 'shop', 'other', 'hotel', 'general'];
 
     const baseConditions = [];
     const baseParams = [];
@@ -211,10 +216,24 @@ const searchAdminDestinations = async (
             conditions.push(`status = $${params.length}`);
         }
     }
+    if (category && typeof category === 'string') {
+        const cleanCategory = category.trim().toLowerCase();
+        if (cleanCategory && cleanCategory !== 'all') {
+            const matched = ADMIN_CATEGORY_ALIASES[cleanCategory]
+                || (ALLOWED_EXACT_CATEGORIES.includes(cleanCategory) ? [cleanCategory] : null);
+            if (matched) {
+                params.push(matched);
+                conditions.push(`category = ANY($${params.length}::text[])`);
+            }
+        }
+    }
+    // ตัวนับสถานะต้องนับบนชุดเดียวกับที่กรอง (รวมหมวดหมู่) ไม่งั้นเลขบน badge เพี้ยน
+    const countConditions = [...conditions];
+    const countParams = [...params];
 
     const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-    const baseWhereClause = baseConditions.length > 0
-        ? ` WHERE ${baseConditions.join(' AND ')}`
+    const countWhereClause = countConditions.length > 0
+        ? ` WHERE ${countConditions.join(' AND ')}`
         : '';
     let sql = `
         SELECT id, name, province, category, image_url, status, source, created_at
@@ -238,8 +257,8 @@ const searchAdminDestinations = async (
                 COUNT(*) FILTER (WHERE status = 'approved')::int AS approved,
                 COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
                 COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected
-             FROM destinations${baseWhereClause}`,
-            baseParams,
+             FROM destinations${countWhereClause}`,
+            countParams,
         ),
     ]);
 
