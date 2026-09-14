@@ -33,6 +33,7 @@ const Destinations = () => {
     const [filters, setFilters] = useState({
         source: 'tat',
         status: 'all',
+        category: 'all',
         placeCategory: 'all'
     });
 
@@ -57,7 +58,7 @@ const Destinations = () => {
     // -----------------------
     // ดึงข้อมูลทั้งหมดพร้อมกัน
     // -----------------------
-    const fetchData = useCallback(async (keyword, pageNum, source, placeCategory, status) => {
+    const fetchData = useCallback(async (keyword, pageNum, source, placeCategory, status, category) => {
         requestIdRef.current += 1;
         const currentRequestId = requestIdRef.current;
 
@@ -72,6 +73,7 @@ const Destinations = () => {
                 const adminParams = new URLSearchParams();
                 if (keyword) adminParams.set('search', keyword);
                 if (status && status !== 'all') adminParams.set('status', status);
+                if (category && category !== 'all') adminParams.set('category', category);
                 adminParams.set('limit', PAGE_SIZE);
                 adminParams.set('page', pageNum);
 
@@ -143,8 +145,8 @@ const Destinations = () => {
     // -----------------------
     useEffect(() => {
         setPage(1);
-        fetchData(debouncedSearch, 1, filters.source, filters.placeCategory, filters.status);
-    }, [debouncedSearch, filters.source, filters.placeCategory, filters.status, fetchData]);
+        fetchData(debouncedSearch, 1, filters.source, filters.placeCategory, filters.status, filters.category);
+    }, [debouncedSearch, filters.source, filters.placeCategory, filters.status, filters.category, fetchData]);
 
     useEffect(() => {
         return () => {
@@ -167,7 +169,7 @@ const Destinations = () => {
     const handlePageChange = (newPage) => {
         if (newPage < 1 || newPage > totalPages) return;
         setPage(newPage);
-        fetchData(debouncedSearch, newPage, filters.source, filters.placeCategory, filters.status);
+        fetchData(debouncedSearch, newPage, filters.source, filters.placeCategory, filters.status, filters.category);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -187,7 +189,7 @@ const Destinations = () => {
         try {
             await api.delete(`/destinations/${id}`);
             await showSuccessAlert('ลบสถานที่เรียบร้อยแล้ว');
-            fetchData(debouncedSearch, page, filters.source, filters.placeCategory, filters.status);
+            fetchData(debouncedSearch, page, filters.source, filters.placeCategory, filters.status, filters.category);
         } catch (err) {
             console.error('เกิดข้อผิดพลาดในการลบ:', err);
             await showErrorAlert('ลบสถานที่ไม่สำเร็จ');

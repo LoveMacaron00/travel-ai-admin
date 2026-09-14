@@ -138,7 +138,6 @@ CREATE TABLE IF NOT EXISTS destination_images (
     id SERIAL PRIMARY KEY,
     destination_id INT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
     image_url TEXT NOT NULL,
-    caption TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -162,8 +161,7 @@ CREATE TABLE IF NOT EXISTS app_usage_sessions (
     id BIGSERIAL PRIMARY KEY,
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    ended_at TIMESTAMPTZ
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- การเปิดรายละเอียดสถานที่ นับหนึ่งครั้งต่อ activity session
@@ -212,9 +210,12 @@ CREATE TABLE IF NOT EXISTS trips (
     user_id INT REFERENCES users(id) ON DELETE SET NULL,
 
     -- input จาก user
+    title VARCHAR(255), -- ชื่อแผนที่ผู้ใช้ตั้งเอง (NULL = ใช้ destination/province แทน)
     destination VARCHAR(255) NOT NULL,
     province VARCHAR(255),
     days INT NOT NULL DEFAULT 3,
+    start_time VARCHAR(5), -- เวลาเริ่มเดินทาง "HH:MM" (NULL = 09:00)
+    start_date DATE, -- วันที่เริ่มทริป "YYYY-MM-DD" (NULL = ไม่ระบุ ใช้โชว์หัวข้อแต่ละวันเป็นวันที่จริง)
     budget NUMERIC(12,2),
     currency VARCHAR(10) NOT NULL DEFAULT 'THB',
     travel_style VARCHAR(50), -- 'backpacker'|'comfort'|'luxury'
@@ -235,11 +236,10 @@ CREATE TABLE IF NOT EXISTS trip_plans (
     generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- chat_sessions (1 session ต่อ 1 trip)
+-- chat_sessions (session แชททั่วไปของผู้ใช้)
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE SET NULL,
-    trip_id INT REFERENCES trips(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -358,7 +358,6 @@ CREATE INDEX IF NOT EXISTS idx_travel_diary_destination
     ON travel_diary_entries(destination_id);
 
 -- chat
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_trip ON chat_sessions(trip_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_sess ON chat_messages(session_id);
 
 -- feedback

@@ -2,17 +2,13 @@
 
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const pool = require('../config/db');
+const userRepository = require('../repositories/userRepository');
 const { userJwtSecret } = require('../config/jwtSecrets');
-
-const PUBLIC_COLUMNS = 'id, email, username, profile_image_url, interests, is_banned, created_at';
 
 // ส่งรายชื่อผู้ใช้สำหรับหน้าจัดการของ admin
 const getAllUsers = async (req, res) => {
     try {
-        const { rows } = await pool.query(
-            `SELECT ${PUBLIC_COLUMNS} FROM users ORDER BY created_at DESC`
-        );
+        const rows = await userRepository.findAll();
         res.status(200).json(rows);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงข้อมูล users:', err);
@@ -38,11 +34,7 @@ const registerUser = async (req, res) => {
             });
         }
 
-        const { rows: existingRows } = await pool.query(
-            `SELECT ${PUBLIC_COLUMNS} FROM users WHERE email = $1`,
-            [email]
-        );
-        const existingUser = existingRows[0] || null;
+        const existingUser = await userRepository.findByEmail(email);
 
         if (existingUser) {
             return res.status(409).json({
@@ -51,13 +43,7 @@ const registerUser = async (req, res) => {
         }
 
         const passwordHash = await bcrypt.hash(password, 10);
-        const { rows: newRows } = await pool.query(
-            `INSERT INTO users (email, hash_password, username)
-             VALUES ($1, $2, $3)
-             RETURNING ${PUBLIC_COLUMNS}`,
-            [email, passwordHash, null]
-        );
-        const newUser = newRows[0];
+        const newUser = await userRepository.createUser({ email, passwordHash });
 
         const token = jwt.sign(
             { id: newUser.id, email: newUser.email },
@@ -88,11 +74,7 @@ const loginUser = async (req, res) => {
             });
         }
 
-        const { rows: userRows } = await pool.query(
-            `SELECT ${PUBLIC_COLUMNS}, hash_password FROM users WHERE email = $1`,
-            [email]
-        );
-        const user = userRows[0] || null;
+        const user = await userRepository.findByEmailWithPassword(email);
 
         if (!user) {
             return res.status(401).json({
@@ -146,22 +128,13 @@ const toggleBanUser = async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
 
-        const { rows: userRows } = await pool.query(
-            'SELECT is_banned FROM users WHERE id = $1',
-            [userId]
-        );
+        const banStatus = await userRepository.findBanStatus(userId);
 
-        if (userRows.length === 0) {
+        if (banStatus === null) {
             return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
         }
 
-        const newBanStatus = !userRows[0].is_banned;
-        const { rows } = await pool.query(
-            `UPDATE users SET is_banned = $1 WHERE id = $2
-             RETURNING ${PUBLIC_COLUMNS}`,
-            [newBanStatus, userId]
-        );
-        const user = rows[0] || null;
+        const user = await userRepository.setBanStatus(userId, !banStatus);
 
         if (!user) {
             return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
@@ -192,36 +165,16 @@ const updateUserProfile = async (req, res) => {
             profile_image_url: req.body.profile_image_url
         };
 
-        const updateStrings = [];
-        const values = [];
-        let index = 1;
+        const hasKnownField =
+            updates.username !== undefined ||
+            updates.interests !== undefined ||
+            updates.profile_image_url !== undefined;
 
-        if (updates.username !== undefined) {
-            updateStrings.push(`username = $${index++}`);
-            values.push(updates.username);
-        }
-        if (updates.interests !== undefined) {
-            updateStrings.push(`interests = $${index++}`);
-            values.push(JSON.stringify(Array.isArray(updates.interests) ? updates.interests : []));
-        }
-        if (updates.profile_image_url !== undefined) {
-            updateStrings.push(`profile_image_url = $${index++}`);
-            values.push(updates.profile_image_url);
-        }
-
-        if (updateStrings.length === 0) {
+        if (!hasKnownField) {
             return res.status(404).json({ message: 'ไม่พบผู้ใช้ หรือไม่มีข้อมูลอัปเดต' });
         }
 
-        values.push(userId);
-        const { rows } = await pool.query(
-            `UPDATE users
-             SET ${updateStrings.join(', ')}
-             WHERE id = $${index}
-             RETURNING ${PUBLIC_COLUMNS}`,
-            values
-        );
-        const updatedUser = rows[0] || null;
+        const updatedUser = await userRepository.updateProfile(userId, updates);
 
         if (!updatedUser) {
             return res.status(404).json({ message: 'ไม่พบผู้ใช้ หรือไม่มีข้อมูลอัปเดต' });
@@ -247,11 +200,7 @@ const uploadProfileImage = async (req, res) => {
         const userId = req.user.id;
         const imageUrl = `/uploads/${req.file.filename}`;
 
-        const { rows } = await pool.query(
-            `UPDATE users SET profile_image_url = $1 WHERE id = $2 RETURNING ${PUBLIC_COLUMNS}`,
-            [imageUrl, userId]
-        );
-        const updatedUser = rows[0] || null;
+        const updatedUser = await userRepository.updateProfileImage(userId, imageUrl);
 
         if (!updatedUser) {
             return res.status(404).json({ message: 'ไม่พบผู้ใช้' });

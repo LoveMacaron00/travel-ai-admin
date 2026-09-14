@@ -5,9 +5,12 @@
 // Admin CRUD ผ่าน /api/preferences และแอปมือถืออ่านค่าที่ใช้งานผ่าน /api/mobile/plan-options
 
 const pool = require('../config/db');
-const { resolveTatLanguage } = require('./helpers/tatLanguage');
-
-const ALLOWED_TYPES = new Set(['interest', 'transport_mode']);
+const { resolveTatLanguage } = require('../utils/tatLanguage');
+const preferenceRepository = require('../repositories/preferenceRepository');
+const {
+    ALLOWED_TYPES,
+    normalizePreferenceInput: normalizeInput,
+} = require('../validators/preferenceValidator');
 
 // อ่านภาษาที่ผู้ใช้ร้องขอจาก Accept-Language
 const requestLanguage = (req) => resolveTatLanguage(
@@ -21,43 +24,6 @@ const addLanguageVaryHeader = (res) => {
     if (typeof res.vary === 'function') res.vary('Accept-Language');
 };
 
-// ค่าที่รับจากฟอร์ม admin → ชุดข้อมูลสำหรับ INSERT/UPDATE
-// ตรวจสอบและ normalize key ให้เป็นตัวพิมพ์เล็กเสมอเพื่อกัน key ซ้ำซ้อน
-const normalizeInput = (body) => {
-    const type = String(body.type || '').trim();
-    if (!ALLOWED_TYPES.has(type)) {
-        const error = new Error('ประเภทตัวเลือกไม่ถูกต้อง');
-        error.statusCode = 400;
-        throw error;
-    }
-
-    const key = String(body.key || '').trim().toLowerCase();
-    if (!key) {
-        const error = new Error('กรุณากรอกคีย์ตัวเลือก');
-        error.statusCode = 400;
-        throw error;
-    }
-
-    const labelTh = String(body.label_th || '').trim();
-    const labelEn = String(body.label_en || '').trim();
-    if (!labelTh || !labelEn) {
-        const error = new Error('กรุณากรอกชื่อภาษาไทยและภาษาอังกฤษ');
-        error.statusCode = 400;
-        throw error;
-    }
-
-    // null = ให้ระบบหาลำดับต่อท้ายอัตโนมัติ (สร้าง) หรือคงค่าเดิม (แก้ไข)
-    const sortOrder = Number.isInteger(Number(body.sort_order))
-        ? Number(body.sort_order)
-        : null;
-
-    const iconUrl = body.icon_url !== undefined
-        ? (String(body.icon_url || '').trim() || null)
-        : undefined;
-
-    return { type, key, labelTh, labelEn, sortOrder, iconUrl };
-};
-
 // สร้าง controller สำหรับจัดการตัวเลือก โดยรับ database เพื่อทดสอบหรือสลับ dependency ได้
 const createPreferenceControllers = (database) => {
     // Admin: รายการตัวเลือกทั้งหมด (รวมที่ปิดใช้งาน) เรียงตามประเภทและลำดับ
@@ -68,19 +34,7 @@ const createPreferenceControllers = (database) => {
                 return res.status(400).json({ message: 'ประเภทตัวเลือกไม่ถูกต้อง' });
             }
 
-            const params = [];
-            let sql = `
-                SELECT id, type, key, label_th, label_en, icon_url,
-                       is_active, sort_order, created_at, updated_at
-                FROM plan_preference_options
-            `;
-            if (type) {
-                params.push(type);
-                sql += ` WHERE type = $${params.length}`;
-            }
-            sql += ` ORDER BY type, sort_order ASC, id ASC`;
-
-            const { rows } = await database.query(sql, params);
+            const rows = await preferenceRepository.listAll(type || null, database);
             res.json({ data: rows });
         } catch (err) {
             console.error('[preferenceController] list error:', err);
@@ -96,23 +50,14 @@ const createPreferenceControllers = (database) => {
 
             let nextOrder = sortOrder;
             if (nextOrder == null) {
-                const { rows: maxRows } = await database.query(
-                    `SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order
-                     FROM plan_preference_options WHERE type = $1`,
-                    [type],
-                );
-                nextOrder = maxRows[0]?.next_order ?? 0;
+                nextOrder = await preferenceRepository.nextSortOrder(type, database);
             }
 
-            const { rows } = await database.query(
-                `INSERT INTO plan_preference_options
-                    (type, key, label_th, label_en, icon_url, sort_order)
-                 VALUES ($1,$2,$3,$4,$5,$6)
-                 RETURNING id, type, key, label_th, label_en, icon_url,
-                           is_active, sort_order, created_at, updated_at`,
-                [type, key, labelTh, labelEn, iconUrl || null, nextOrder],
+            const created = await preferenceRepository.createOption(
+                { type, key, labelTh, labelEn, iconUrl, sortOrder: nextOrder },
+                database,
             );
-            res.status(201).json({ data: rows[0] });
+            res.status(201).json({ data: created });
         } catch (err) {
             console.error('[preferenceController] create error:', err);
             if (err.statusCode === 400) {
@@ -140,21 +85,15 @@ const createPreferenceControllers = (database) => {
             const isActive = req.body.is_active !== false;
 
             // ไม่ระบุลำดับใหม่ให้คงลำดับเดิม (COALESCE ด้านขวาอ้างอิงค่าก่อนแก้ไข)
-            const { rows } = await database.query(
-                `UPDATE plan_preference_options
-                 SET type = $1, key = $2, label_th = $3, label_en = $4,
-                     icon_url = COALESCE($5, icon_url),
-                     sort_order = COALESCE($6, sort_order),
-                     is_active = $7, updated_at = NOW()
-                 WHERE id = $8
-                 RETURNING id, type, key, label_th, label_en, icon_url,
-                           is_active, sort_order, created_at, updated_at`,
-                [type, key, labelTh, labelEn, iconUrl, sortOrder, isActive, id],
+            const updated = await preferenceRepository.updateOption(
+                id,
+                { type, key, labelTh, labelEn, iconUrl, sortOrder, isActive },
+                database,
             );
-            if (!rows[0]) {
+            if (!updated) {
                 return res.status(404).json({ message: 'ไม่พบตัวเลือกนี้' });
             }
-            res.json({ data: rows[0] });
+            res.json({ data: updated });
         } catch (err) {
             console.error('[preferenceController] update error:', err);
             if (err.statusCode === 400) {
@@ -177,10 +116,7 @@ const createPreferenceControllers = (database) => {
                 return res.status(400).json({ message: 'รหัสตัวเลือกไม่ถูกต้อง' });
             }
 
-            const { rowCount } = await database.query(
-                'DELETE FROM plan_preference_options WHERE id = $1',
-                [id],
-            );
+            const rowCount = await preferenceRepository.removeOption(id, database);
             if (rowCount === 0) {
                 return res.status(404).json({ message: 'ไม่พบตัวเลือกนี้' });
             }
@@ -195,12 +131,7 @@ const createPreferenceControllers = (database) => {
     const getPlanOptions = async (req, res) => {
         const language = requestLanguage(req);
         try {
-            const { rows } = await database.query(
-                `SELECT type, key, label_th, label_en, icon_url
-                 FROM plan_preference_options
-                 WHERE is_active = TRUE
-                 ORDER BY type, sort_order ASC, id ASC`,
-            );
+            const rows = await preferenceRepository.findActive(database);
 
             const interests = [];
             const transportModes = [];

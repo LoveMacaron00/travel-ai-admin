@@ -1,10 +1,14 @@
-const { config } = require('../../config/env');
+const { config } = require('../config/env');
+const {
+    freeWebSearch,
+    formatWebSearchContext,
+} = require('./webSearchHelper');
 const {
     findDestinationByNames,
     formatPlacesContext,
     retrieveNearbyPlaces,
 } = require('./ragHelper');
-const { resolveAppLanguage } = require('./appLanguage');
+const { resolveAppLanguage } = require('../utils/appLanguage');
 
 const SCAN_MODES = new Set(['place', 'sign', 'food']);
 const T_OCR_MAX_FILE_SIZE = 1024 * 1024;
@@ -45,7 +49,7 @@ const IMAGE_COPY = {
 // เลือกชุดข้อความตอบกลับสำหรับการวิเคราะห์ภาพตามภาษา
 const imageCopyFor = (languageCode) => IMAGE_COPY[resolveAppLanguage(languageCode)];
 
-// สร้างคำสั่งภาษาเพื่อบังคับให้ Gemini ตอบในภาษาที่ร้องขอ
+// สร้างคำสั่งภาษาเพื่อบังคับให้ AI ตอบในภาษาที่ร้องขอ
 const responseLanguageInstruction = (languageCode) => (
     resolveAppLanguage(languageCode) === 'th'
         ? 'Write all visitor-facing explanatory fields in natural Thai. Keep Thai proper names accurate and do not translate JSON property names.'
@@ -202,18 +206,24 @@ const requestWithTimeout = async (url, options, label) => {
     }
 };
 
-// แกะ JSON ที่ Gemini อาจส่งพร้อม markdown code fence
+// แกะ JSON ที่ AI อาจส่งพร้อม markdown code fence (9router มักห่อ ```json มาให้)
 const parseGeminiJson = (text) => {
     const cleaned = String(text || '').replace(/```json|```/gi, '').trim();
     const firstBrace = cleaned.indexOf('{');
     const lastBrace = cleaned.lastIndexOf('}');
     if (firstBrace < 0 || lastBrace <= firstBrace) {
-        throw new Error('Gemini returned no JSON object');
+        throw new Error('AI returned no JSON object');
     }
     return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
 };
 
-// ขอผลวิเคราะห์ JSON จาก Gemini พร้อมการตรวจ status และ retry
+// ย้ำ schema ใน prompt เพราะ 9router (OpenAI-compatible) ไม่รับ responseJsonSchema แบบ Gemini
+const withSchemaHint = (userPrompt, schema) => {
+    if (!schema) return userPrompt;
+    return `${userPrompt}\n\nReturn JSON only matching this schema (no markdown, no extra text):\n${JSON.stringify(schema)}`;
+};
+
+// ขอผลวิเคราะห์ JSON ผ่าน 9router (chat completions + vision) พร้อม retry
 async function generateGeminiJson({
     systemPrompt,
     userPrompt,
@@ -223,53 +233,32 @@ async function generateGeminiJson({
 }) {
     if (!config.gemini.apiKey) {
         throw new ImageAnalysisError(
-            'GEMINI_API_KEY is missing',
+            'AI API key is missing',
             'Image explanation is not configured yet.',
             503,
         );
     }
 
-    const parts = [{ text: userPrompt }];
-    if (imageBuffer) {
-        parts.push({
-            inlineData: {
-                mimeType,
-                data: imageBuffer.toString('base64'),
-            },
-        });
-    }
-
-    const body = {
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts }],
-        generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 2048,
-            responseMimeType: 'application/json',
-            responseJsonSchema: schema,
-        },
-    };
-
-    const url = `${config.gemini.apiBaseUrl}/models/${config.gemini.model}:generateContent`;
+    const { chatCompletion, toVisionUserContent } = require('./aiProvider');
+    const promptWithSchema = withSchemaHint(userPrompt, schema);
     let lastError;
 
     for (let attempt = 0; attempt <= config.gemini.maxRetries; attempt++) {
         try {
-            const response = await requestWithTimeout(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    // ไม่วาง key ใน query string เพื่อป้องกันค่าติด URL log
-                    'x-goog-api-key': config.gemini.apiKey,
-                },
-                body: JSON.stringify(body),
-            }, 'AI Guide');
-            const payload = await response.json();
-            const text = payload.candidates?.[0]?.content?.parts
-                ?.map((part) => part.text || '')
-                .join('');
-            if (!text) throw new Error('Gemini returned no content');
-            return parseGeminiJson(text);
+            const result = await chatCompletion({
+                systemPrompt,
+                messages: imageBuffer
+                    ? undefined
+                    : [{ role: 'user', content: promptWithSchema }],
+                userContent: imageBuffer
+                    ? toVisionUserContent(promptWithSchema, imageBuffer, mimeType)
+                    : undefined,
+                maxTokens: 2048,
+                temperature: 0.2,
+                jsonMode: true,
+            });
+            if (!result.text) throw new Error('AI returned no content');
+            return parseGeminiJson(result.text);
         } catch (error) {
             lastError = error;
             // HTTP 200 ที่ content ว่าง/JSON ไม่ครบ และ 5xx สามารถ retry ได้
@@ -283,9 +272,81 @@ async function generateGeminiJson({
 
     if (lastError instanceof ImageAnalysisError) throw lastError;
     throw new ImageAnalysisError(
-        `Gemini analysis failed: ${lastError?.message || 'unknown error'}`,
+        `AI analysis failed: ${lastError?.message || 'unknown error'}`,
         'AI Guide could not analyze this image. Please try another photo.',
     );
+}
+
+// ขอผลวิเคราะห์ JSON ผ่าน 9router พร้อม context จาก free web search (Tavily หลัก)
+// แทน Google Search grounding เดิมที่ต้องเปิด billing — ใช้ response_format JSON ได้ปกติ
+async function generateGeminiJsonWithWebContext({
+    systemPrompt,
+    userPrompt,
+    schema,
+    imageBuffer = null,
+    mimeType = 'image/jpeg',
+    webQuery = '',
+}) {
+    if (!config.gemini.apiKey) {
+        throw new ImageAnalysisError(
+            'AI API key is missing',
+            'Image explanation is not configured yet.',
+            503,
+        );
+    }
+
+    let enrichedUserPrompt = userPrompt;
+    const normalizedQuery = String(webQuery || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    if (normalizedQuery && config.webSearch.enabled) {
+        try {
+            const webResults = await freeWebSearch(normalizedQuery, {
+                limit: config.webSearch.maxResults,
+            });
+            const webContext = formatWebSearchContext(webResults);
+            if (webContext) {
+                enrichedUserPrompt =
+                    `${userPrompt}\n\nSupplemental web search context (unverified, use to verify only):\n${webContext}`;
+            }
+        } catch (error) {
+            console.warn(`[image-analysis] free web search failed: ${error.message}`);
+        }
+    }
+
+    const { chatCompletion, toVisionUserContent } = require('./aiProvider');
+    const promptWithSchema = withSchemaHint(enrichedUserPrompt, schema);
+    const result = await chatCompletion({
+        systemPrompt,
+        messages: imageBuffer
+            ? undefined
+            : [{ role: 'user', content: promptWithSchema }],
+        userContent: imageBuffer
+            ? toVisionUserContent(promptWithSchema, imageBuffer, mimeType)
+            : undefined,
+        maxTokens: 2048,
+        temperature: 0.2,
+        jsonMode: true,
+    });
+    if (!result.text) throw new Error('AI returned no content');
+    const parsed = parseGeminiJson(result.text);
+    if (!parsed || typeof parsed !== 'object') {
+        throw new Error('AI web-context search returned no JSON object');
+    }
+    return parsed;
+}
+
+// ใช้ free web search (Tavily หลัก) ก่อนเพื่อความแม่นยำ ถ้าใช้ไม่ได้
+// (คีย์หาย/โควต้าหมด/JSON เสียหาย) ค่อยตอบจากความรู้ของโมเดลอย่างเดียว
+async function generateGeminiJsonPreferSearch(options) {
+    // ไม่มี webQuery (เช่น ไม่มี hint ตั้งต้น) → ข้าม web search ประหยัด credit
+    if (!String(options?.webQuery || '').trim() || !config.webSearch.enabled) {
+        return generateGeminiJson(options);
+    }
+    try {
+        return await generateGeminiJsonWithWebContext(options);
+    } catch (error) {
+        console.warn(`[image-analysis] web-context generation failed: ${error.message}`);
+        return generateGeminiJson(options);
+    }
 }
 
 const buildAnalysis = ({
@@ -474,6 +535,9 @@ async function classifyThaiFood(imageBuffer) {
 }
 
 // วิเคราะห์สถานที่จากภาพและพิกัดด้วย Gemini
+// แบ่งเป็นสองรอบ: รอบแรกให้ vision ระบุจากภาพล้วน ๆ ไม่มี hint ชี้นำ
+// แล้วเอาชื่อที่ระบุได้ไปค้นเว็บเพื่อยืนยันในรอบสอง — ป้องกัน GPS คลาดเคลื่อน
+// หรือชื่อสถานที่ใกล้เคียงดันให้ตอบผิดสถานที่
 async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, languageCode }) {
     const copy = imageCopyFor(languageCode);
     // พิกัดเป็น context ช่วยยืนยัน landmark ไม่ใช่หลักฐานว่าภาพคือสถานที่นั้นแน่นอน
@@ -489,28 +553,68 @@ async function analyzePlace({ imageBuffer, mimeType, latitude, longitude, langua
     const placeContext = nearbyPlaces.length
         ? formatPlacesContext(nearbyPlaces)
         : 'No verified nearby destination data was available.';
-    const result = await generateGeminiJson({
-        systemPrompt:
-            `You are a careful Thai cultural guide. ${responseLanguageInstruction(languageCode)} ` +
-            'Do not claim an exact landmark unless visual evidence and the nearby destination context support it. ' +
-            'When uncertain, describe what is visible and say what additional photo would help. ' +
-            'If matchedDestinationName is present, copy that destination name exactly from the verified context.',
-        userPrompt:
-            `Analyze this travel photo. GPS: ${latitude ?? 'unknown'}, ${longitude ?? 'unknown'}.\n\n` +
-            `Verified nearby destination context:\n${placeContext}`,
+    const placeSystemPrompt =
+        `You are a careful Thai cultural guide. ${responseLanguageInstruction(languageCode)} ` +
+        'Use the supplemental web search context (if provided) to verify what the photo shows, especially when the verified destination ' +
+        'context is insufficient or does not match the visual evidence. ' +
+        'Do not claim an exact landmark unless visual evidence, web context, or the nearby destination ' +
+        'context support it. If the landmark is not in the verified context, still identify it from visual ' +
+        'and web evidence, and say in identificationNote that it is not yet in the verified database. ' +
+        'When uncertain, describe what is visible and say what additional photo would help. ' +
+        'GPS and the nearby destination context are weak hints only: the photo itself is the primary evidence, ' +
+        'so if the visual evidence contradicts every nearby name, identify the place from the image instead. ' +
+        'Set matchedDestinationName ONLY to a verified context destination that truly matches what is visible ' +
+        'in the photo; if nothing matches, leave matchedDestinationName as an empty string. ' +
+        'Never guess a matchedDestinationName that is not literally present in the verified context. ' +
+        'If matchedDestinationName is present, copy that destination name exactly from the verified context.';
+    const placeUserPrompt =
+        `Analyze this travel photo. GPS: ${latitude ?? 'unknown'}, ${longitude ?? 'unknown'}.\n\n` +
+        `Verified nearby destination context (weak hint, may be unrelated to the photo):\n${placeContext}`;
+
+    // รอบแรก: ระบุจากภาพล้วน ๆ เพื่อไม่ให้ hint ใดชี้นำคำตอบ
+    const firstPass = await generateGeminiJson({
+        systemPrompt: placeSystemPrompt,
+        userPrompt: placeUserPrompt,
         schema: PLACE_SCHEMA,
         imageBuffer,
         mimeType,
     });
 
+    // รอบสอง: เอาชื่อที่ระบุได้ไปค้นเว็บแล้วยืนยันซ้ำ
+    // เลือกผลรอบสองเมื่อความมั่นใจเท่ากันหรือดีกว่า ไม่งั้นคงผลรอบแรก
+    let result = firstPass;
+    const identifiedName = String(firstPass.title || '')
+        .replace(/\s*\([^)]*\)\s*/g, ' ')
+        .replace(/['"]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (identifiedName.length >= 4 && config.webSearch.enabled) {
+        try {
+            const secondPass = await generateGeminiJsonWithWebContext({
+                systemPrompt: placeSystemPrompt,
+                userPrompt:
+                    `${placeUserPrompt}\n\nFirst-pass identification from the image alone: "${identifiedName}". ` +
+                    'Verify or correct it with the web context below — do not follow it if it contradicts the image.',
+                schema: PLACE_SCHEMA,
+                imageBuffer,
+                mimeType,
+                webQuery: identifiedName,
+            });
+            if (clampConfidence(secondPass.confidence) >= clampConfidence(firstPass.confidence)) {
+                result = secondPass;
+            }
+        } catch (error) {
+            console.warn('[image-analysis] place verification pass failed:', error.message);
+        }
+    }
+
     let matched = nearbyPlaces.find((place) =>
         String(place.name).toLowerCase() === String(result.matchedDestinationName || '').toLowerCase(),
     );
-    if (!matched && clampConfidence(result.confidence) >= 0.8) {
-        matched = await findDestinationByNames([
-            result.matchedDestinationName,
-            result.title,
-        ]);
+    // ผูกการ์ดเฉพาะเมื่อโมเดลยืนยันชื่อจาก verified context เท่านั้น
+    // ไม่ใช้ title กว้าง ๆ ค้นเอง เพื่อไม่ให้การ์ดไปผูกสถานที่ที่ไม่เกี่ยว
+    if (!matched && result.matchedDestinationName && clampConfidence(result.confidence) >= 0.8) {
+        matched = await findDestinationByNames([result.matchedDestinationName]);
     }
     const analysis = buildAnalysis({
         mode: 'place',
@@ -548,7 +652,7 @@ async function analyzeSign({ imageBuffer, mimeType, languageCode }) {
         });
         return { analysis, answer: analysisToAnswer(analysis, languageCode), sourceChunkIds: [] };
     } catch (primaryError) {
-        // Gemini เป็น fallback เพื่อให้ผู้ใช้ยังอ่านป้ายได้เมื่อ AI for Thai ล่ม
+        // AI vision เป็น fallback เพื่อให้ผู้ใช้ยังอ่านป้ายได้เมื่อ AI for Thai ล่ม
         // หรือภาพไม่ตรงข้อจำกัดด้านชนิดและขนาดไฟล์ของ T-OCR
         console.warn('[image-analysis] AI for Thai sign flow failed:', primaryError.message);
         const result = await generateGeminiJson({
@@ -587,8 +691,9 @@ const mergeFoodCandidates = (visionResult, candidates) => {
     return merged.slice(0, 3);
 };
 
-// ขอคำอธิบายอาหารผู้สมัครจาก Gemini ตามภาพและภาษาที่เลือก
-async function explainFoodCandidate(
+// ให้ AI vision ดูภาพและระบุอาหารเองเป็นตัวหลัก โดยใช้ผลจำแนกของ T-Food เป็นเพียง hint
+// พร้อมบังคับตรวจความสอดคล้องของประเภทจาน เช่น ห้ามตอบน้ำพริก/จิ้มสำหรับภาพก๋วยเตี๋ยวน้ำ
+async function identifyFoodFromImage(
     candidates,
     languageCode,
     imageBuffer,
@@ -597,43 +702,33 @@ async function explainFoodCandidate(
     const names = candidates.map((candidate) =>
         `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
     ).join(', ');
-    return generateGeminiJson({
+    // ใช้ชื่อ hint จาก T-Food เป็น webQuery (ไม่มี hint = ข้าม web search ประหยัด credit)
+    const foodWebQuery = candidates
+        .slice(0, 3)
+        .map((candidate) => String(candidate.name || '').trim())
+        .filter(Boolean)
+        .join(', ');
+    return generateGeminiJsonPreferSearch({
         systemPrompt:
             `You are a careful Thai food and culture guide. ${responseLanguageInstruction(languageCode)} ` +
-            'Keep thaiName in Thai and englishName in English. ' +
-            'Check that the visible dish is consistent with the classifier candidate before explaining it. ' +
-            'Describe common ingredients only. In dietaryCaution, mention only potential allergens supported by visible ' +
-            'ingredients or the typical recipe, explicitly say recipes vary by vendor, and never guarantee allergens, ' +
-            'halal status, or the exact recipe from appearance alone. Never claim rice noodles contain gluten; mention ' +
-            'possible gluten only when a sauce or another wheat-based ingredient may contain it.',
-        userPrompt:
-            `T-Food returned these possible dishes: ${names}. Explain the top candidate for an international visitor, ` +
-            'while reflecting uncertainty when its score is below 0.8.',
-        schema: FOOD_SCHEMA,
-        imageBuffer,
-        mimeType,
-    });
-}
-
-// ให้ Gemini ยืนยันหรือจัดอันดับรายชื่ออาหารที่ผู้ให้บริการเสนอ
-async function verifyFoodWithVision(candidates, languageCode, imageBuffer, mimeType) {
-    const names = candidates.map((candidate) =>
-        `${candidate.name} (${Math.round(candidate.score * 100)}%)`,
-    ).join(', ');
-    return generateGeminiJson({
-        systemPrompt:
-            `Independently identify the visible Thai dish. ${responseLanguageInstruction(languageCode)} ` +
-            'Treat classifier candidates as weak hints, not facts. Keep thaiName in Thai and englishName in English. ' +
+            'First determine the dish CATEGORY from the image itself (for example: noodle soup, rice dish, curry, ' +
+            'dip or paste, salad, stir-fry, soup, grilled, dessert). ' +
+            'Then verify the dish name, its region, typical ingredients, and cultural context with the supplemental web search context (if provided). ' +
+            'Treat classifier hints as weak hints, not facts. REJECT any hint whose category does not match what is ' +
+            'visible (for example, never answer a dip or paste when the photo clearly shows a noodle or rice soup). ' +
+            'Identify from the image even when no hint matches. Keep thaiName in Thai and englishName in English. ' +
             'If the dish cannot be identified confidently, keep cultural and ingredient fields brief and do not invent history. ' +
             'In dietaryCaution, mention only potential allergens supported by what is visible or a typical recipe, ' +
             'state that recipes vary by vendor, and never guarantee exact ingredients, allergens, or halal status. ' +
             'Never claim rice noodles contain gluten; mention possible gluten only for sauces or wheat-based ingredients.',
-        userPrompt:
-            `Inspect the image yourself and identify the dish. Weak T-Food suggestions: ${names}. ` +
-            'Return your own confidence based on the image.',
+        userPrompt: names
+            ? `Inspect the image yourself, pick the dish category you can see, and identify the dish. ` +
+              `Weak T-Food hints (may be wrong): ${names}. Return your own confidence based on the image.`
+            : 'Inspect the image and identify the Thai dish. Return your own confidence based on the image.',
         schema: FOOD_SCHEMA,
         imageBuffer,
         mimeType,
+        webQuery: foodWebQuery,
     });
 }
 
@@ -654,80 +749,49 @@ const uncertainFoodResult = ({ copy, candidates, confidence, provider, languageC
     };
 };
 
-// วิเคราะห์อาหารจากหลายผู้ให้บริการและคืนผลที่มั่นใจที่สุด
+// วิเคราะห์อาหาร: ให้ vision model ระบุจากภาพเป็นตัวหลัก แล้วใช้ T-Food เป็น hint รอง
+// เพราะ classifier ของ T-Food มีชุด label จำกัด มักเดาผิดเป็นจานใกล้เคียงเมื่อไม่มีเมนูนั้น
 async function analyzeFood({ imageBuffer, mimeType, languageCode }) {
     const copy = imageCopyFor(languageCode);
+    let provider = 'gemini_vision';
+
+    // 1) ขอ hint จาก T-Food ก่อน แต่ล้มเหลวได้ไม่กระทบผลลัพธ์
     let candidates = [];
-    let result;
-    let provider = 'aiforthai+gemini';
     try {
         candidates = await classifyThaiFood(imageBuffer);
-        const tFoodConfidence = candidates[0].score;
-        if (tFoodConfidence >= FOOD_VISION_VERIFY_THRESHOLD) {
-            result = await explainFoodCandidate(
-                candidates,
-                languageCode,
-                imageBuffer,
-                mimeType,
-            );
-            const visionName = String(result.thaiName || '').trim().toLowerCase();
-            const tFoodName = candidates[0].name.trim().toLowerCase();
-            if (visionName === tFoodName) {
-                result.confidence = tFoodConfidence;
-                result.thaiName = candidates[0].name;
-            } else {
-                // แม้ T-Food คะแนนสูง แต่ถ้า vision เห็นต่าง ให้ใช้ผลที่เห็นภาพจริง
-                // และงดเรื่องราวหาก vision เองยังไม่มั่นใจ
-                provider = 'aiforthai+gemini_verification';
-                candidates = mergeFoodCandidates(result, candidates);
-                if (clampConfidence(result.confidence) < FOOD_VISION_VERIFY_THRESHOLD) {
-                    return uncertainFoodResult({
-                        copy,
-                        candidates,
-                        confidence: result.confidence,
-                        provider,
-                        languageCode,
-                    });
-                }
-            }
-        } else {
-            // คะแนนต่ำต้องให้ vision model เห็นภาพและตัดสินใหม่เอง
-            provider = 'aiforthai+gemini_verification';
-            result = await verifyFoodWithVision(
-                candidates,
-                languageCode,
-                imageBuffer,
-                mimeType,
-            );
-            candidates = mergeFoodCandidates(result, candidates);
+    } catch (error) {
+        console.warn('[image-analysis] T-Food unavailable:', error.message);
+    }
+    const tFoodTop = candidates[0] || null;
 
-            if (clampConfidence(result.confidence) < FOOD_VISION_VERIFY_THRESHOLD) {
-                return uncertainFoodResult({
-                    copy,
-                    candidates,
-                    confidence: result.confidence,
-                    provider,
-                    languageCode,
-                });
-            }
-        }
-    } catch (primaryError) {
-        // หาก T-Food ไม่มีผลลัพธ์ ให้ vision model วิเคราะห์แทนและลดความแน่นอนตามผลจริง
-        console.warn('[image-analysis] T-Food flow failed:', primaryError.message);
-        provider = 'gemini_fallback';
-        result = await generateGeminiJson({
-            systemPrompt:
-                `Identify Thai food carefully. ${responseLanguageInstruction(languageCode)} ` +
-                'Keep thaiName in Thai and englishName in English. ' +
-                'Mention only potential allergens supported by what is visible or a typical recipe, explicitly state ' +
-                'that recipes vary by vendor, and never guarantee allergens, halal status, or exact ingredients from appearance alone. ' +
-                'Never claim rice noodles contain gluten; mention possible gluten only for sauces or wheat-based ingredients.',
-            userPrompt: 'Identify this dish and explain its cultural context, typical ingredients, and how it is served.',
-            schema: FOOD_SCHEMA,
-            imageBuffer,
-            mimeType,
+    // 2) ให้ AI ดูภาพและสรุปเอง (free web search) โดยไม่ยอมรับ hint ที่ขัดกับภาพ
+    const result = await identifyFoodFromImage(
+        candidates,
+        languageCode,
+        imageBuffer,
+        mimeType,
+    );
+
+    // 3) ถ้า AI เห็นพ้องกับ T-Food ให้เชื่อมั่นขึ้นตามคะแนน classifier เสริม
+    const visionName = String(result.thaiName || '').trim().toLowerCase();
+    if (tFoodTop && visionName === tFoodTop.name.trim().toLowerCase()) {
+        result.confidence = Math.max(
+            clampConfidence(result.confidence),
+            tFoodTop.score,
+        );
+        provider = 'gemini_vision+tfood_agree';
+    }
+
+    candidates = mergeFoodCandidates(result, candidates);
+
+    if (clampConfidence(result.confidence) < FOOD_VISION_VERIFY_THRESHOLD) {
+        return uncertainFoodResult({
+            copy,
+            candidates,
+            confidence: result.confidence,
+            provider,
+            languageCode,
         });
-        candidates = [{ name: result.thaiName, score: clampConfidence(result.confidence) }];
     }
 
     // เมื่อยืนยันชื่อได้แล้ว ไม่แสดงตัวเลือกอ่อนมากที่มีคะแนนต่ำกว่า 50% ให้ผู้ใช้สับสน

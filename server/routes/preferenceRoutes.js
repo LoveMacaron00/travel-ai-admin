@@ -1,15 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const fs = require('fs');
 const multer = require('multer');
 const preferenceController = require('../controllers/preferenceController');
-
-// Multer storage สำหรับรูป Icon ตัวเลือกแผนเที่ยว (/uploads/preferences)
-const prefUploadDir = path.join(__dirname, '..', 'uploads', 'preferences');
-if (!fs.existsSync(prefUploadDir)) {
-    fs.mkdirSync(prefUploadDir, { recursive: true });
-}
+const { preferencesDir: prefUploadDir } = require('../config/storage');
 
 const iconStorage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, prefUploadDir),

@@ -1,4 +1,4 @@
-// server/controllers/helpers/tatPlaceFormatter.js
+// server/services/tatPlaceFormatter.js
 
 // ลบ HTML และช่องว่างส่วนเกินออกจากข้อความที่มาจาก TAT
 const stripHtml = (value = '') => String(value).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
@@ -14,6 +14,7 @@ const firstText = (...values) => {
 };
 
 // เลือก payload ดิบของ TAT หากมี หรือใช้ข้อมูลสถานที่ปัจจุบัน
+// (ที่พักที่ sync จาก TAT เก็บราคาไว้ใน admission_fee ของแถวโดยตรง จึงอ่านเป็นทางสุดท้าย)
 const getRaw = (place = {}) => place.tat_raw || place;
 
 // ดึงข้อมูลค่าเข้าชมจากข้อความอธิบายเมื่อ API ไม่ส่ง field ค่าธรรมเนียม
@@ -80,14 +81,21 @@ const formatOpeningHours = (openingHours, fallbackOpen, fallbackClose) => {
 };
 
 // รวมค่าเข้าชมเป็นข้อความสำหรับแสดงผล พร้อม fallback จากคำบรรยาย
+// หมวดที่พักไม่มี information.fee แต่ sync พับ TAT minPrice/maxPrice ลง admission_fee
+// (roomMinPrice/roomMaxPrice) จึงแสดงช่วงราคาห้องก่อนค่าเข้าชม
 const buildFeeText = (place = {}) => {
     const raw = getRaw(place);
-    const fee = raw.information?.fee || raw.fee || {};
+    const fee = raw.information?.fee || raw.fee || place.admission_fee || {};
+    const roomMin = formatMoney(fee.roomMinPrice ?? fee.room_min_price);
+    const roomMax = formatMoney(fee.roomMaxPrice ?? fee.room_max_price);
     const adult = formatMoney(fee.thaiAdult);
     const child = formatMoney(fee.thaiChild);
     const details = firstText(fee.detail);
 
     const parts = [];
+    if (roomMin && roomMax) parts.push(`ราคาห้อง ${roomMin} - ${roomMax} บาท`);
+    else if (roomMin) parts.push(`ราคาห้องเริ่มต้น ${roomMin} บาท`);
+    else if (roomMax) parts.push(`ราคาห้องสูงสุด ${roomMax} บาท`);
     if (adult) parts.push(`ผู้ใหญ่ ${adult} บาท`);
     if (child) parts.push(`เด็ก ${child} บาท`);
     if (details) parts.push(details);
