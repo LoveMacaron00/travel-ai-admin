@@ -3,7 +3,7 @@
 // Controller เหลือแค่ handlers บางๆ ที่เรียก service นี้
 const { config } = require('../config/env');
 const { tatHeadersFor } = require('../utils/tatLanguage');
-const { buildTATTranslation, getLocationParts } = require('./tatPlaceTranslation');
+const { buildTATTranslation, buildAdmissionFeeObject, getLocationParts } = require('./tatPlaceTranslation');
 const { bulkEmbedMissing } = require('./embedHelper');
 const tatSyncRepository = require('../repositories/tatSyncRepository');
 const fs = require('fs');
@@ -219,7 +219,9 @@ async function upsertTATPlace(place) {
         imagesJson: JSON.stringify(uniqueImages),
         tatPlaceId: tatPlaceIdStr,
         tatRawJson: JSON.stringify(place),
-        admissionFeeJson: JSON.stringify(place.information?.fee || place.fee || {}),
+        // C1: detail ต่อหมวดหมู่ — ที่พักพับ minPrice/maxPrice + ดาว/เวลาเช็คอิน-เอาต์ลง
+        // admission_fee ผ่าน buildAdmissionFeeObject (หมวดอื่นพฤติกรรมเดิม: information.fee)
+        admissionFeeJson: JSON.stringify(buildAdmissionFeeObject(place)),
     });
 
     await tatSyncRepository.replacePlaceImages(

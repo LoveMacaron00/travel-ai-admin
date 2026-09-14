@@ -59,7 +59,8 @@ const REST_STOP_DURATION_MINUTES = 20;
 const MAX_OVERNIGHT_PER_DAY = 1;
 const OVERNIGHT_DURATION_MINUTES = 60;
 const OVERNIGHT_RADIUS_METERS = 5000;
-// DB destinations ไม่มีคอลัมน์ราคาที่พัก — ใช้ค่าประมาณคงที่จนกว่าจะมีราคาใน DB
+// DB destinations ไม่มีคอลัมน์ราคาที่พักแยก — ที่พักที่ sync จาก TAT เก็บราคาไว้ใน
+// admission_fee (roomMinPrice/roomMaxPrice) จึงอ่านราคาจริงได้ ส่วนที่พักอื่นใช้ค่าประมาณนี้
 const OVERNIGHT_ENTRY_COST_ESTIMATE = 1200;
 
 // แผนที่พักแบบ "ฐานเดียว": ใช้ที่พักเดิมของทริปซ้ำทุกคืนถ้ายังสมเหตุสมผล
@@ -81,6 +82,8 @@ const REST_FOOD_COST_BY_TYPE = {
 };
 
 // ดึงตัวเลขราคาผู้ใหญ่/ราคาตั้งต้นจาก admission_fee object (best-effort) — ไม่มีให้ใช้ fallback
+// กรณีที่พัก (หมวด hotel): sync พับ TAT minPrice/maxPrice ลง roomMinPrice/roomMaxPrice
+// จึงอ่านราคาห้องก่อนค่าเข้าชม (ที่พักไม่มี information.fee) — ได้ราคาพักจริงแทนค่าประมาณ
 const parseAdmissionPrice = (fee, fallback = OVERNIGHT_ENTRY_COST_ESTIMATE) => {
     if (fee == null) return fallback;
     if (typeof fee === 'number') return Number.isFinite(fee) && fee > 0 ? fee : fallback;
@@ -90,6 +93,7 @@ const parseAdmissionPrice = (fee, fallback = OVERNIGHT_ENTRY_COST_ESTIMATE) => {
     }
     if (typeof fee !== 'object') return fallback;
     const candidates = [
+        fee.roomMinPrice, fee.room_min_price, fee.roomMaxPrice, fee.room_max_price,
         fee.thaiAdult, fee.thai_adult, fee.adult, fee.price, fee.thb,
         fee.foreignerAdult, fee.thaiChild, fee.amount, fee.value,
     ];

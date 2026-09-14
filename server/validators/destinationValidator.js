@@ -38,10 +38,20 @@ const normalizeStoredImages = (images) => {
 };
 
 // ทำให้ข้อมูลค่าเข้าชมอยู่ในรูปแบบ object ที่ปลอดภัยต่อการบันทึก
+// รวมคีย์ราคาที่พัก (roomMinPrice/roomMaxPrice + ข้อมูลโรงแรม) เพื่อให้ฟอร์ม Add/Edit
+// หมวดที่พักบันทึกผ่านช่องนี้ได้ด้วย — sync จาก TAT ก็ใช้รูปเดียวกัน (ดู tatPlaceTranslation)
+const ROOM_RATE_KEYS = [
+    'roomMinPrice',
+    'roomMaxPrice',
+    'hotelStar',
+    'checkInTime',
+    'checkOutTime',
+    'numberOfRooms',
+];
 const normalizeAdmissionFee = (fee) => {
     if (!fee || typeof fee !== 'object' || Array.isArray(fee)) return {};
     const result = {};
-    for (const key of ['thaiAdult', 'thaiChild', 'foreignerAdult', 'foreignerChild']) {
+    for (const key of ['thaiAdult', 'thaiChild', 'foreignerAdult', 'foreignerChild', ...ROOM_RATE_KEYS]) {
         const value = fee[key];
         if (value !== null && value !== undefined && String(value).trim() !== '') {
             result[key] = String(value).trim();
