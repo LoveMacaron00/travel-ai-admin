@@ -3,6 +3,7 @@
 const pool = require('../config/db');
 const { resolveTatLanguage } = require('../utils/tatLanguage');
 const destinationRepository = require('../repositories/destinationRepository');
+const provinceRepository = require('../repositories/provinceRepository');
 
 // อ่านภาษาที่ผู้ใช้ร้องขอจาก Accept-Language
 const requestLanguage = (req) => resolveTatLanguage(
@@ -181,14 +182,46 @@ const createMobileControllers = (database) => {
         }
     };
 
-    return { getDestinations, getProvinces, getDestinationDetail };
+    // คืน 77 จังหวัดทั้งหมดพร้อมชื่อตามภาษา + ภูมิภาค — ใช้ใน dropdown บันทึก diary
+    // แยกจาก getProvinces ของ plan ที่คืนเฉพาะจังหวัดมีสถานที่ approved แล้ว
+    const getAllProvinces = async (req, res) => {
+        const language = requestLanguage(req);
+        try {
+            const rows = await provinceRepository.findAllProvinces(database);
+
+            addLanguageVaryHeader(res);
+            res.json({
+                data: rows.map((row) => ({
+                    code: row.code,
+                    value: row.name_th,
+                    label: language === 'en' ? row.name_en : row.name_th,
+                    nameTh: row.name_th,
+                    nameEn: row.name_en,
+                    region: row.region,
+                })),
+                language,
+            });
+        } catch (err) {
+            console.error('[mobileController] all-provinces error:', err);
+            res.status(500).json({
+                message: localizedMessage(
+                    language,
+                    'เกิดข้อผิดพลาดในการดึงข้อมูลจังหวัด',
+                    'Unable to load provinces',
+                ),
+            });
+        }
+    };
+
+    return { getDestinations, getProvinces, getAllProvinces, getDestinationDetail };
 };
 
-const { getDestinations, getProvinces, getDestinationDetail } = createMobileControllers(pool);
+const { getDestinations, getProvinces, getAllProvinces, getDestinationDetail } = createMobileControllers(pool);
 
 module.exports = {
     createMobileControllers,
     getDestinations,
     getProvinces,
+    getAllProvinces,
     getDestinationDetail,
 };

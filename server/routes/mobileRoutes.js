@@ -20,6 +20,8 @@ router.get('/media', proxyImage);
 router.get('/plan-options', preferenceController.getPlanOptions);
 // GET /api/mobile/provinces — รายชื่อจังหวัดสำหรับ dropdown ในฟอร์มสร้างแผน
 router.get('/provinces', mobileController.getProvinces);
+// GET /api/mobile/provinces/all — 77 จังหวัดทั้งหมด (ไทย/อังกฤษ + ภูมิภาค) สำหรับ dropdown บันทึก diary
+router.get('/provinces/all', mobileController.getAllProvinces);
 // GET /api/mobile/destinations — รายการสถานที่ท่องเที่ยว (หน้า Home/Map/Plan)
 router.get('/destinations', mobileController.getDestinations);
 // POST /api/mobile/destinations/:id/view — บันทึกว่าผู้ใช้เปิดดูสถานที่ (analytics)
