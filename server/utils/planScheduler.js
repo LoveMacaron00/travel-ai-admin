@@ -127,24 +127,126 @@ const orderStopsNearestNeighbor = (stops, startLat, startLng) => {
 };
 
 // ประเมินค่าพาหนะต่อขาจากระยะทางจริง — mirror ฝั่ง Flutter estimateTransportCost
-// walking ฟรี, car 20/กม., bus 7/กม., train 12/กม., ferry 25/กม., flight 35/กม., อื่น ๆ 15/กม.
-// km null/ไม่ finite → 0, ระยะสั้นกว่า 0.5 กม. → 50 ขั้นต่ำ, นอกนั้นปัดเศษพร้อมขั้นต่ำ 50
+// car = รถยนต์ส่วนตัว คิดค่าน้ำมัน ~3 บาท/กม. ไม่มีขั้นต่ำ (ไม่มีเรทแท็กซี่)
+// walking ฟรี, bus 7/กม., train 12/กม., ferry 25/กม., flight 35/กม., อื่น ๆ 15/กม.
+// km null/ไม่ finite → 0, รถอื่นระยะสั้นกว่า 0.5 กม. → 50 ขั้นต่ำ, นอกนั้นปัดเศษพร้อมขั้นต่ำ 50
 const estimateLegCostKm = (km, modeRaw) => {
     if (km == null) return 0;
     const distance = Number(km);
     if (!Number.isFinite(distance) || distance < 0) return 0;
     const mode = String(modeRaw || 'car').toLowerCase();
     if (mode === 'walking') return 0;
+    if (mode === 'car') return estimateFuelCostKm(distance);
     if (distance < 0.5) return 50;
-    const rates = {
-        car: 20,
-        bus: 7,
-        train: 12,
-        ferry: 25,
-        flight: 35,
-    };
+    const rates = { bus: 7, train: 12, ferry: 25, flight: 35 };
     const rate = rates[mode] ?? 15;
     return Math.max(50, Math.round(distance * rate));
+};
+
+// รถยนต์ส่วนตัวทุกทริป: คิดแค่ค่าน้ำมันตามระยะจริง
+// (~3 บาท/กม. ≈ น้ำมัน 36 บาท/ลิตร ÷ 12 กม./ลิตร)
+// ทริป local (จังหวัดเดียวกับจุดเริ่ม) รวมไม่เกินวันละ 300 บาท — ไม่มีเรทแท็กซี่แล้ว
+const LOCAL_FUEL_RATE_PER_KM = 3;
+const LOCAL_FUEL_CAP_PER_DAY = 300;
+
+const estimateFuelCostKm = (km) => {
+    const distance = Number(km);
+    if (!Number.isFinite(distance) || distance < 0) return 0;
+    return Math.round(distance * LOCAL_FUEL_RATE_PER_KM);
+};
+
+// รถยนต์ทุกคันคือรถส่วนตัว: ปรับขารถยนต์ทั้งแผนเป็นค่าน้ำมัน (mutate planData)
+// ระยะแต่ละขาคำนวณจากพิกัดจริงด้วยสูตรเดียวกับ chainDayTimes
+// (วันแรกจากจุดเริ่ม, วันถัดไปจากจุดสุดท้ายของวันก่อน) — เปลี่ยนแค่ "ราคา" ไม่แตะเวลา
+// dailyCap = เพดานน้ำมันรวมต่อวัน (ทริป local 300, ไม่ส่งมาคือไม่ cap — ขับไกลจ่ายตามระยะจริง)
+// ขาไม่ใช่รถยนต์คงเดิม, ขาหาพิกัดไม่ได้คงเดิม
+const applyCarFuelCosts = (planData, { startLat, startLng, dailyCap = null } = {}) => {
+    if (!planData || typeof planData !== 'object') return { saved: 0, cappedDays: 0 };
+    const days = Array.isArray(planData.days) ? planData.days : [];
+    if (days.length === 0) return { saved: 0, cappedDays: 0 };
+    let saved = 0;
+    let cappedDays = 0;
+    let prevLat = finiteCoord(startLat);
+    let prevLng = finiteCoord(startLng);
+    for (const day of days) {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        const carLegs = [];
+        for (let i = 0; i < stops.length; i++) {
+            const stop = stops[i];
+            if (!stop || typeof stop !== 'object') continue;
+            if (String(stop.transportMode || 'car').toLowerCase() !== 'car') continue;
+            let fromLat;
+            let fromLng;
+            if (i === 0) {
+                if (prevLat == null || prevLng == null) continue;
+                fromLat = prevLat;
+                fromLng = prevLng;
+            } else {
+                fromLat = finiteCoord(stops[i - 1]?.latitude);
+                fromLng = finiteCoord(stops[i - 1]?.longitude);
+                if (fromLat == null || fromLng == null) continue;
+            }
+            const toLat = finiteCoord(stop.latitude);
+            const toLng = finiteCoord(stop.longitude);
+            if (toLat == null || toLng == null) continue;
+            const km = haversineKm(fromLat, fromLng, toLat, toLng);
+            if (km == null) continue;
+            carLegs.push({ stop, fuel: estimateFuelCostKm(km) });
+        }
+        // รวมค่าน้ำมันทั้งวันเกิน cap → เกลี่ยแบบสัดส่วน (ขาไกลสุดชดเชยเศษปัดเศษ)
+        const cap = Number(dailyCap);
+        const dayFuel = carLegs.reduce((sum, leg) => sum + leg.fuel, 0);
+        if (Number.isFinite(cap) && cap > 0 && dayFuel > cap && dayFuel > 0) {
+            const factor = cap / dayFuel;
+            const ordered = [...carLegs].sort((a, b) => b.fuel - a.fuel);
+            let assigned = 0;
+            ordered.forEach((leg, index) => {
+                leg.fuel = index === ordered.length - 1
+                    ? Math.max(0, cap - assigned)
+                    : Math.round(leg.fuel * factor);
+                assigned += leg.fuel;
+            });
+            cappedDays++;
+        }
+        for (const { stop, fuel } of carLegs) {
+            const oldCost = Number(stop.transportCost) || 0;
+            saved += oldCost - fuel;
+            stop.transportCost = fuel;
+            if (Array.isArray(stop.segments) && stop.segments[0]
+                && String(stop.segments[0].mode || 'car').toLowerCase() === 'car') {
+                stop.segments[0].estimatedCost = fuel;
+            }
+        }
+        const last = stops[stops.length - 1];
+        const lastLat = finiteCoord(last?.latitude);
+        const lastLng = finiteCoord(last?.longitude);
+        if (lastLat != null && lastLng != null) {
+            prevLat = lastLat;
+            prevLng = lastLng;
+        }
+    }
+    // ขากลับบ้านก็ขับรถตัวเองกลับ — คิดค่าน้ำมันด้วย (distanceKm เก็บไว้แล้ว)
+    if (planData.returnLeg && typeof planData.returnLeg === 'object'
+        && String(planData.returnLeg.mode || 'car').toLowerCase() === 'car') {
+        const km = Number(planData.returnLeg.distanceKm);
+        if (Number.isFinite(km) && km >= 0) {
+            const fuel = estimateFuelCostKm(km);
+            const old = Number(planData.returnLeg.estimatedCost) || 0;
+            saved += old - fuel;
+            planData.returnLeg.estimatedCost = fuel;
+        }
+    }
+    if (saved !== 0) {
+        const total = Number(planData.totalEstimatedCost);
+        planData.totalEstimatedCost = Math.max(
+            0, (Number.isFinite(total) ? total : 0) - saved);
+        if (planData.budgetBreakdown && typeof planData.budgetBreakdown === 'object') {
+            const transport = Number(planData.budgetBreakdown.transport);
+            planData.budgetBreakdown.transport = Math.max(
+                0, (Number.isFinite(transport) ? transport : 0) - saved);
+        }
+    }
+    return { saved, cappedDays };
 };
 
 // เดินโซ่เวลา arrivalTime ต่อเนื่องทั้งวัน (mutate day):
@@ -309,6 +411,8 @@ module.exports = {
     DAY_BUDGET_MINUTES,
     MAX_STOPS_PER_DAY,
     DEFAULT_DAY_START_MINUTES,
+    LOCAL_FUEL_RATE_PER_KM,
+    LOCAL_FUEL_CAP_PER_DAY,
     parseClockToMinutes,
     parseStartTimeInput,
     formatClock,
@@ -316,6 +420,8 @@ module.exports = {
     haversineKm,
     computeLegMinutes,
     estimateLegCostKm,
+    estimateFuelCostKm,
+    applyCarFuelCosts,
     orderStopsNearestNeighbor,
     chainDayTimes,
     estimateRecommendedDays,

@@ -22,6 +22,8 @@ const {
     estimateRecommendedDays,
     maxDistanceFromStart,
     validateDayFit,
+    applyCarFuelCosts,
+    LOCAL_FUEL_CAP_PER_DAY,
 } = require('../utils/planScheduler');
 const { config } = require('../config/env');
 const {
@@ -29,6 +31,7 @@ const {
     formatWebSearchContext,
 } = require('./webSearchHelper');
 const { enrichPlanWithRestStops } = require('./restStopService');
+const { findNearby } = require('../repositories/placeSearchRepository');
 const {
     chatCompletion,
     chatCompletionStream,
@@ -503,6 +506,28 @@ async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
     };
 }
 
+// จุดเริ่มอยู่จังหวัดเดียวกับปลายทางไหม (ทริป local — ขับรถตัวเองเที่ยวใกล้ ๆ)
+// client ส่ง is_local_trip มาถ้าเทียบได้แล้ว, ไม่งั้นเช็คเองจากสถานที่ใกล้ GPS สุดใน DB (≤100 กม.)
+// ใช้ข้ามที่พักค้างคืน + คิดขารถยนต์เป็นค่าน้ำมันแทนเรทแท็กซี่
+const isLocalTripRequest = async (tripInput) => {
+    if (tripInput.is_local_trip === true) return true;
+    const dest = String(tripInput.province || tripInput.destination || '').trim();
+    const sLat = finiteCoord(tripInput.start_latitude);
+    const sLng = finiteCoord(tripInput.start_longitude);
+    if (!dest || sLat == null || sLng == null) return false;
+    try {
+        const rows = await findNearby({ latitude: sLat, longitude: sLng, limit: 1 });
+        const nearest = Array.isArray(rows) ? rows[0] : null;
+        if (!nearest || !nearest.province) return false;
+        const distKm = Number(nearest.distance_km);
+        if (!Number.isFinite(distKm) || distKm > 100) return false;
+        const norm = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+        return norm(nearest.province) === norm(dest);
+    } catch {
+        return false;
+    }
+};
+
 // สร้างแผนแล้ว stream สถานะกลับ Flutter ก่อนบันทึก JSON ที่ normalize ลงฐานข้อมูล
 // สร้างแผนท่องเที่ยวด้วย Gemini แล้วส่งความคืบหน้าผ่าน SSE
 async function generateTripPlan(tripId, tripInput, res) {
@@ -514,6 +539,9 @@ async function generateTripPlan(tripId, tripInput, res) {
     const mustVisitPlaces = await retrievePlacesByIds(
         mustVisitRequests.map((place) => place.id),
     );
+    // ทริป local (อยู่จังหวัดเดียวกับที่เที่ยว) ขับรถตัวเอง — ใช้ข้ามที่พัก + คิดค่าน้ำมัน
+    // detect ฝั่ง server ด้วย กัน client เทียบจังหวัดไม่ได้ตอน _places ยังโหลดไม่เสร็จ
+    const localTrip = await isLocalTripRequest(tripInput);
 
     // ชื่อแผนที่ผู้ใช้กรอก (เช่น "เที่ยวเกาะทั่วไทย") — ใช้เป็นธีมหลักทั้งตอนค้น (RAG) และตอนสั่ง AI
     const tripTitle = typeof tripInput.title === 'string' ? tripInput.title.trim().slice(0, 120) : '';
@@ -621,7 +649,7 @@ async function generateTripPlan(tripId, tripInput, res) {
     - พยายามจัดกลุ่มสถานที่บนเกาะและบนฝั่งเป็นช่วงเดียวกัน เลี่ยงลำดับ เกาะ → ฝั่ง → เกาะ หรือ ฝั่ง → เกาะ → ฝั่ง ในวันเดียวกัน (ไม่ว่าจะใช้พาหนะชนิดใด) แต่ถ้าจำเป็นต้องข้ามให้ใส่ได้
     - พยายามให้ข้ามระหว่างเกาะกับฝั่งไม่เกินหนึ่งครั้งต่อวัน ไม่ว่าจะใช้พาหนะชนิดใด (car/bus/train/ferry/flight/walking) ถ้าเกินให้ระบุใน tips ว่าอาจเหนื่อยจากการข้ามบ่อย เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
     - กรอบเวลาต่อวัน ~10 ชม. รวมเที่ยว+เดินทาง+พัก วันละไม่เกิน 5 จุด อย่ายัดหลายแห่งจนเวลาซ้อนกัน
-    - ขาขับรถ/รถโดยสารยาว ≥2 ชม. ระบบจะแทรกจุดแวะพักจริงจาก OpenStreetMap ให้เอง จึงไม่ต้องสร้าง stop แวะพักเอง — คิดเวลาพักคร่าว ๆ ในแผนได้ตามเหมาะสม
+    - ขาขับรถ/รถโดยสารยาว ≥2 ชม. ระบบจะแทรกจุดแวะพักจริงจาก OpenStreetMap ให้เอง (รวมปั๊มน้ำมันในวันขับรถรวมไกล) จึงไม่ต้องสร้าง stop แวะพัก/ปั๊มเองเด็ดขาด — คิดเวลาพักคร่าว ๆ ในแผนได้ตามเหมาะสม
     - ตอนท้ายของแต่ละวัน (ยกเว้นวันสุดท้าย) ระบบจะแทรกที่พักค้างคืนจากฐานข้อมูลที่พัก (หมวด accommodation/hotel) ให้เอง ถ้าไม่พบจึงค้นจาก OpenStreetMap จึงห้ามสร้าง stop ที่พักเองเด็ดขาด
     - arrivalTime กับ segments จะถูกระบบคำนวณใหม่จากระยะทางจริงหลัง AI ตอบ จึงไม่ต้องเดาเวลาเดินทางเอง แต่ทุก stop ต้องใส่ arrivalTime "HH:MM" กับ durationMinutes (20-300 นาที) ที่สมเหตุสมผลมาด้วย
 
@@ -639,6 +667,7 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
     - ความสนใจ: ${(tripInput.interests || []).join(', ') || 'ไม่ระบุ'}
     - พื้นที่/จังหวัด (ถ้ามี): ${tripInput.destination || 'ให้เลือกจากตำแหน่ง GPS'}
     - วิธีเดินทางที่ยอมรับ: ${allowedTransportModes.join(', ')}
+    - รถยนต์คือรถส่วนตัวของผู้ใช้ (ไม่มีค่าเช่า/แท็กซี่): ประเมิน transportCost ทุกขารถยนต์ตามค่าน้ำมัน ~3 บาท/กม.${localTrip ? ' รวมทั้งวันไม่เกิน 300 บาท' : ''}
     - สถานที่ที่ผู้ใช้บังคับเลือก: ${mustVisitDescription}
     - สถานที่ที่ผู้ใช้ลบและห้ามเสนอซ้ำ: ${(tripInput.excluded_places || []).join(', ') || 'ไม่มี'}
     - เวลาเริ่มเดินทางแต่ละวัน: ${dayStartClock}
@@ -770,16 +799,34 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                     startName: 'จุดเริ่มต้น',
                     primaryMode: allowedTransportModes[0] || 'car',
                 });
-                // ---- แทรกจุดแวะพักจริง (OSM/Overpass) กลางขาขับยาว ≥2 ชม. ----
+                // ---- แทรกจุดแวะพักจริง (OSM/Overpass) กลางขาขับยาว ≥2 ชม. + ปั๊มน้ำมันวันขับไกล ----
                 // best-effort: Overpass ล่ม/หมดเวลาจะได้แผนเดิมพร้อมเวลาพักโดยประมาณ ไม่ล้มทั้งทริป
+                // ทริป local นอนบ้านตัวเองได้ — ข้ามที่พักค้างคืน
                 try {
                     await enrichPlanWithRestStops(planData, {
                         primaryMode: allowedTransportModes[0] || 'car',
                         startLat: tripInput.start_latitude,
                         startLng: tripInput.start_longitude,
+                        skipOvernight: localTrip,
                     });
                 } catch (restError) {
                     console.warn(`[ai] rest-stop enrichment skipped: ${restError.message}`);
+                }
+                // รถยนต์ทุกคันคือรถส่วนตัว: เขียนทับขารถยนต์ทุกขา (รวมที่ AI เดามา)
+                // เป็นค่าน้ำมัน ~3 บาท/กม. — ทริป local cap วันละ 300, ขับไกลจ่ายตามระยะจริง
+                {
+                    const { saved, cappedDays } = applyCarFuelCosts(planData, {
+                        startLat: tripInput.start_latitude,
+                        startLng: tripInput.start_longitude,
+                        dailyCap: localTrip ? LOCAL_FUEL_CAP_PER_DAY : null,
+                    });
+                    planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+                    const fuelTip = localTrip
+                        ? (saved > 0
+                            ? `ทริปนี้อยู่ในจังหวัดเดียวกับจุดเริ่มต้น — คิดค่าเดินทางรถยนต์ตามค่าน้ำมันจริง (~3 บาท/กม. ไม่เกินวันละ 300 บาท)${cappedDays > 0 ? ` ประหยัดไป ~${Math.round(saved)} บาท` : ''}`
+                            : 'ทริปนี้อยู่ในจังหวัดเดียวกับจุดเริ่มต้น — คิดค่าเดินทางรถยนต์ตามค่าน้ำมันจริง (~3 บาท/กม. ไม่เกินวันละ 300 บาท)')
+                        : 'ค่าเดินทางรถยนต์คิดตามค่าน้ำมันรถส่วนตัว (~3 บาท/กม.) — ไม่มีค่าเช่ารถ/แท็กซี่';
+                    if (!planData.tips.includes(fuelTip)) planData.tips.push(fuelTip);
                 }
                 const { warnings: fitWarnings } = validateDayFit(planData);
                 const allWarnings = [...new Set([...earlyWarnings, ...fitWarnings])];

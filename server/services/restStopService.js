@@ -53,6 +53,11 @@ const MAX_REST_PER_LEG = 2;
 const MAX_REST_PER_DAY = 2;
 const REST_STOP_DURATION_MINUTES = 20;
 
+// วันขับรถรวม (car/bus) ตั้งแต่ 150 กม. ขึ้นไป เติมปั๊มน้ำมัน 1 จุดกลางขาที่ยาวสุด
+// ให้แผนมีจุดแวะเติมน้ำมันจริง — ค้น OSM ในรัศมี 8 กม. รอบจุดกลางขา
+const LONG_DRIVE_FUEL_KM = 150;
+const FUEL_SEARCH_RADIUS_METERS = 8000;
+
 // ที่พักค้างคืนท้ายวัน (ยกเว้นวันสุดท้าย) — แนะนำจาก OSM เหมือนจุดพักรายทาง
 // duration 60 นาทีคือเวลาเช็คอิน/พักผ่อน ไม่ใช่เวลานอนทั้งคืน จึงไม่ทำงบวันพัง
 // และ chainDayTimes จะเดินโซ่เวลาใหม่ให้เหมือนจุดพักปกติ
@@ -337,15 +342,19 @@ const buildOvernightStopFromDb = (row, mode) => {
     };
 };
 
-async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat, startLng } = {}) {
+async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat, startLng, skipOvernight = false } = {}) {
     if (!planData || typeof planData !== 'object') return { added: 0 };
     if (config.overpass && config.overpass.enabled === false) return { added: 0 };
     const days = Array.isArray(planData.days) ? planData.days : [];
     if (days.length === 0) return { added: 0 };
+    // ทริป local (จุดเริ่มอยู่จังหวัดเดียวกับที่เที่ยว): นอนบ้านตัวเองได้
+    // ข้ามที่พักค้างคืนทั้งหมด — client รุ่นเก่าที่ยังได้ที่พักมาจะตัดออกเองอีกชั้น
+    const skipOvernightStay = skipOvernight === true;
 
     const usedOsmIds = new Set();
     let added = 0;
     let overnightAdded = 0;
+    let fuelAdded = 0;
     // ที่พัก "ฐานเดียว" ของทริป: คืนแรกหาได้ที่ไหน (DB > OSM > placeholder) คืนถัดไปใช้ที่เดิมซ้ำ
     // ถ้าไกลเกิน (ย้อนกลับรวม > ครึ่งกรอบวัน) จึงหาใหม่ใกล้จุดสุดท้ายของวันนั้น
     let baseStay = null;
@@ -382,12 +391,36 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
     // เวลาเริ่มเดินโซ่ใหม่ของวันนั้น (departure): arrival จุดแรกที่เก็บไว้รวมขาแรกแล้ว
     // จึงหักขาแรกออกก่อน — ไม่งั้นแทรกจุดทีไรเวลาทั้งวันจะเลื่อนไปข้างหน้าทุกครั้ง
     // (logic เดียวกับ chainAllDaysPreservingOrder; ไม่มีขาแรกก็ใช้ arrival ตรง ๆ)
+    // สำคัญ: เรียกก่อน splice จุดแทรก (stops[0] ต้องยังเป็นจุดเดิม)
     const dayDeparture = (day) => {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
         const arrival0 = parseClockToMinutes(stops[0]?.arrivalTime);
         const firstLeg = Number(stops[0]?.segments?.[0]?.estimatedMinutes);
         if (arrival0 != null && Number.isFinite(firstLeg) && firstLeg > 0) return arrival0 - firstLeg;
         return arrival0 ?? DEFAULT_DAY_START_MINUTES;
+    };
+    // จุดเริ่มของวันนั้นสำหรับคำนวณขาแรก: วันแรก = GPS/จุดปักของผู้ใช้,
+    // วันถัดไป = จุดสุดท้ายของวันก่อน ( enrich วันก่อนหน้าทำเสร็จแล้วเพราะวนตามลำดับ)
+    const dayOrigin = (dayIndex) => {
+        if (dayIndex <= 0) {
+            const lat = finiteCoord(startLat);
+            const lng = finiteCoord(startLng);
+            if (lat == null || lng == null) return undefined;
+            return { lat, lng, name: 'จุดเริ่มต้น', mode: primaryMode };
+        }
+        const prevStops = Array.isArray(days[dayIndex - 1]?.stops)
+            ? days[dayIndex - 1].stops
+            : [];
+        const last = prevStops[prevStops.length - 1];
+        const lat = finiteCoord(last?.latitude);
+        const lng = finiteCoord(last?.longitude);
+        if (lat == null || lng == null) return undefined;
+        return {
+            lat,
+            lng,
+            name: String(last?.place || '').trim(),
+            mode: String(last?.transportMode || primaryMode || 'car'),
+        };
     };
     // หยิบจุดอ้างอิงท้ายวันสำหรับหาที่พัก: จุดที่ไม่ใช่ rest ท้ายสุด
     // (วันอาจลงท้ายด้วยจุดพักรายทางที่เพิ่งแทรก) — ถ้าทั้งวันมีแต่ rest ก็ใช้จุดสุดท้าย
@@ -440,6 +473,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
     };
 
     const suggestOvernightNear = async (day, dayIndex) => {
+        if (skipOvernightStay) return;
         if (!overnightEligible(day, dayIndex)) return;
         const stops = Array.isArray(day?.stops) ? day.stops : [];
         if (stops.length === 0) return;
@@ -558,19 +592,68 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
 
     // เติมจุดพักจริงกลางขาขับยาว ≥2 ชม. (car/bus) — mutate planData, best-effort ไม่ throw
     // จำนวนที่แทรกต่อขา = floor(travel/120) (สูงสุด 2) รวมไม่เกิน 2 ต่อวัน กันแผนแน่นเกิน
-    const enrichRoadRestsForDay = async (day) => {
+    // รวมขาแรก (จุดเริ่มทริป/จุดสุดท้ายวันก่อน → จุดแรกของวัน) ด้วย —
+    // เคสขับข้ามจังหวัดวันแรกขานี้ยาวสุด แต่เดิมถูกข้ามเลยไม่มีจุดพักเลย
+    const enrichRoadRestsForDay = async (day, dayIndex) => {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
-        if (stops.length < 2) return 0;
+        if (stops.length < 1) return 0;
         let dayAdded = 0;
         // เก็บงานแทรกเป็น (index รวม offset แล้ว) แล้ว splice จากหน้าไปหลัง
         const insertions = [];
+        const origin = dayOrigin(dayIndex);
+
+        const pickRestNear = async (midLat, midLon) => {
+            let candidates = [];
+            try {
+                candidates = await searchRestStops(midLat, midLon, {
+                    radius: 5000,
+                    types: ROAD_REST_TYPES,
+                    limit: 3,
+                });
+            } catch {
+                candidates = [];
+            }
+            return candidates.find((c) => c && !usedOsmIds.has(c.id)) || null;
+        };
+
+        // ขาแรก: origin → จุดแรกของวัน (เช่น GPS เชียงราย → ที่เที่ยวกรุงเทพ)
+        if (origin && dayAdded < MAX_REST_PER_DAY) {
+            const curr = stops[0];
+            const isFreshStop = curr && typeof curr === 'object'
+                && !curr.isRestStop
+                && !String(curr.destinationId || '').startsWith('osm:');
+            const mode = String(curr?.transportMode || origin.mode || primaryMode || 'car').toLowerCase();
+            const currLat = finiteCoord(curr?.latitude);
+            const currLon = finiteCoord(curr?.longitude);
+            const km = (isFreshStop && currLat != null && currLon != null)
+                ? haversineKm(origin.lat, origin.lng, currLat, currLon)
+                : null;
+            if (km != null && REST_ELIGIBLE_MODES.has(mode)) {
+                const { travelMinutes } = computeLegMinutes(km, mode);
+                if (travelMinutes >= 120) {
+                    const needed = Math.min(Math.floor(travelMinutes / 120), MAX_REST_PER_LEG, MAX_REST_PER_DAY - dayAdded);
+                    for (let k = 1; k <= needed && dayAdded < MAX_REST_PER_DAY; k++) {
+                        const frac = k / (needed + 1);
+                        const pick = await pickRestNear(
+                            origin.lat + (currLat - origin.lat) * frac,
+                            origin.lng + (currLon - origin.lng) * frac,
+                        );
+                        if (!pick) continue;
+                        usedOsmIds.add(pick.id);
+                        insertions.push({ index: insertions.length, stop: buildRestStop(pick, mode) });
+                        dayAdded++;
+                    }
+                }
+            }
+        }
 
         for (let i = 1; i < stops.length && dayAdded < MAX_REST_PER_DAY; i++) {
             const prev = stops[i - 1];
             const curr = stops[i];
             if (!prev || !curr || typeof prev !== 'object' || typeof curr !== 'object') continue;
-            if (prev.isRestStop || curr.isRestStop) continue;
-            if (String(prev.destinationId || '').startsWith('osm:')) continue;
+            // หมายเหตุ: ขาที่ออกจากจุดพัก (ปั๊ม/จุดพักที่เพิ่งปัก) แทรกต่อได้ —
+            // ขาที่เหลือหลังปักปั๊มอาจยังยาวเกิน 2 ชม. (เช่น เชียงราย→กรุงเทพ เหลืออีก 7 ชม.) ต้องมีพักอีก
+            // ห้ามแค่ปักชนจุดพักด้วยกัน (ปลายเป็น osm:) ขาสั้นตกเกณฑ์ 120 นาทีเองตามธรรมชาติ
             if (String(curr.destinationId || '').startsWith('osm:')) continue;
 
             const mode = String(curr.transportMode || primaryMode || 'car').toLowerCase();
@@ -592,19 +675,10 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
 
             for (let k = 1; k <= needed && dayAdded < MAX_REST_PER_DAY; k++) {
                 const frac = k / (needed + 1);
-                const midLat = prevLat + (currLat - prevLat) * frac;
-                const midLon = prevLon + (currLon - prevLon) * frac;
-                let candidates = [];
-                try {
-                    candidates = await searchRestStops(midLat, midLon, {
-                        radius: 5000,
-                        types: ROAD_REST_TYPES,
-                        limit: 3,
-                    });
-                } catch {
-                    candidates = [];
-                }
-                const pick = candidates.find((c) => c && !usedOsmIds.has(c.id));
+                const pick = await pickRestNear(
+                    prevLat + (currLat - prevLat) * frac,
+                    prevLon + (currLon - prevLon) * frac,
+                );
                 if (!pick) continue;
                 usedOsmIds.add(pick.id);
                 const restStop = buildRestStop(pick, mode);
@@ -614,22 +688,123 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         }
 
         if (insertions.length > 0) {
+            // จับ departure ก่อน splice (stops[0] ต้องยังเป็นจุดเดิม)
+            // แล้วเดินโซ่ใหม่พร้อม origin — ไม่งั้นขาแรกหายจากตารางเวลา
+            const anchor = dayDeparture(day);
             insertions.sort((a, b) => a.index - b.index);
             // index คำนวณรวม offset ของ insertion ก่อนหน้าแล้ว จึง splice จากหน้าไปหลัง
             for (const item of insertions) {
                 stops.splice(item.index, 0, item.stop);
             }
-            const anchor = dayDeparture(day);
-            chainDayTimes(day, anchor);
+            chainDayTimes(day, anchor, origin);
             for (const item of insertions) collectStopCosts(item.stop);
         }
         return insertions.length;
     };
 
+    // วันขับรถรวมไกล (≥150 กม.) เติมปั๊มน้ำมัน 1 จุดกลางขาที่ยาวสุด
+    // ให้แผนมีจุดแวะเติมน้ำมันจริง — หา OSM ประเภท fuel ก่อน ไม่เจอใช้ร้านสะดวกซื้อแทน
+    // นับขาแรก (origin → จุดแรกของวัน) ด้วย — เคสขับข้ามจังหวัดขานี้ยาวสุด
+    // เคารพโควต้าจุดพัก ≤2/วัน (วันที่มีจุดพักเต็มแล้วข้าม) ปั๊มไม่มีค่าเข้า/อาหาร มีแค่เวลาแวะ 20 นาที
+    const suggestFuelStopForDay = async (day, dayIndex) => {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        if (stops.length < 1) return 0;
+        const restCount = stops.filter((stop) =>
+            stop && typeof stop === 'object'
+            && (stop.isRestStop === true || String(stop.destinationId ?? '').startsWith('osm:'))).length;
+        if (restCount >= MAX_REST_PER_DAY) return 0;
+        // มีปั๊มในวันอยู่แล้ว (AI ใส่มาหรือรอบก่อนแทรกไว้) ไม่ต้องเพิ่ม
+        if (stops.some((stop) => stop && typeof stop === 'object'
+            && (String(stop.restType || '').toLowerCase() === 'fuel'
+                || /ปั๊มน้ำมัน|เติมน้ำมัน/i.test(`${stop.place || ''} ${stop.activity || ''}`)))) return 0;
+        const origin = dayOrigin(dayIndex);
+        let totalKm = 0;
+        let longest = null;
+        // ขาแรก: origin → จุดแรกของวัน
+        if (origin && stops.length >= 1) {
+            const curr = stops[0];
+            const isFreshStop = curr && typeof curr === 'object'
+                && !curr.isRestStop
+                && !String(curr.destinationId || '').startsWith('osm:');
+            const mode = String(curr?.transportMode || origin.mode || primaryMode || 'car').toLowerCase();
+            const currLat = finiteCoord(curr?.latitude);
+            const currLon = finiteCoord(curr?.longitude);
+            if (isFreshStop && (mode === 'car' || mode === 'bus') && currLat != null && currLon != null) {
+                const km = haversineKm(origin.lat, origin.lng, currLat, currLon);
+                if (km != null) {
+                    totalKm += km;
+                    longest = { index: 0, km, mode, fromLat: origin.lat, fromLng: origin.lng, toLat: currLat, toLng: currLon };
+                }
+            }
+        }
+        for (let i = 1; i < stops.length; i++) {
+            const prev = stops[i - 1];
+            const curr = stops[i];
+            if (!prev || !curr || typeof prev !== 'object' || typeof curr !== 'object') continue;
+            if (prev.isRestStop || curr.isRestStop) continue;
+            const mode = String(curr.transportMode || primaryMode || 'car').toLowerCase();
+            if (mode !== 'car' && mode !== 'bus') continue;
+            const km = haversineKm(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
+            if (km == null) continue;
+            totalKm += km;
+            if (!longest || km > longest.km) {
+                longest = {
+                    index: i, km, mode,
+                    fromLat: finiteCoord(prev.latitude), fromLng: finiteCoord(prev.longitude),
+                    toLat: finiteCoord(curr.latitude), toLng: finiteCoord(curr.longitude),
+                };
+            }
+        }
+        if (totalKm < LONG_DRIVE_FUEL_KM || !longest) return 0;
+        if (longest.fromLat == null || longest.fromLng == null || longest.toLat == null || longest.toLng == null) return 0;
+        const midLat = (longest.fromLat + longest.toLat) / 2;
+        const midLon = (longest.fromLng + longest.toLng) / 2;
+        let candidates = [];
+        try {
+            candidates = await searchRestStops(midLat, midLon, {
+                radius: FUEL_SEARCH_RADIUS_METERS,
+                types: ['fuel'],
+                limit: 3,
+            });
+        } catch {
+            candidates = [];
+        }
+        let pick = candidates.find((c) => c && !usedOsmIds.has(c.id));
+        if (!pick) {
+            try {
+                candidates = await searchRestStops(midLat, midLon, {
+                    radius: 5000,
+                    types: ['convenience'],
+                    limit: 3,
+                });
+            } catch {
+                candidates = [];
+            }
+            pick = candidates.find((c) => c && !usedOsmIds.has(c.id));
+        }
+        if (!pick) return 0;
+        usedOsmIds.add(pick.id);
+        const fuelStop = buildRestStop(pick, longest.mode);
+        // จับ departure ก่อน splice แล้วเดินโซ่ใหม่พร้อม origin — ไม่งั้นขาแรกหายจากตารางเวลา
+        const anchor = dayDeparture(day);
+        stops.splice(longest.index, 0, fuelStop);
+        chainDayTimes(day, anchor, origin);
+        collectStopCosts(stops[longest.index]);
+        fuelAdded++;
+        return 1;
+    };
+
     for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
         const day = days[dayIndex];
+        // วันขับรถรวมไกลเติมปั๊มก่อน 1 จุดกลางขาที่ยาวสุด (best-effort ไม่ล้มทั้งทริป)
+        // ให้แผนมีจุดแวะเติมน้ำมันจริง — จุดพักอื่นค่อยเติมโควต้าที่เหลือ
         try {
-            added += await enrichRoadRestsForDay(day);
+            added += await suggestFuelStopForDay(day, dayIndex);
+        } catch {
+            // best-effort — หาปั๊มไม่เจอก็ใช้แผนเดิมต่อได้
+        }
+        try {
+            added += await enrichRoadRestsForDay(day, dayIndex);
         } catch {
             // best-effort — ขานี้หา POI ไม่ได้ก็ใช้แผนเดิมต่อได้
         }
@@ -669,6 +844,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
                 const km = haversineKm(lastStopLat, lastStopLng, homeLat, homeLng);
                 if (km != null) {
                     const { travelMinutes } = computeLegMinutes(km, mode);
+                    // car = รถตัวเอง estimateLegCostKm คิดน้ำมันให้แล้ว
                     const cost = estimateLegCostKm(km, mode);
                     planData.returnLeg = {
                         from: String(lastStop.place || ''),
@@ -716,6 +892,10 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
             const credit = `แผนนี้มีจุดแวะพักระหว่างทาง ${restCount} จุดจาก ${REST_STOP_ATTRIBUTION}`;
             if (!planData.tips.includes(credit)) planData.tips.push(credit);
         }
+        if (fuelAdded > 0) {
+            const fuelTip = `แผนนี้มีจุดแวะเติมน้ำมัน ${fuelAdded} จุด — วันขับไกลแวะเติมระหว่างทางได้เลย`;
+            if (!planData.tips.includes(fuelTip)) planData.tips.push(fuelTip);
+        }
         if (overnightAdded > 0) {
             const uniqueStays = new Set();
             for (const day of days) {
@@ -734,7 +914,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
             if (!planData.tips.includes(costNote)) planData.tips.push(costNote);
         }
     }
-    return { added, overnightAdded };
+    return { added, overnightAdded, fuelAdded };
 }
 
 module.exports = {
@@ -744,6 +924,8 @@ module.exports = {
     OVERNIGHT_TYPES,
     TYPE_LABEL_TH,
     REST_STOP_DURATION_MINUTES,
+    LONG_DRIVE_FUEL_KM,
+    FUEL_SEARCH_RADIUS_METERS,
     OVERNIGHT_DURATION_MINUTES,
     searchRestStops,
     enrichPlanWithRestStops,
