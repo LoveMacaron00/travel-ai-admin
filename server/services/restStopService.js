@@ -590,7 +590,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         if (baseStay == null) baseStay = { ...fallbackStop };
     };
 
-    // เติมจุดพักจริงกลางขาขับยาว ≥2 ชม. (car/bus) — mutate planData, best-effort ไม่ throw
+    // เติมจุดพักจริงกลางขาขับยาว ≥2 ชม. (car/bus) — เอาแค่ปั๊มน้ำมัน, mutate planData, best-effort ไม่ throw
     // จำนวนที่แทรกต่อขา = floor(travel/120) (สูงสุด 2) รวมไม่เกิน 2 ต่อวัน กันแผนแน่นเกิน
     // รวมขาแรก (จุดเริ่มทริป/จุดสุดท้ายวันก่อน → จุดแรกของวัน) ด้วย —
     // เคสขับข้ามจังหวัดวันแรกขานี้ยาวสุด แต่เดิมถูกข้ามเลยไม่มีจุดพักเลย
@@ -602,12 +602,13 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         const insertions = [];
         const origin = dayOrigin(dayIndex);
 
+        // เอาแค่ปั๊มน้ำมัน — ไม่เจอปั๊มข้ามขานี้ไป ไม่เติมคาเฟ่/ร้านสะดวกซื้อแทน
         const pickRestNear = async (midLat, midLon) => {
             let candidates = [];
             try {
                 candidates = await searchRestStops(midLat, midLon, {
                     radius: 5000,
-                    types: ROAD_REST_TYPES,
+                    types: ['fuel'],
                     limit: 3,
                 });
             } catch {
@@ -703,7 +704,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
     };
 
     // วันขับรถรวมไกล (≥150 กม.) เติมปั๊มน้ำมัน 1 จุดกลางขาที่ยาวสุด
-    // ให้แผนมีจุดแวะเติมน้ำมันจริง — หา OSM ประเภท fuel ก่อน ไม่เจอใช้ร้านสะดวกซื้อแทน
+    // เอาแค่ปั๊มน้ำมันจริง — ไม่เจอปั๊มในรัศมี 8 กม. ข้ามไป ไม่เติมร้านสะดวกซื้อแทน
     // นับขาแรก (origin → จุดแรกของวัน) ด้วย — เคสขับข้ามจังหวัดขานี้ยาวสุด
     // เคารพโควต้าจุดพัก ≤2/วัน (วันที่มีจุดพักเต็มแล้วข้าม) ปั๊มไม่มีค่าเข้า/อาหาร มีแค่เวลาแวะ 20 นาที
     const suggestFuelStopForDay = async (day, dayIndex) => {
@@ -770,18 +771,6 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
             candidates = [];
         }
         let pick = candidates.find((c) => c && !usedOsmIds.has(c.id));
-        if (!pick) {
-            try {
-                candidates = await searchRestStops(midLat, midLon, {
-                    radius: 5000,
-                    types: ['convenience'],
-                    limit: 3,
-                });
-            } catch {
-                candidates = [];
-            }
-            pick = candidates.find((c) => c && !usedOsmIds.has(c.id));
-        }
         if (!pick) return 0;
         usedOsmIds.add(pick.id);
         const fuelStop = buildRestStop(pick, longest.mode);
@@ -797,7 +786,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
     for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
         const day = days[dayIndex];
         // วันขับรถรวมไกลเติมปั๊มก่อน 1 จุดกลางขาที่ยาวสุด (best-effort ไม่ล้มทั้งทริป)
-        // ให้แผนมีจุดแวะเติมน้ำมันจริง — จุดพักอื่นค่อยเติมโควต้าที่เหลือ
+        // ขาขับยาวค่อยเติมปั๊มเพิ่มในโควต้าที่เหลือ — เอาแค่ปั๊มน้ำมันทั้งคู่
         try {
             added += await suggestFuelStopForDay(day, dayIndex);
         } catch {
