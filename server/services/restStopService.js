@@ -86,6 +86,11 @@ const REST_FOOD_COST_BY_TYPE = {
     place: 50,
 };
 
+// วันนี้มีปั๊มน้ำมันแล้วหรือยัง (ปั๊ม OSM / AI / ที่เพิ่งแทรก) — เอาแค่ปั๊มวันละ 1 จุด
+const isFuelStopLike = (stop) => stop && typeof stop === 'object'
+    && (String(stop.restType || '').toLowerCase() === 'fuel'
+        || /ปั๊มน้ำมัน|เติมน้ำมัน/i.test(`${stop.place || ''} ${stop.activity || ''}`));
+
 // ดึงตัวเลขราคาผู้ใหญ่/ราคาตั้งต้นจาก admission_fee object (best-effort) — ไม่มีให้ใช้ fallback
 // กรณีที่พัก (หมวด hotel): sync พับ TAT minPrice/maxPrice ลง roomMinPrice/roomMaxPrice
 // จึงอ่านราคาห้องก่อนค่าเข้าชม (ที่พักไม่มี information.fee) — ได้ราคาพักจริงแทนค่าประมาณ
@@ -590,8 +595,9 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         if (baseStay == null) baseStay = { ...fallbackStop };
     };
 
-    // เติมจุดพักจริงกลางขาขับยาว ≥2 ชม. (car/bus) — เอาแค่ปั๊มน้ำมัน, mutate planData, best-effort ไม่ throw
-    // จำนวนที่แทรกต่อขา = floor(travel/120) (สูงสุด 2) รวมไม่เกิน 2 ต่อวัน กันแผนแน่นเกิน
+    // เติมปั๊มน้ำมันกลางขาขับยาว ≥2 ชม. (car/bus) — โควต้าตามขา ไม่นับรวมต่อวัน, mutate planData, best-effort ไม่ throw
+    // ขาไหนมีปั๊มอยู่หัว/ท้ายขาแล้วข้ามขานั้นไป (กันปั๊มซ้อน) — เพิ่มที่ใหม่ไกลๆ ได้ปั๊มใหม่ไม่จำกัดครั้งรวม
+    // จำนวนที่แทรกต่อขา = floor(travel/120) (สูงสุด 2) รวมต่อครั้งไม่เกิน 2 กันแผนแน่นเกิน
     // รวมขาแรก (จุดเริ่มทริป/จุดสุดท้ายวันก่อน → จุดแรกของวัน) ด้วย —
     // เคสขับข้ามจังหวัดวันแรกขานี้ยาวสุด แต่เดิมถูกข้ามเลยไม่มีจุดพักเลย
     const enrichRoadRestsForDay = async (day, dayIndex) => {
@@ -622,7 +628,8 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
             const curr = stops[0];
             const isFreshStop = curr && typeof curr === 'object'
                 && !curr.isRestStop
-                && !String(curr.destinationId || '').startsWith('osm:');
+                && !String(curr.destinationId || '').startsWith('osm:')
+                && !isFuelStopLike(curr);
             const mode = String(curr?.transportMode || origin.mode || primaryMode || 'car').toLowerCase();
             const currLat = finiteCoord(curr?.latitude);
             const currLon = finiteCoord(curr?.longitude);
@@ -652,10 +659,10 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
             const prev = stops[i - 1];
             const curr = stops[i];
             if (!prev || !curr || typeof prev !== 'object' || typeof curr !== 'object') continue;
-            // หมายเหตุ: ขาที่ออกจากจุดพัก (ปั๊ม/จุดพักที่เพิ่งปัก) แทรกต่อได้ —
-            // ขาที่เหลือหลังปักปั๊มอาจยังยาวเกิน 2 ชม. (เช่น เชียงราย→กรุงเทพ เหลืออีก 7 ชม.) ต้องมีพักอีก
-            // ห้ามแค่ปักชนจุดพักด้วยกัน (ปลายเป็น osm:) ขาสั้นตกเกณฑ์ 120 นาทีเองตามธรรมชาติ
+            // ขาไหนมีปั๊มอยู่หัว/ท้ายขาแล้วข้าม — กันปั๊มซ้อนขาเดิม
+            // (ปลายเป็น osm: คือชนจุดพักด้วยกัน ข้ามเหมือนเดิม)
             if (String(curr.destinationId || '').startsWith('osm:')) continue;
+            if (isFuelStopLike(prev) || isFuelStopLike(curr)) continue;
 
             const mode = String(curr.transportMode || primaryMode || 'car').toLowerCase();
             if (!REST_ELIGIBLE_MODES.has(mode)) continue;
@@ -703,7 +710,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         return insertions.length;
     };
 
-    // วันขับรถรวมไกล (≥150 กม.) เติมปั๊มน้ำมัน 1 จุดกลางขาที่ยาวสุด
+    // วันขับรถรวมไกล (≥150 กม.) เติมปั๊มน้ำมัน 1 จุดกลางขาที่ยาวสุดที่ยังไม่มีปั๊ม
     // เอาแค่ปั๊มน้ำมันจริง — ไม่เจอปั๊มในรัศมี 8 กม. ข้ามไป ไม่เติมร้านสะดวกซื้อแทน
     // นับขาแรก (origin → จุดแรกของวัน) ด้วย — เคสขับข้ามจังหวัดขานี้ยาวสุด
     // เคารพโควต้าจุดพัก ≤2/วัน (วันที่มีจุดพักเต็มแล้วข้าม) ปั๊มไม่มีค่าเข้า/อาหาร มีแค่เวลาแวะ 20 นาที
@@ -714,19 +721,16 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
             stop && typeof stop === 'object'
             && (stop.isRestStop === true || String(stop.destinationId ?? '').startsWith('osm:'))).length;
         if (restCount >= MAX_REST_PER_DAY) return 0;
-        // มีปั๊มในวันอยู่แล้ว (AI ใส่มาหรือรอบก่อนแทรกไว้) ไม่ต้องเพิ่ม
-        if (stops.some((stop) => stop && typeof stop === 'object'
-            && (String(stop.restType || '').toLowerCase() === 'fuel'
-                || /ปั๊มน้ำมัน|เติมน้ำมัน/i.test(`${stop.place || ''} ${stop.activity || ''}`)))) return 0;
         const origin = dayOrigin(dayIndex);
         let totalKm = 0;
         let longest = null;
-        // ขาแรก: origin → จุดแรกของวัน
+        // ขาแรก: origin → จุดแรกของวัน (ข้ามถ้าจุดแรกเป็นปั๊มอยู่แล้ว)
         if (origin && stops.length >= 1) {
             const curr = stops[0];
             const isFreshStop = curr && typeof curr === 'object'
                 && !curr.isRestStop
-                && !String(curr.destinationId || '').startsWith('osm:');
+                && !String(curr.destinationId || '').startsWith('osm:')
+                && !isFuelStopLike(curr);
             const mode = String(curr?.transportMode || origin.mode || primaryMode || 'car').toLowerCase();
             const currLat = finiteCoord(curr?.latitude);
             const currLon = finiteCoord(curr?.longitude);
@@ -748,6 +752,8 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
             const km = haversineKm(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
             if (km == null) continue;
             totalKm += km;
+            // ขาที่มีปั๊มอยู่หัว/ท้ายแล้วไม่ชิงตำแหน่งขาที่ยาวสุด
+            if (isFuelStopLike(prev) || isFuelStopLike(curr)) continue;
             if (!longest || km > longest.km) {
                 longest = {
                     index: i, km, mode,
