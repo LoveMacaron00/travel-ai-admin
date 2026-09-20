@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import { showConfirmAlert, showErrorAlert, showSuccessAlert, showWarningAlert } from '../utils/alerts';
 import DestinationsView from '../components/destinations/DestinationsView';
@@ -13,13 +13,19 @@ import {
 
 const Destinations = () => {
     const navigate = useNavigate();
+    // เก็บค่าค้นหา/filter/page ไว้ใน URL query — กดเข้าหน้า detail แล้ว
+    // ย้อนกลับมาหน้านี้ state จะคืนจาก URL ไม่ถูก clear ทิ้ง
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const [adminDests, setAdminDests] = useState([]);
     const [tatDests, setTatDests] = useState([]);
-    const [page, setPage] = useState(1);
+    const [page, setPage] = useState(() => {
+        const p = parseInt(searchParams.get('page') ?? '1', 10);
+        return Number.isFinite(p) && p >= 1 ? p : 1;
+    });
     const [totalItems, setTotalItems] = useState(0);
-    const [search, setSearch] = useState('');
-    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
+    const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') ?? '');
     const [loading, setLoading] = useState(false);
     const [syncingId, setSyncingId] = useState(null);
     const [bulkSyncing, setBulkSyncing] = useState(false);
@@ -30,16 +36,21 @@ const Destinations = () => {
         rejected: 0
     });
 
-    const [filters, setFilters] = useState({
-        source: 'tat',
-        status: 'all',
-        category: 'all',
-        placeCategory: 'all'
+    const [filters, setFilters] = useState(() => {
+        const source = searchParams.get('source');
+        return {
+            source: source === 'admin' || source === 'tat' ? source : 'tat',
+            status: searchParams.get('status') ?? 'all',
+            category: searchParams.get('category') ?? 'all',
+            placeCategory: searchParams.get('placeCategory') ?? 'all'
+        };
     });
 
     const abortRef = useRef(null);
     const debounceRef = useRef(null);
     const requestIdRef = useRef(0);
+    // หน้าแรกเข้าจาก URL (ย้อนกลับมา) — ใช้แค่ตอน mount ครั้งแรก
+    const initialPageRef = useRef(page);
 
     const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
     const sourceTotalCount = totalItems;
@@ -142,11 +153,33 @@ const Destinations = () => {
 
     // -----------------------
     // โหลดข้อมูลเมื่อคำค้นหาหรือหน้าเปลี่ยน
+    // mount ครั้งแรกใช้ค่า page/filter จาก URL (ย้อนกลับมา) ไม่ reset เป็น 1
     // -----------------------
+    const mountedRef = useRef(false);
     useEffect(() => {
+        if (!mountedRef.current) {
+            mountedRef.current = true;
+            fetchData(debouncedSearch, initialPageRef.current, filters.source, filters.placeCategory, filters.status, filters.category);
+            return;
+        }
         setPage(1);
         fetchData(debouncedSearch, 1, filters.source, filters.placeCategory, filters.status, filters.category);
     }, [debouncedSearch, filters.source, filters.placeCategory, filters.status, filters.category, fetchData]);
+
+    // -----------------------
+    // เขียนค่าค้นหา/filter/page กลับลง URL (replace ไม่ดัน history) —
+    // ใช้ค่าที่ debounce แล้วกัน URL ขยะทุกตัวอักษร
+    // -----------------------
+    useEffect(() => {
+        const params = {};
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (page !== 1) params.page = String(page);
+        if (filters.source !== 'tat') params.source = filters.source;
+        if (filters.status !== 'all') params.status = filters.status;
+        if (filters.category !== 'all') params.category = filters.category;
+        if (filters.placeCategory !== 'all') params.placeCategory = filters.placeCategory;
+        setSearchParams(params, { replace: true });
+    }, [debouncedSearch, page, filters, setSearchParams]);
 
     useEffect(() => {
         return () => {
