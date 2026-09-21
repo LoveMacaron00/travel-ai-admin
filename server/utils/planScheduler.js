@@ -267,18 +267,86 @@ const estimateFlightCostKm = (km) => {
     return Math.max(1000, Math.round(800 + distance * 4));
 };
 
-const estimateLegCostKm = (km, modeRaw) => {
+// รถเช่าขับเองที่ต่างจังหวัด (บินไปแล้วไม่มีรถส่วนตัวใช้):
+// ~10 บาท/กม. รวมค่าเช่า+น้ำมัน (วิ่ง 100 กม./วัน ≈ ค่าเช่าวันละพัน) ขั้นต่ำ 50
+const RENTAL_RATE_PER_KM = 10;
+const RENTAL_MIN_COST = 50;
+
+const estimateRentalCostKm = (km) => {
+    const distance = Number(km);
+    if (!Number.isFinite(distance) || distance < 0) return 0;
+    return Math.max(RENTAL_MIN_COST, Math.round(distance * RENTAL_RATE_PER_KM));
+};
+
+const estimateLegCostKm = (km, modeRaw, { rentalCar = false } = {}) => {
     if (km == null) return 0;
     const distance = Number(km);
     if (!Number.isFinite(distance) || distance < 0) return 0;
     const mode = String(modeRaw || 'car').toLowerCase();
     if (mode === 'walking') return 0;
-    if (mode === 'car') return estimateFuelCostKm(distance);
+    if (mode === 'car') {
+        return rentalCar ? estimateRentalCostKm(distance) : estimateFuelCostKm(distance);
+    }
     if (mode === 'flight') return estimateFlightCostKm(distance);
     if (distance < 0.5) return 50;
     const rates = { bus: 7, train: 12, ferry: 25 };
     const rate = rates[mode] ?? 15;
     return Math.max(50, Math.round(distance * rate));
+};
+
+// ขารถที่เป็นรถเช่าใช่ไหม (stop ถูกปัก rentalCar โดย markRentalCarLegs)
+const isRentalCarStop = (stop) => !!stop && typeof stop === 'object' && stop.rentalCar === true;
+
+// ปักธงรถเช่าให้ขารถทุกขาที่อยู่หลังขาบินขาแรกของทริป (mutate planData)
+// บินไปต่างจังหวัดแล้วไม่มีรถส่วนตัวใช้ ขับต่อที่นั่นต้องเช่ารถ — ไม่ใช่ค่าน้ำมันรถตัวเอง
+// เขียนค่าเช่า (estimateRentalCostKm) ทับลง stop ทันที — ค่า AI เดิมคิดบนฐานรถส่วนตัว
+// จึงใช้ไม่ได้ ส่วน chain ทีหลังคงค่านี้ไว้ผ่านกติกา keepCost (idempotent รันซ้ำได้)
+// ไม่ต้องมี origin (ดูแค่ลำดับ + พิกัดจุดก่อนหน้า)
+// คืน { marked (ธงใหม่), delta (ผลต่างยอดค่าเดินทางใหม่-เก่า เอาไปบวก totals ต่อ) }
+const markRentalCarLegs = (planData) => {
+    const empty = { marked: 0, delta: 0 };
+    if (!planData || typeof planData !== 'object') return empty;
+    const days = Array.isArray(planData.days) ? planData.days : [];
+    let flown = false;
+    let marked = 0;
+    let delta = 0;
+    let prevLat;
+    let prevLng;
+    for (const day of days) {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        for (const stop of stops) {
+            if (!stop || typeof stop !== 'object') continue;
+            const toLat = finiteCoord(stop.latitude);
+            const toLng = finiteCoord(stop.longitude);
+            // ขาบินนับทุกกรณี (รวมจุด transfer สนามบินที่เป็น isRestStop —
+            // หลัง enrich ขา flight จริงอยู่บน stop สนามบินขาเข้า)
+            if (String(stop.transportMode || '').toLowerCase() === 'flight') {
+                flown = true;
+            } else if (flown
+                && String(stop.transportMode || '').toLowerCase() === 'car'
+                && stop.isRestStop !== true
+                && !String(stop.destinationId ?? '').startsWith('osm:')) {
+                const km = (prevLat != null && prevLng != null && toLat != null && toLng != null)
+                    ? haversineKm(prevLat, prevLng, toLat, toLng)
+                    : null;
+                const rental = km == null ? RENTAL_MIN_COST : estimateRentalCostKm(km);
+                if (!isRentalCarStop(stop)) marked++;
+                // ยอดรวมฝั่ง totals นับจาก transportCost (segments เป็นรายละเอียดแสดงผล)
+                // จึงคิด delta แค่ transportCost กันนับซ้ำ
+                delta += rental - (Number(stop.transportCost) || 0);
+                stop.rentalCar = true;
+                stop.transportCost = rental;
+                if (Array.isArray(stop.segments) && stop.segments[0]) {
+                    stop.segments[0].estimatedCost = rental;
+                }
+            }
+            if (toLat != null && toLng != null) {
+                prevLat = toLat;
+                prevLng = toLng;
+            }
+        }
+    }
+    return { marked, delta };
 };
 
 // รถยนต์ส่วนตัวทุกทริป: คิดแค่ค่าน้ำมันตามระยะจริง
@@ -293,10 +361,11 @@ const estimateFuelCostKm = (km) => {
     return Math.round(distance * LOCAL_FUEL_RATE_PER_KM);
 };
 
-// รถยนต์ทุกคันคือรถส่วนตัว: ปรับขารถยนต์ทั้งแผนเป็นค่าน้ำมัน (mutate planData)
+// รถยนต์ส่วนตัว: ปรับขารถยนต์ทั้งแผนเป็นค่าน้ำมัน (mutate planData)
 // ระยะแต่ละขาคำนวณจากพิกัดจริงด้วยสูตรเดียวกับ chainDayTimes
 // (วันแรกจากจุดเริ่ม, วันถัดไปจากจุดสุดท้ายของวันก่อน) — เปลี่ยนแค่ "ราคา" ไม่แตะเวลา
 // dailyCap = เพดานน้ำมันรวมต่อวัน (ทริป local 300, ไม่ส่งมาคือไม่ cap — ขับไกลจ่ายตามระยะจริง)
+// ขารถเช่า (rentalCar) ข้าม — คิดเรทเช่าไว้แล้ว ไม่ใช่ค่าน้ำมัน
 // ขาไม่ใช่รถยนต์คงเดิม, ขาหาพิกัดไม่ได้คงเดิม
 const applyCarFuelCosts = (planData, { startLat, startLng, dailyCap = null } = {}) => {
     if (!planData || typeof planData !== 'object') return { saved: 0, cappedDays: 0 };
@@ -313,6 +382,7 @@ const applyCarFuelCosts = (planData, { startLat, startLng, dailyCap = null } = {
             const stop = stops[i];
             if (!stop || typeof stop !== 'object') continue;
             if (String(stop.transportMode || 'car').toLowerCase() !== 'car') continue;
+            if (isRentalCarStop(stop)) continue;
             let fromLat;
             let fromLng;
             if (i === 0) {
@@ -411,7 +481,7 @@ const chainDayTimes = (day, startMinutes, origin) => {
                 const mode = String(stop.transportMode || origin?.mode || 'car').toLowerCase();
                 const km = haversineKm(originLat, originLng, firstLat, firstLng);
                 const { travelMinutes } = computeLegMinutes(km, mode);
-                const cost = estimateLegCostKm(km, mode);
+                const cost = estimateLegCostKm(km, mode, { rentalCar: isRentalCarStop(stop) });
                 const originName = String(origin?.name || '').trim() || 'จุดเริ่มต้น';
                 stop.segments = [{
                     mode,
@@ -449,7 +519,7 @@ const chainDayTimes = (day, startMinutes, origin) => {
             // ค่า leg จริงจากระยะทาง — คงค่า AI ที่เป็นบวกไว้ ไม่เขียนทับ (กันยอดรวมร่วง)
             const legCost = Number.isFinite(keepCost) && keepCost > 0
                 ? keepCost
-                : estimateLegCostKm(km, mode);
+                : estimateLegCostKm(km, mode, { rentalCar: isRentalCarStop(stop) });
             stop.segments = [{
                 mode,
                 from: String(prev.place || ''),
@@ -676,6 +746,124 @@ const splitOverflowingDays = (planData, {
     return { moved, createdDays };
 };
 
+// ขาบินที่สั้นกว่านี้ถือว่าไม่สมจริง (เช่น AI ใส่ flight ให้ขาในเมือง 3 กม.)
+// 240 นาที overhead ล้วน + ค่าตั๋ว floor 1000 — ต้องลดเป็นภาคพื้น
+const MIN_FLIGHT_LEG_KM = 250;
+
+const GROUND_FALLBACK_LABEL = { car: 'รถยนต์', bus: 'รถโดยสาร', walking: 'เดิน' };
+
+// ลดโหมด flight ที่ระยะสั้นเกินบินให้เป็นภาคพื้น (mutate planData)
+// ไล่วันตามลำดับเหมือนเดินโซ่เวลา: วันแรกจาก origin (startLat/Lng) วันถัดไปจากจุดสุดท้ายวันก่อน
+// เขียนโหมด/เวลา/ราคาโหมดใหม่ลง stop ทันที (chain ทีหลังคงไว้ผ่านกติกา keepCost)
+// ขาที่แปลงหลังขาบินจริงปักธงรถเช่าด้วย (บินมาแล้วไม่มีรถส่วนตัว)
+// ไม่มี origin (เช่น PUT/GET) ขาแรกของวันวัดไม่ได้ → ข้าม (แก้เฉพาะขาที่วัดระยะได้)
+// คืน { fixed (ขาที่แก้), delta (ผลต่างยอดค่าเดินทางใหม่-เก่า เอาไปบวก totals ต่อ) }
+const downgradeShortFlights = (planData, {
+    startLat,
+    startLng,
+    allowedModes = ['car'],
+    minFlightKm = MIN_FLIGHT_LEG_KM,
+} = {}) => {
+    const empty = { fixed: 0, delta: 0 };
+    if (!planData || typeof planData !== 'object') return empty;
+    const days = Array.isArray(planData.days) ? planData.days : [];
+    if (days.length === 0) return empty;
+    const allowed = [...new Set(
+        (Array.isArray(allowedModes) ? allowedModes : [])
+            .map((m) => String(m || '').trim().toLowerCase())
+            .filter(Boolean),
+    )];
+    const fallback = ['car', 'bus', 'walking'].find((m) => allowed.includes(m))
+        || allowed[0]
+        || 'car';
+    const fallbackLabel = GROUND_FALLBACK_LABEL[fallback] || fallback;
+    let prevLat = finiteCoord(startLat);
+    let prevLng = finiteCoord(startLng);
+    let flown = false;
+    let fixed = 0;
+    let delta = 0;
+    for (const day of days) {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        for (let i = 0; i < stops.length; i++) {
+            const stop = stops[i];
+            if (!stop || typeof stop !== 'object') continue;
+            const toLat = finiteCoord(stop.latitude);
+            const toLng = finiteCoord(stop.longitude);
+            const isFlight = String(stop.transportMode || '').toLowerCase() === 'flight';
+            const isRestLike = stop.isRestStop === true
+                || String(stop.destinationId ?? '').startsWith('osm:');
+            let fromLat;
+            let fromLng;
+            if (i === 0) {
+                // ไม่มี origin วัดขาแรกไม่ได้ — ข้าม แต่จดพิกัดไว้ให้ขาถัดไปวัดต่อ
+                // (ขาบินจริงขาแรกยังนับเป็น flown ไม่ได้เพราะวัดระยะไม่ได้ — อนุรักษ์ไว้ก่อน)
+                if (prevLat == null || prevLng == null) {
+                    if (toLat != null && toLng != null) {
+                        prevLat = toLat;
+                        prevLng = toLng;
+                    }
+                    continue;
+                }
+                fromLat = prevLat;
+                fromLng = prevLng;
+            } else {
+                fromLat = finiteCoord(stops[i - 1]?.latitude);
+                fromLng = finiteCoord(stops[i - 1]?.longitude);
+            }
+            if (toLat == null || toLng == null) continue;
+            // จดพิกัดทุกจุด (รวมที่พัก/จุดพัก) — วันถัดไปจะได้วัดขาแรกต่อได้
+            prevLat = toLat;
+            prevLng = toLng;
+            // จุดพักปกติที่ไม่ใช่ขาบินข้าม (ที่พักค้างคืนจะแปลงโหมดข้างล่างถ้าขาเข้าเพี้ยน)
+            if (isRestLike && !isFlight) continue;
+            if (!isFlight) continue;
+            if (fromLat == null || fromLng == null) continue;
+            const km = haversineKm(fromLat, fromLng, toLat, toLng);
+            if (km == null) continue;
+            if (km >= minFlightKm) {
+                flown = true;
+                continue;
+            }
+            // ขาบินสั้น → ลดเป็นภาคพื้น (รวมขาเข้าที่พัก/จุดพัก — โหมดเพี้ยนเหมือนกัน
+            // แต่คง duration/tip/isRestStop ไว้ การ์ดที่พักยังเป็นสีม่วงเหมือนเดิม)
+            // หลังขาบินจริง = รถเช่า
+            const rental = flown && fallback === 'car';
+            const { travelMinutes: groundMinutes } = computeLegMinutes(km, fallback);
+            const legCost = estimateLegCostKm(km, fallback, { rentalCar: rental });
+            delta += legCost - (Number(stop.transportCost) || 0);
+            stop.transportMode = fallback;
+            stop.transportCost = legCost;
+            if (rental) stop.rentalCar = true;
+            if (Array.isArray(stop.segments) && stop.segments[0]) {
+                stop.segments[0].mode = fallback;
+                stop.segments[0].estimatedCost = legCost;
+                stop.segments[0].estimatedMinutes = groundMinutes;
+            }
+            const note = `ขานี้ใกล้ (~${km < 1 ? `${Math.round(km * 1000)} ม.` : `${Math.round(km)} กม.`}) ` +
+                `เปลี่ยนจากเครื่องบินเป็น${rental ? 'รถเช่า' : fallbackLabel}ให้แล้ว (บินไม่คุ้ม)`;
+            stop.tip = stop.tip ? `${stop.tip} ${note}` : note;
+            fixed++;
+        }
+    }
+    return { fixed, delta };
+};
+
+// บวกผลต่างค่าเดินทางเข้ายอดรวม (totalEstimatedCost + budgetBreakdown.transport)
+// ใช้ร่วมกันทุก flow ที่แก้ราคา leg (downgrade/mark/enrich) กันยอดรวมหลุดจากยอดขา
+const applyTransportDelta = (planData, delta) => {
+    if (!planData || typeof planData !== 'object') return;
+    if (!Number.isFinite(delta) || delta === 0) return;
+    const total = Number(planData.totalEstimatedCost);
+    planData.totalEstimatedCost = Math.max(
+        0, (Number.isFinite(total) ? total : 0) + delta);
+    if (!planData.budgetBreakdown || typeof planData.budgetBreakdown !== 'object') {
+        planData.budgetBreakdown = { accommodation: 0, food: 0, transport: 0, activities: 0 };
+    }
+    const transport = Number(planData.budgetBreakdown.transport);
+    planData.budgetBreakdown.transport = Math.max(
+        0, (Number.isFinite(transport) ? transport : 0) + delta);
+};
+
 // เดินโซ่เวลาทุกวันโดยคงลำดับเดิมทุกจุด (ใช้ตอน PUT — เคารพลำดับที่ผู้ใช้จัดเอง)
 // จุดแรก: arrival ที่เก็บไว้รวมขาแรกแล้ว จึงหักขาแรกออกเป็น departure ก่อนเดินโซ่ใหม่
 // แล้ว chainDayTimes สาขา preservation จะคงขาแรกนั้นไว้ (เวลา/ราคาไม่ขยับ)
@@ -723,6 +911,10 @@ module.exports = {
     estimateLegCostKm,
     estimateFlightCostKm,
     estimateFuelCostKm,
+    estimateRentalCostKm,
+    isRentalCarStop,
+    markRentalCarLegs,
+    RENTAL_RATE_PER_KM,
     applyCarFuelCosts,
     orderStopsNearestNeighbor,
     chainDayTimes,
@@ -731,5 +923,8 @@ module.exports = {
     validateDayFit,
     validateOpeningAndLateNight,
     splitOverflowingDays,
+    MIN_FLIGHT_LEG_KM,
+    downgradeShortFlights,
+    applyTransportDelta,
     chainAllDaysPreservingOrder,
 };

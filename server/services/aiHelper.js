@@ -26,6 +26,8 @@ const {
     splitOverflowingDays,
     applyCarFuelCosts,
     normalizeThaiName,
+    downgradeShortFlights,
+    applyTransportDelta,
     LOCAL_FUEL_CAP_PER_DAY,
 } = require('../utils/planScheduler');
 const { config } = require('../config/env');
@@ -664,7 +666,7 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
     - ความสนใจ: ${(tripInput.interests || []).join(', ') || 'ไม่ระบุ'}
     - พื้นที่/จังหวัด (ถ้ามี): ${tripInput.destination || 'ให้เลือกจากตำแหน่ง GPS'}
     - วิธีเดินทางที่ยอมรับ: ${allowedTransportModes.join(', ')}
-    - รถยนต์คือรถส่วนตัวของผู้ใช้ (ไม่มีค่าเช่า/แท็กซี่): ประเมิน transportCost ทุกขารถยนต์ตามค่าน้ำมัน ~3 บาท/กม.${localTrip ? ' รวมทั้งวันไม่เกิน 300 บาท' : ''}
+    - รถยนต์คือรถส่วนตัวของผู้ใช้ (ไม่มีค่าเช่า/แท็กซี่): ประเมิน transportCost ทุกขารถยนต์ตามค่าน้ำมัน ~3 บาท/กม.${localTrip ? ' รวมทั้งวันไม่เกิน 300 บาท' : ''} ยกเว้นขารถในต่างจังหวัดที่ไปถึงโดยเครื่องบิน — ขาพวกนั้นผู้ใช้ไม่มีรถส่วนตัว ต้องคิดเป็นรถเช่า ~10 บาท/กม.
     - สถานที่ที่ผู้ใช้บังคับเลือก: ${mustVisitDescription}
     - สถานที่ที่ผู้ใช้ลบและห้ามเสนอซ้ำ: ${(tripInput.excluded_places || []).join(', ') || 'ไม่มี'}
     - เวลาเริ่มเดินทางแต่ละวัน: ${dayStartClock}
@@ -679,6 +681,7 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
     ถ้าเป็นรถไฟหรือเรือ ให้ใส่ segments แยกช่วงไปสถานี/ท่าเรือ ช่วงขนส่งหลัก และช่วงต่อไปยังจุดหมาย โดยใช้ชื่อจุดเชื่อมต่อจริงที่มั่นใจเท่านั้น
     ถ้าเป็นเครื่องบิน ห้ามสร้าง stop สนามบินเองเด็ดขาด — แค่ตั้ง transportMode เป็น flight สำหรับขาที่ไกลจนต้องบิน (≥250 กม.) ระบบจะแทรกสนามบินต้นทาง/ปลายทางจริงจาก OpenStreetMap พร้อมคำนวณเวลาและค่าโดยสารให้เอง
     ใช้ flight สำหรับระยะไกลที่ต้องบิน, ferry สำหรับการข้ามเกาะ/ทะเล, train สำหรับเส้นทางรถไฟ, bus หรือ car สำหรับถนน และ walking เฉพาะระยะที่เดินได้จริง
+    ห้ามใช้ flight กับขาที่ระยะทางต่ำกว่า ~250 กม. เด็ดขาด (เช่น เดินทางในเมือง/จังหวัดเดียวกันให้ใช้ car/bus/walking — บินระยะสั้นไม่สมจริงทั้งเวลาและราคา)
     ห้ามแต่งหมายเลขเที่ยวบิน รอบเรือ รอบรถไฟ หรือเวลาออกเดินทางจริง หากไม่มีข้อมูลตารางเวลา ให้ระบุใน tip ว่าเป็นเวลาโดยประมาณและควรตรวจสอบตารางกับผู้ให้บริการ
     ถ้าผู้ใช้อนุญาตวิธีเดินทางระยะไกลและไม่ได้จำกัดจังหวัด สามารถวางแผนหลายจังหวัดได้เมื่อจำนวนวันและงบประมาณเหมาะสม แต่ไม่จำเป็นต้องฝืนเดินทางไกล
     ค่าใช้จ่ายทั้งหมดเป็นค่าประมาณต่อทริป และทุก stop ต้องมี latitude/longitude ที่ใช้งานบนแผนที่ได้
@@ -786,6 +789,22 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                         if (!planData.tips.includes(info)) planData.tips.push(info);
                         console.warn('[ai] island crossings fixed by regrouping');
                     }
+                }
+                // ---- กันโหมดเพี้ยน: ขา flight สั้นกว่า ~250 กม. (เช่น บินในเมือง) ลดเป็นรถยนต์ ----
+                // AI ชอบใส่ flight ให้ขาใกล้ ๆ ทำให้เวลา (overhead 2 ชม.) กับราคา (floor 1000) เพี้ยน
+                // ทำก่อนจัดลำดับ+เดินโซ่ เพื่อให้ chain คำนวณเวลา/ราคาโหมดใหม่ทั้งหมด
+                try {
+                    const { fixed, delta } = downgradeShortFlights(planData, {
+                        startLat: tripInput.start_latitude,
+                        startLng: tripInput.start_longitude,
+                        allowedModes: allowedTransportModes,
+                    });
+                    applyTransportDelta(planData, delta);
+                    if (fixed > 0) {
+                        console.warn(`[ai] downgraded ${fixed} short flight legs to ground transport`);
+                    }
+                } catch (downgradeError) {
+                    console.warn(`[ai] flight downgrade skipped: ${downgradeError.message}`);
                 }
                 // ---- จัดลำดับ + เดินโซ่เวลา deterministic (เขียนทับเวลาที่ AI เดามา) ----
                 // จัดลำดับจากจุดเริ่มต้นจริงแล้วเดินโซ่ ถึง→เที่ยว→ออก→เดินทาง→ถึง ต่อเนื่องทั้งวัน

@@ -16,6 +16,10 @@ const {
     finiteCoord,
     DEFAULT_DAY_START_MINUTES,
     DAY_BUDGET_MINUTES,
+    MIN_FLIGHT_LEG_KM,
+    markRentalCarLegs,
+    applyTransportDelta,
+    RENTAL_RATE_PER_KM,
 } = require('../utils/planScheduler');
 const { fetchWithTimeout } = require('../utils/httpHelper');
 const { createTtlCache } = require('../utils/ttlCache');
@@ -497,7 +501,8 @@ const buildOvernightStopFromDb = (row, mode) => {
 // แล้วเดินโซ่เวลาใหม่ทั้งวัน — แผนที่วาดขารถตามถนนจริง (OSRM) + ขาบินเส้นตรงสนามบินถึงสนามบิน
 // สนามบินต้น-ปลายห่างกัน <150 กม. หรือหาไม่เจอ → คงขาบินตรงเดิม (best-effort ไม่ล้มทั้งทริป)
 // findAirports รับมาเพื่อทดสอบได้โดยไม่ต้องยิง Overpass (default = searchAirports)
-const FLIGHT_MIN_DIRECT_KM = 250;
+// เกณฑ์ขาบินขั้นต่ำใช้ค่ากลางจาก planScheduler (ที่เดียวกับ downgradeShortFlights)
+const FLIGHT_MIN_DIRECT_KM = MIN_FLIGHT_LEG_KM;
 const FLIGHT_MIN_AIRPORT_KM = 150;
 
 async function enrichPlanWithFlightTransfers(planData, {
@@ -506,10 +511,16 @@ async function enrichPlanWithFlightTransfers(planData, {
     startLng,
     findAirports = searchAirports,
 } = {}) {
-    if (!planData || typeof planData !== 'object') return { enriched: 0 };
-    if (config.overpass && config.overpass.enabled === false) return { enriched: 0 };
+    if (!planData || typeof planData !== 'object') return { enriched: 0, rentalMarked: 0 };
     const days = Array.isArray(planData.days) ? planData.days : [];
-    if (days.length === 0) return { enriched: 0 };
+    if (days.length === 0) return { enriched: 0, rentalMarked: 0 };
+    // ปักธงรถเช่าก่อน (ไม่ต้องใช้เน็ต) — ขารถหลังขาบินต้องคิดเรทเช่า
+    // chain ข้างล่างอ่านธงตอนคำนวณ (idempotent เรียกซ้ำได้)
+    const { marked: rentalPreMarked, delta: rentalDelta } = markRentalCarLegs(planData);
+    let rentalMarked = rentalPreMarked;
+    if (config.overpass && config.overpass.enabled === false) {
+        return { enriched: 0, rentalMarked };
+    }
     const groundRaw = String(primaryGroundMode || 'car').toLowerCase();
     const groundMode = ['car', 'bus'].includes(groundRaw) ? groundRaw : 'car';
     // origin ของวันนั้น (helper กลาง — โหมดขาแรกคงที่ groundMode)
@@ -585,10 +596,13 @@ async function enrichPlanWithFlightTransfers(planData, {
             }
             // แทรกสนามบิน 2 จุดหน้า dest; ขาสุดท้ายเป็นรถจึงเปลี่ยน dest เป็นภาคพื้น
             // (ล้างค่า leg เดิมของ dest ก่อน — ไม่งั้น chain คงราคา flight เดิมไว้)
+            // dest ต่อจากขาบิน = รถเช่าเสมอ (บินมาแล้วไม่มีรถส่วนตัว) — ปักธงให้ chain คิดเรทเช่า
             const oldDestTransport = Number(stop.transportCost) || 0;
             stop.transportCost = 0;
             stop.segments = [];
             stop.transportMode = groundMode;
+            stop.rentalCar = true;
+            rentalMarked++;
             const depStop = buildAirportStop(dep, groundMode, { isDeparture: true });
             const arrStop = buildAirportStop(arr, 'flight', { isDeparture: false });
             const anchor = getDayDeparture(day);
@@ -602,31 +616,30 @@ async function enrichPlanWithFlightTransfers(planData, {
             const flightHours = Math.round((airKm / 550) * 10) / 10;
             const routeNote = `ขานี้บิน ${dep.iata || dep.name}→${arr.iata || arr.name} ` +
                 `(~${Math.round(airKm)} กม. บิน ~${flightHours} ชม. ไม่รวมรอขึ้นเครื่อง) ` +
-                `ควรตรวจสอบตารางบินกับสายการบินอีกครั้ง`;
+                `ต่อจากสนามบินใช้รถเช่า ควรตรวจสอบตารางบินกับสายการบินอีกครั้ง`;
             stop.tip = stop.tip ? `${stop.tip} ${routeNote}` : routeNote;
             enriched++;
             i += 3;
         }
     }
-    // ปรับยอดรวมด้วยผลต่างค่าเดินทาง (ขาบินใหม่มักถูกลงเพราะเรทค่าเครื่องสมจริง)
-    if (transportDelta !== 0) {
-        const total = Number(planData.totalEstimatedCost);
-        planData.totalEstimatedCost = Math.max(
-            0, (Number.isFinite(total) ? total : 0) + transportDelta);
-        if (!planData.budgetBreakdown || typeof planData.budgetBreakdown !== 'object') {
-            planData.budgetBreakdown = { accommodation: 0, food: 0, transport: 0, activities: 0 };
-        }
-        const transport = Number(planData.budgetBreakdown.transport);
-        planData.budgetBreakdown.transport = Math.max(
-            0, (Number.isFinite(transport) ? transport : 0) + transportDelta);
-    }
-    if (enriched > 0) {
+    // ปรับยอดรวมด้วยผลต่างค่าเดินทาง (ขาบินใหม่มักถูกลงเพราะเรทค่าเครื่องสมจริง
+    // + ขารถเช่าหลังขาบินที่ markRentalCarLegs เขียนทับไว้)
+    transportDelta += rentalDelta;
+    applyTransportDelta(planData, transportDelta);
+    if (enriched > 0 || rentalMarked > 0) {
         planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
-        const credit = `ขาบินระยะไกล ${enriched} ขา ระบบแทรกสนามบินจริงจาก ${REST_STOP_ATTRIBUTION} ให้แล้ว ` +
-            `(นั่งรถไปสนามบิน → บิน → นั่งรถต่อ)`;
-        if (!planData.tips.includes(credit)) planData.tips.push(credit);
+        if (enriched > 0) {
+            const credit = `ขาบินระยะไกล ${enriched} ขา ระบบแทรกสนามบินจริงจาก ${REST_STOP_ATTRIBUTION} ให้แล้ว ` +
+                `(นั่งรถไปสนามบิน → บิน → นั่งรถต่อ)`;
+            if (!planData.tips.includes(credit)) planData.tips.push(credit);
+        }
+        if (rentalMarked > 0) {
+            const rentalNote = `ขาในต่างจังหวัดที่ไปถึงโดยเครื่องบิน ${rentalMarked} ขา ` +
+                `คิดค่ารถเป็นเรทเช่ารถขับเอง (~${RENTAL_RATE_PER_KM} บาท/กม. รวมค่าเช่า+น้ำมัน) ไม่ใช่รถส่วนตัว`;
+            if (!planData.tips.includes(rentalNote)) planData.tips.push(rentalNote);
+        }
     }
-    return { enriched };
+    return { enriched, rentalMarked };
 }
 
 // origin ของวันสำหรับคำนวณขาแรก (ใช้ร่วมกันทั้ง flight/rest enrichment):

@@ -9,12 +9,46 @@ const {
 const {
     parseStartTimeInput,
     chainAllDaysPreservingOrder,
+    downgradeShortFlights,
+    markRentalCarLegs,
+    applyTransportDelta,
 } = require('../utils/planScheduler');
 const tripRepository = require('../repositories/tripRepository');
 
 const normalizeStoredPlan = (planData, places) => {
     normalizePlanPlaces(planData, places);
     sanitizePlaceholderPlanImages(planData);
+};
+
+// ซ่อมแผนเก่าตอนเปิดดู (in-memory เท่านั้น — ไม่เขียนกลับ DB)
+// แผนที่สร้างก่อนมีตัวกันโหมดเพี้ยน/รถเช่า เปิดดูก็เห็นขาบินในเมืองเหมือนเดิม
+// จึงรัน pipeline เดียวกับ PUT ให้ตรงกัน: ลด flight ระยะสั้น → ปักธงรถเช่า → เดินโซ่เวลาใหม่
+// (ไม่มีพิกัดจุดเริ่ม ขาแรกของวันวัดไม่ได้จึงข้ามเหมือน PUT)
+const repairStoredPlanForDisplay = (trip, places) => {
+    const planData = trip?.plan_data;
+    if (!planData || !Array.isArray(planData.days)) return;
+    try {
+        const { delta: downgradeDelta } = downgradeShortFlights(planData);
+        const { delta: rentalDelta } = markRentalCarLegs(planData);
+        applyTransportDelta(planData, downgradeDelta + rentalDelta);
+    } catch {
+        // best-effort — ล้มก็โชว์แผนเดิม
+    }
+    try {
+        const warnings = chainAllDaysPreservingOrder(planData, {
+            defaultStartMinutes: parseStartTimeInput(trip?.start_time),
+            places: places || [],
+        });
+        if (warnings.length > 0) {
+            planData.warnings = [...new Set([...(planData.warnings || []), ...warnings])];
+            planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+            for (const warning of warnings) {
+                if (!planData.tips.includes(warning)) planData.tips.push(warning);
+            }
+        }
+    } catch {
+        // best-effort — ล้มก็โชว์เวลาที่เก็บไว้เดิม
+    }
 };
 
 // POST /api/trips — สร้าง trip ใหม่แล้ว stream แผน
@@ -68,7 +102,10 @@ const getUserTrips = async (req, res) => {
         const userId = req.user?.id;
         const rows = await tripRepository.findUserTripsWithPlans(userId);
         const places = await tripRepository.findApprovedPlanPlaces();
-        for (const trip of rows) normalizeStoredPlan(trip.plan_data, places);
+        for (const trip of rows) {
+            normalizeStoredPlan(trip.plan_data, places);
+            repairStoredPlanForDisplay(trip, places);
+        }
         res.json(rows);
     } catch (err) {
         console.error('[tripController] getUserTrips:', err.message);
@@ -82,7 +119,9 @@ const getTripById = async (req, res) => {
     try {
         const trip = await tripRepository.findTripWithPlanById(req.params.id, req.user?.id);
         if (!trip) return res.status(404).json({ message: 'ไม่พบแผนเที่ยว' });
-        normalizeStoredPlan(trip.plan_data, await tripRepository.findApprovedPlanPlaces());
+        const places = await tripRepository.findApprovedPlanPlaces();
+        normalizeStoredPlan(trip.plan_data, places);
+        repairStoredPlanForDisplay(trip, places);
         res.json(trip);
     } catch (err) {
         console.error('[tripController] getTripById:', err.message);
@@ -131,6 +170,16 @@ const updateTripPlan = async (req, res) => {
             planPlaces = await tripRepository.findApprovedPlanPlaces();
         } catch {
             planPlaces = [];
+        }
+        // กันโหมดเพี้ยนค้างจากแผนเก่า (เช่น ขาในเมือง 3 กม. เป็น flight) — ลดเป็นรถยนต์ก่อนเดินโซ่
+        // ไม่มีพิกัดจุดเริ่ม ขาแรกของวันวัดไม่ได้จึงข้าม (แก้เฉพาะขาที่วัดระยะได้)
+        // ขารถหลังขาบินคือรถเช่า (บินไปแล้วไม่มีรถส่วนตัว) — ปักธงก่อนเดินโซ่เช่นกัน
+        try {
+            const { delta: downgradeDelta } = downgradeShortFlights(planData);
+            const { delta: rentalDelta } = markRentalCarLegs(planData);
+            applyTransportDelta(planData, downgradeDelta + rentalDelta);
+        } catch {
+            // best-effort — ล้มก็เดินโซ่เวลาต่อด้วยโหมด/ราคาเดิม
         }
         const warnings = chainAllDaysPreservingOrder(
             planData,
