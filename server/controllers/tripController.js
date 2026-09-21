@@ -125,9 +125,18 @@ const updateTripPlan = async (req, res) => {
                 : undefined;
         }
         delete planData.start_time;
+        // โหลดสถานที่พร้อมเวลาเปิด-ปิดเพื่อตรวจเที่ยดึก/นอกเวลาเปิด (best-effort — ล้มก็ตรวจแค่เที่ยวดึก)
+        let planPlaces = [];
+        try {
+            planPlaces = await tripRepository.findApprovedPlanPlaces();
+        } catch {
+            planPlaces = [];
+        }
         const warnings = chainAllDaysPreservingOrder(
             planData,
-            defaultStartMinutes === undefined ? {} : { defaultStartMinutes },
+            defaultStartMinutes === undefined
+                ? { places: planPlaces }
+                : { defaultStartMinutes, places: planPlaces },
         );
         if (warnings.length > 0) {
             planData.warnings = [...new Set([...(planData.warnings || []), ...warnings])];

@@ -29,6 +29,12 @@ const DAY_BUDGET_MINUTES = 600;
 const MAX_STOPS_PER_DAY = 5;
 const DEFAULT_DAY_START_MINUTES = 9 * 60;
 
+// กันเที่ยวดึก: ไม่จัดที่เที่ยวหลัง 21:00 และวันต้องจบไม่เกิน 22:00
+// (ที่พัก overnight / จุดพัก rest กลางทางได้รับการยกเว้น — นอน/พักได้ดึก)
+const LATE_NIGHT_START_MINUTES = 21 * 60;
+const DAY_HARD_END_MINUTES = 22 * 60;
+const MAX_PLAN_DAYS = 7;
+
 const clampDurationMinutes = (value, fallback = 90) => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -51,6 +57,121 @@ const parseStartTimeInput = (value) => parseClockToMinutes(value) ?? DEFAULT_DAY
 const formatClock = (totalMinutes) => {
     const wrapped = ((Math.round(totalMinutes) % 1440) + 1440) % 1440;
     return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`;
+};
+
+// "08:00" / "8:00" / "09:00:00" / "9:00 AM" / "08.00" → นาที, แปลงไม่ได้ → null
+// "00:00" / "00:00 AM" ถือว่าไม่ระบุเวลา (หลายแถวใน DB ใช้ค่านี้เป็น unknown)
+const parseTimeFlexible = (value) => {
+    if (value == null) return null;
+    let text = String(value).trim();
+    if (!text || text === '00:00' || text === '00:00:00') return null;
+    const ampm = text.match(/([AP])\.?\s*M\.?/i);
+    // "08.30" → "08:30"
+    text = text.replace(/(\d)\.(\d{2})/, '$1:$2');
+    const match = text.match(/(\d{1,2})\s*[:.]\s*(\d{2})(?:\s*[:.]\s*\d{2})?/);
+    if (!match) return null;
+    let hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+    if (minutes > 59) return null;
+    if (ampm) {
+        const isPm = ampm[1].toUpperCase() === 'P';
+        if (hours < 1 || hours > 12) return null;
+        if (isPm && hours !== 12) hours += 12;
+        if (!isPm && hours === 12) hours = 0;
+    } else if (hours > 23) {
+        return null;
+    }
+    if (hours === 0 && minutes === 0) return null;
+    return hours * 60 + minutes;
+};
+
+// ดึงกรอบเวลาเปิด-ปิดของสถานที่จากหลาย schema:
+// opening_time/closing_time ("08:00"), opening_hours (array [{open,close}] หรือ string),
+// tat_raw.openingHours / tat_raw เดิม — คืน {open, close} นาที หรือ null ถ้าไม่รู้
+const getPlaceOpeningWindow = (place) => {
+    if (!place || typeof place !== 'object') return null;
+    const raw = place.tat_raw || place.tatRaw || null;
+    let rawObj = null;
+    if (typeof raw === 'string') {
+        try { rawObj = JSON.parse(raw); } catch { rawObj = null; }
+    } else if (raw && typeof raw === 'object') {
+        rawObj = raw;
+    }
+    // 1) opening_time / closing_time ตรง ๆ
+    const directOpen = parseTimeFlexible(place.opening_time ?? place.openingTime);
+    const directClose = parseTimeFlexible(place.closing_time ?? place.closingTime);
+    if (directOpen != null && directClose != null) return { open: directOpen, close: directClose };
+    // 2) opening_hours array
+    const list = place.opening_hours ?? place.openingHours ?? rawObj?.openingHours;
+    if (Array.isArray(list) && list.length > 0) {
+        const first = list[0] || {};
+        const open = parseTimeFlexible(first.open ?? first.openTime ?? first.start ?? first.from);
+        const close = parseTimeFlexible(first.close ?? first.closeTime ?? first.end ?? first.to);
+        if (open != null && close != null) return { open, close };
+        // บางแถวเก็บ description ข้อความ "09:00 - 18:00" ในช่องเดียว
+        const desc = String(first.description ?? first.text ?? '').trim();
+        if (desc) {
+            const range = desc.match(/(\d{1,2}[:.]\d{2}[^0-9APM]*[-–—ถึง]+[^0-9]*\d{1,2}[:.]\d{2})/i);
+            if (range) {
+                const parts = range[1].split(/[-–—]/);
+                const o = parseTimeFlexible(parts[0]);
+                const c = parseTimeFlexible(parts[1]);
+                if (o != null && c != null) return { open: o, close: c };
+            }
+        }
+    } else if (typeof list === 'string' && list.trim()) {
+        const range = list.match(/(\d{1,2}[:.]\d{2})\s*[-–—]\s*(\d{1,2}[:.]\d{2})/);
+        if (range) {
+            const o = parseTimeFlexible(range[1]);
+            const c = parseTimeFlexible(range[2]);
+            if (o != null && c != null) return { open: o, close: c };
+        }
+    }
+    // 3) tat_raw.information / detail อาจมีเวลาฝังอยู่ — fallback แบบ best-effort
+    if (rawObj) {
+        const candidates = [
+            rawObj?.information?.openTime, rawObj?.information?.closeTime,
+            rawObj?.openTime, rawObj?.closeTime,
+        ];
+        const o = parseTimeFlexible(candidates[0]);
+        const c = parseTimeFlexible(candidates[1]);
+        if (o != null && c != null) return { open: o, close: c };
+    }
+    // 4) มีข้างเดียว (เช่น รู้แค่เปิด) — ถือว่าไม่พอตรวจ
+    return null;
+};
+
+// ตรวจว่าช่วงเที่ยว [arrival, departure) อยู่ในเวลาเปิด-ปิดไหม
+// รองรับร้านข้ามคืน (close < open เช่น 18:00-02:00) และเผื่อเวลา 15 นาทีให้เดินออก
+// ไม่รู้เวลาเปิด (null) → ถือว่าผ่าน (ไม่บล็อก)
+const isWithinOpeningHours = (arrivalMinutes, departureMinutes, window) => {
+    if (!window || window.open == null || window.close == null) return true;
+    const arrival = ((Math.round(arrivalMinutes) % 1440) + 1440) % 1440;
+    const departure = ((Math.round(departureMinutes) % 1440) + 1440) % 1440;
+    const { open, close } = window;
+    if (close === open) return true;
+    const overnight = close < open;
+    if (!overnight) {
+        return arrival >= open && arrival < close && departure <= close + 15;
+    }
+    // ข้ามคืน: เปิด 18:00 ปิด 02:00 → ช่วง [open,1440) ∪ [0,close]
+    const inOpen = (t) => t >= open || t < close;
+    return inOpen(arrival) && (inOpen(departure) || departure <= close + 15);
+};
+
+// จุดนี้ถือว่า "เที่ยวดึก" ไหม — ที่เที่ยว (ไม่ใช่ overnight/rest) ที่ถึง ≥21:00
+// หรือออกเกิน 22:00 หรือโผล่ช่วง 00:00-05:00 (formatClock วนรอบเที่ยงคืนแล้ว)
+const isLateNightVisit = (stop, arrivalMinutes, departureMinutes) => {
+    if (!stop || typeof stop !== 'object') return false;
+    if (stop.stopType === 'overnight' || stop.isRestStop === true) return false;
+    if (String(stop.destinationId ?? '').startsWith('osm:')) return false;
+    const arrival = ((Math.round(arrivalMinutes) % 1440) + 1440) % 1440;
+    const departure = ((Math.round(departureMinutes) % 1440) + 1440) % 1440;
+    if (arrival >= LATE_NIGHT_START_MINUTES) return true;
+    if (departure > DAY_HARD_END_MINUTES && departure < 12 * 60) return true;
+    if (arrival < 5 * 60) return true;
+    return false;
 };
 
 const finiteCoord = (value) => {
@@ -385,13 +506,168 @@ const validateDayFit = (planData, { dayBudgetMinutes = DAY_BUDGET_MINUTES } = {}
     return { warnings, totalUsedMinutes };
 };
 
+// สร้าง map id → place + name-normalized สำหรับตรวจเวลาเปิด-ปิด
+const buildPlacesById = (places) => {
+    const byId = new Map();
+    const byName = new Map();
+    const norm = (v) => String(v || '').normalize('NFKC').toLocaleLowerCase('th').replace(/[^\p{L}\p{N}]+/gu, '');
+    for (const place of places || []) {
+        if (!place || typeof place !== 'object') continue;
+        const id = String(place.id ?? '').trim();
+        if (id) byId.set(id, place);
+        const nameKey = norm(place.name);
+        if (nameKey) byName.set(nameKey, place);
+    }
+    return { byId, byName };
+};
+
+const findPlaceForStop = (stop, index) => {
+    const { byId, byName } = index || {};
+    if (!stop || typeof stop !== 'object') return null;
+    const id = String(stop.destinationId ?? '').trim();
+    if (id && byId && byId.has(id)) return byId.get(id);
+    const norm = (v) => String(v || '').normalize('NFKC').toLocaleLowerCase('th').replace(/[^\p{L}\p{N}]+/gu, '');
+    const key = norm(stop.place);
+    if (key && byName && byName.has(key)) return byName.get(key);
+    return null;
+};
+
+// ตรวจเวลาเปิด-ปิด + เที่ยวดึกทั้งแผน (ไม่ mutate)
+// - เที่ยวดึก: ที่เที่ยวที่ถึง ≥21:00 / ออกเกิน 22:00 / ช่วง 00:00-05:00
+// - เปิด-ปิด: เทียบ arrival→departure กับ opening_time/closing_time/opening_hours ใน DB
+//   (stop ที่พก openingTime/closingTime มาด้วยใช้ค่าของตัวเองก่อน — ใช้ตอน PUT ที่ไม่มี places)
+// คืน warnings ภาษาไทย (dedup ฝั่ง caller)
+const validateOpeningAndLateNight = (planData, places = [], {
+    lateNightStart = LATE_NIGHT_START_MINUTES,
+    hardEnd = DAY_HARD_END_MINUTES,
+} = {}) => {
+    const warnings = [];
+    const index = buildPlacesById(places);
+    for (const day of planData?.days || []) {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        for (const stop of stops) {
+            if (!stop || typeof stop !== 'object') continue;
+            if (stop.stopType === 'overnight' || stop.isRestStop === true) continue;
+            if (String(stop.destinationId ?? '').startsWith('osm:')) continue;
+            const arrival = parseClockToMinutes(stop.arrivalTime);
+            if (arrival == null) continue;
+            const duration = clampDurationMinutes(stop.durationMinutes);
+            const departure = arrival + duration;
+            // 1) เที่ยวดึกก่อน — สำคัญสุด (ผู้ใช้บ่นจากภาพ 23:09 / 00:45 / 03:21)
+            if (isLateNightVisit(stop, arrival, departure)) {
+                const leave = formatClock(departure);
+                warnings.push(
+                    `วันที่ ${day?.day ?? '?'}: “${stop.place || 'ไม่ทราบชื่อ'}” ` +
+                    `ถึง ${stop.arrivalTime} ออก ${leave} — ดึกเกินไป (ปกติเที่ยวถึง ~21:00) ` +
+                    `ควรย้ายไปวันอื่นหรือเพิ่มวัน`,
+                );
+                continue;
+            }
+            // 2) เวลาเปิด-ปิด
+            let window = null;
+            const stopOpen = parseTimeFlexible(stop.openingTime ?? stop.opening_time);
+            const stopClose = parseTimeFlexible(stop.closingTime ?? stop.closing_time);
+            if (stopOpen != null && stopClose != null) {
+                window = { open: stopOpen, close: stopClose };
+            } else {
+                const place = findPlaceForStop(stop, index);
+                if (place) window = getPlaceOpeningWindow(place);
+            }
+            if (window && !isWithinOpeningHours(arrival, departure, window)) {
+                const fmt = (m) => formatClock(m);
+                warnings.push(
+                    `วันที่ ${day?.day ?? '?'}: “${stop.place || 'ไม่ทราบชื่อ'}” ` +
+                    `ถึง ${stop.arrivalTime} (ออก ${fmt(departure)}) ` +
+                    `อาจอยู่นอกเวลาเปิด-ปิด ${fmt(window.open)}–${fmt(window.close)} ` +
+                    `— ควรเลื่อนไปช่วงกลางวันหรือตรวจสอบกับสถานที่อีกครั้ง`,
+                );
+            }
+        }
+    }
+    return warnings;
+};
+
+// เกลี่ยวันที่ล้นไปวันถัดไปกันเที่ยวดึก (mutate planData)
+// กติกา: อ่าน arrivalTime ที่ chain ไว้แล้วทีละจุด (รองรับค่าข้ามเที่ยงคืนแบบ 23:09→00:45
+// โดยบวก 1440 เมื่อนาฬิกาย้อนกลับ); ถ้าจุดเที่ยว (ไม่ใช่ overnight/rest)
+// ถึง ≥21:00 / ออกเกิน 22:00 / ช่วง 00:00-05:00 ให้ย้ายจุดนั้น + ที่เหลือไปวันถัดไป
+// (สร้างวันใหม่สูงสุด 7 วัน) วันเดิมเดินโซ่ใหม่คงเวลาเดิม วันใหม่เริ่ม 09:00 ใหม่
+// คืน {moved, createdDays}
+const splitOverflowingDays = (planData, {
+    startMinutes = DEFAULT_DAY_START_MINUTES,
+    lateNightStart = LATE_NIGHT_START_MINUTES,
+    hardEnd = DAY_HARD_END_MINUTES,
+    maxDays = MAX_PLAN_DAYS,
+} = {}) => {
+    if (!planData || typeof planData !== 'object') return { moved: 0, createdDays: 0 };
+    if (!Array.isArray(planData.days)) return { moved: 0, createdDays: 0 };
+    let moved = 0;
+    let createdDays = 0;
+    let dayIndex = 0;
+    // กัน loop ไม่รู้จบเมื่อย้ายจุดเดียวซ้ำ ๆ
+    let guard = 0;
+    while (dayIndex < planData.days.length && guard < 30) {
+        guard++;
+        const day = planData.days[dayIndex];
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        if (stops.length === 0) { dayIndex++; continue; }
+        let splitAt = -1;
+        for (let i = 0; i < stops.length; i++) {
+            const stop = stops[i];
+            if (!stop || typeof stop !== 'object') continue;
+            // ใช้ arrivalTime ที่ chain ไว้แล้วตรง ๆ (23:09 / 00:45 ก็ตรวจว่าดึกได้เลย
+            // ไม่ต้องบวก offset ข้ามคืน — isLateNightVisit ดูนาฬิกา 0-1439 อยู่แล้ว)
+            const clock = parseClockToMinutes(stop.arrivalTime);
+            if (clock == null) continue;
+            const duration = clampDurationMinutes(stop.durationMinutes);
+            const departure = clock + duration;
+            const isOvernight = stop.stopType === 'overnight';
+            const isRest = stop.isRestStop === true || String(stop.destinationId ?? '').startsWith('osm:');
+            // ที่พัก/จุดพักไม่นับเป็นเที่ยวดึก — ปล่อยให้จบดึกได้
+            if (!isOvernight && !isRest) {
+                const tooLate = isLateNightVisit(stop, clock, departure);
+                // ต้องเหลืออย่างน้อย 1 ที่เที่ยวไว้ในวันนี้ กันย้ายทั้งวัน
+                if (tooLate && i > 0) { splitAt = i; break; }
+                // จุดแรกของวันก็ดึกเอง (เช่น ขาแรก 417 นาทีจากต่างจังหวัดมาถึง 23:09)
+                // ย้ายไม่ได้เพราะ i==0 — ปล่อยให้ warnings เตือน + caller เลื่อน start/เพิ่มวันแทน
+            }
+        }
+        if (splitAt === -1) { dayIndex++; continue; }
+        // ย้าย stops[splitAt..] ไปวันถัดไป
+        const overflow = stops.splice(splitAt);
+        moved += overflow.length;
+        let nextDay = planData.days[dayIndex + 1];
+        if (!nextDay) {
+            if (planData.days.length >= maxDays) {
+                // เต็ม 7 วันแล้ว — คืนของกลับ (ทำได้แค่เตือน)
+                stops.push(...overflow);
+                moved -= overflow.length;
+                dayIndex++;
+                continue;
+            }
+            nextDay = { day: planData.days.length + 1, theme: 'ต่อจากวันก่อน', stops: [] };
+            planData.days.push(nextDay);
+            createdDays++;
+        }
+        nextDay.stops = [...overflow, ...(Array.isArray(nextDay.stops) ? nextDay.stops : [])];
+        // วันเดิม: เดินโซ่ใหม่คงเวลาเดิม (departure จาก arrival0 - ขาแรก)
+        chainAllDaysPreservingOrder({ days: [day] }, { defaultStartMinutes: startMinutes });
+        // วันใหม่: เริ่มเช้าใหม่ที่ startMinutes (ไม่คงเวลาดึกเดิม)
+        chainDayTimes(nextDay, startMinutes);
+        // ตรวจวันนี้ใหม่ (อาจยังล้นถ้าจุดเดียวยาวมาก) — ไม่เลื่อน dayIndex
+    }
+    // เรียงเลขวันใหม่ 1..N กันเลขกระโดด
+    planData.days.forEach((d, i) => { if (d && typeof d === 'object') d.day = i + 1; });
+    return { moved, createdDays };
+};
+
 // เดินโซ่เวลาทุกวันโดยคงลำดับเดิมทุกจุด (ใช้ตอน PUT — เคารพลำดับที่ผู้ใช้จัดเอง)
 // จุดแรก: arrival ที่เก็บไว้รวมขาแรกแล้ว จึงหักขาแรกออกเป็น departure ก่อนเดินโซ่ใหม่
 // แล้ว chainDayTimes สาขา preservation จะคงขาแรกนั้นไว้ (เวลา/ราคาไม่ขยับ)
-// คืน warnings ของวันที่แน่นเกินไป
+// คืน warnings ของวันที่แน่น + เที่ยวดึก/นอกเวลาเปิด-ปิด (ถ้าส่ง places มาจะตรวจเปิด-ปิดด้วย)
 const chainAllDaysPreservingOrder = (
     planData,
-    { defaultStartMinutes = DEFAULT_DAY_START_MINUTES, dayBudgetMinutes = DAY_BUDGET_MINUTES } = {},
+    { defaultStartMinutes = DEFAULT_DAY_START_MINUTES, dayBudgetMinutes = DAY_BUDGET_MINUTES, places = null } = {},
 ) => {
     for (const day of planData?.days || []) {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
@@ -404,18 +680,27 @@ const chainAllDaysPreservingOrder = (
             : (arrival0 ?? defaultStartMinutes);
         chainDayTimes(day, departure);
     }
-    return validateDayFit(planData, { dayBudgetMinutes }).warnings;
+    const warnings = validateDayFit(planData, { dayBudgetMinutes }).warnings;
+    const timeWarnings = validateOpeningAndLateNight(planData, places || []);
+    return [...warnings, ...timeWarnings];
 };
 
 module.exports = {
     DAY_BUDGET_MINUTES,
     MAX_STOPS_PER_DAY,
     DEFAULT_DAY_START_MINUTES,
+    LATE_NIGHT_START_MINUTES,
+    DAY_HARD_END_MINUTES,
+    MAX_PLAN_DAYS,
     LOCAL_FUEL_RATE_PER_KM,
     LOCAL_FUEL_CAP_PER_DAY,
     parseClockToMinutes,
     parseStartTimeInput,
+    parseTimeFlexible,
     formatClock,
+    getPlaceOpeningWindow,
+    isWithinOpeningHours,
+    isLateNightVisit,
     finiteCoord,
     haversineKm,
     computeLegMinutes,
@@ -427,5 +712,7 @@ module.exports = {
     estimateRecommendedDays,
     maxDistanceFromStart,
     validateDayFit,
+    validateOpeningAndLateNight,
+    splitOverflowingDays,
     chainAllDaysPreservingOrder,
 };

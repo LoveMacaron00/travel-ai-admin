@@ -22,6 +22,8 @@ const {
     estimateRecommendedDays,
     maxDistanceFromStart,
     validateDayFit,
+    validateOpeningAndLateNight,
+    splitOverflowingDays,
     applyCarFuelCosts,
     LOCAL_FUEL_CAP_PER_DAY,
 } = require('../utils/planScheduler');
@@ -649,6 +651,8 @@ async function generateTripPlan(tripId, tripInput, res) {
     - พยายามจัดกลุ่มสถานที่บนเกาะและบนฝั่งเป็นช่วงเดียวกัน เลี่ยงลำดับ เกาะ → ฝั่ง → เกาะ หรือ ฝั่ง → เกาะ → ฝั่ง ในวันเดียวกัน (ไม่ว่าจะใช้พาหนะชนิดใด) แต่ถ้าจำเป็นต้องข้ามให้ใส่ได้
     - พยายามให้ข้ามระหว่างเกาะกับฝั่งไม่เกินหนึ่งครั้งต่อวัน ไม่ว่าจะใช้พาหนะชนิดใด (car/bus/train/ferry/flight/walking) ถ้าเกินให้ระบุใน tips ว่าอาจเหนื่อยจากการข้ามบ่อย เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
     - กรอบเวลาต่อวัน ~10 ชม. รวมเที่ยว+เดินทาง+พัก วันละไม่เกิน 5 จุด อย่ายัดหลายแห่งจนเวลาซ้อนกัน
+    - ห้ามจัดเที่ยวดึก: ที่เที่ยวทุกจุดต้องถึงก่อน 21:00 และออกจากที่เที่ยวไม่เกิน 22:00 (เริ่มวันละ ${dayStartClock} บวกกรอบ 10 ชม. ต้องจบไม่เกิน 22:00) ถ้าสถานที่ไกลจนไปถึงดึก ให้กระจายไปวันอื่นแทน อย่ายัดลงวันเดียว
+    - ดูเวลาเปิด-ปิดของแต่ละสถานที่ในข้อมูลด้านล่างก่อนจัดลำดับ: อย่าจัดให้ถึงนอกเวลาเปิด-ปิด (เช่น พิพิธภัณฑ์/อุทยานที่ปิด 16:00-18:00 ต้องไปกลางวัน, ตลาดกลางคืน/ถนนคนเดินไปได้เย็น-ค่ำ) ถ้าไม่รู้เวลาเปิดให้จัดช่วงกลางวันไว้ก่อน
     - ขาขับรถ/รถโดยสารยาว ≥2 ชม. ระบบจะแทรกจุดแวะพักจริงจาก OpenStreetMap ให้เอง (รวมปั๊มน้ำมันในวันขับรถรวมไกล) จึงไม่ต้องสร้าง stop แวะพัก/ปั๊มเองเด็ดขาด — คิดเวลาพักคร่าว ๆ ในแผนได้ตามเหมาะสม
     - ตอนท้ายของแต่ละวัน (ยกเว้นวันสุดท้าย) ระบบจะแทรกที่พักค้างคืนจากฐานข้อมูลที่พัก (หมวด accommodation/hotel) ให้เอง ถ้าไม่พบจึงค้นจาก OpenStreetMap จึงห้ามสร้าง stop ที่พักเองเด็ดขาด
     - arrivalTime กับ segments จะถูกระบบคำนวณใหม่จากระยะทางจริงหลัง AI ตอบ จึงไม่ต้องเดาเวลาเดินทางเอง แต่ทุก stop ต้องใส่ arrivalTime "HH:MM" กับ durationMinutes (20-300 นาที) ที่สมเหตุสมผลมาด้วย
@@ -799,6 +803,19 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                     startName: 'จุดเริ่มต้น',
                     primaryMode: allowedTransportModes[0] || 'car',
                 });
+                // ---- กันเที่ยวดึก: วันที่ล้นถึง ≥21:00 / เกิน 22:00 ให้ย้ายจุดที่เหลือไปวันถัดไป ----
+                // (สร้างวันใหม่สูงสุด 7 วัน วันใหม่เริ่มเช้าใหม่ — แก้เคส ถึง 23:09 / 00:45 / 03:21)
+                try {
+                    const { moved, createdDays } = splitOverflowingDays(planData, {
+                        startMinutes: dayStartMinutes,
+                    });
+                    if (moved > 0) {
+                        console.warn(`[ai] split ${moved} late-night stops to next day (+${createdDays} days)`);
+                        await tripRepository.updateTripDays(tripId, planData.days.length).catch(() => {});
+                    }
+                } catch (splitError) {
+                    console.warn(`[ai] split overflowing days skipped: ${splitError.message}`);
+                }
                 // ---- แทรกจุดแวะพักจริง (OSM/Overpass) กลางขาขับยาว ≥2 ชม. + ปั๊มน้ำมันวันขับไกล ----
                 // best-effort: Overpass ล่ม/หมดเวลาจะได้แผนเดิมพร้อมเวลาพักโดยประมาณ ไม่ล้มทั้งทริป
                 // ทริป local นอนบ้านตัวเองได้ — ข้ามที่พักค้างคืน
@@ -829,7 +846,9 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                     if (!planData.tips.includes(fuelTip)) planData.tips.push(fuelTip);
                 }
                 const { warnings: fitWarnings } = validateDayFit(planData);
-                const allWarnings = [...new Set([...earlyWarnings, ...fitWarnings])];
+                // ตรวจเที่ยวดึก + นอกเวลาเปิด-ปิดจากข้อมูล DB จริง (places มี opening_time/closing_time)
+                const timeWarnings = validateOpeningAndLateNight(planData, places);
+                const allWarnings = [...new Set([...earlyWarnings, ...fitWarnings, ...timeWarnings])];
                 if (allWarnings.length > 0) {
                     planData.warnings = allWarnings;
                     planData.tips = Array.isArray(planData.tips) ? planData.tips : [];

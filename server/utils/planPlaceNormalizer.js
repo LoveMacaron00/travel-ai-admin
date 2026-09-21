@@ -215,6 +215,17 @@ const normalizePlanPlaces = (planData, places = []) => {
             stop.destinationId = String(matched.id);
             stop.imageUrl = String(matched.image_url || '').trim();
             stop.province = String(matched.province || stop.province || '').trim();
+            // พกเวลาเปิด-ปิดติด stop ไว้ให้ client โชว์ + server ตรวจนอกเวลาเปิดได้ตอน PUT
+            // (matched มาจาก RAG/DB มี opening_time/closing_time/opening_hours เสมอ)
+            if (matched.opening_time != null && String(matched.opening_time).trim()) {
+                stop.openingTime = String(matched.opening_time).trim();
+            }
+            if (matched.closing_time != null && String(matched.closing_time).trim()) {
+                stop.closingTime = String(matched.closing_time).trim();
+            }
+            if (matched.opening_hours != null && stop.openingHours == null) {
+                stop.openingHours = matched.opening_hours;
+            }
 
             const latitude = finiteNumber(matched.latitude);
             const longitude = finiteNumber(matched.longitude);
