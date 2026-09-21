@@ -1,7 +1,7 @@
 // server/controllers/restStopController.js
 // GET /api/mobile/rest-stops — ค้นจุดแวะพัก OSM รอบพิกัด (ไม่ต้อง login)
 
-const { searchRestStops, REST_STOP_ATTRIBUTION, REST_STOP_FILTERS } = require('../services/restStopService');
+const { searchRestStops, searchAirports, REST_STOP_ATTRIBUTION, REST_STOP_FILTERS } = require('../services/restStopService');
 const { finiteCoord } = require('../utils/planScheduler');
 
 // GET /api/mobile/rest-stops?lat=..&lon=..&radius=..&type=..&limit=..
@@ -33,7 +33,10 @@ const getRestStops = async (req, res) => {
     const limit = Math.min(20, Math.max(1, Math.round(Number(req.query.limit) || 10)));
 
     try {
-        const stops = await searchRestStops(lat, lon, { radius, types, limit });
+        // ค้นสนามบินอย่างเดียว → ผ่าน searchAirports (มีรายชื่อสำรองเมื่อ OSM ว่าง/ล่ม)
+        const stops = (types !== undefined && types.length === 1 && types[0] === 'airport')
+            ? await searchAirports(lat, lon, { radius, limit })
+            : await searchRestStops(lat, lon, { radius, types, limit });
         res.json({ data: stops, attribution: REST_STOP_ATTRIBUTION });
     } catch (err) {
         console.error('[restStopController] getRestStops:', err.message);

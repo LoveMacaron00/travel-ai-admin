@@ -319,11 +319,85 @@ const buildRestStop = (poi, mode) => {
     };
 };
 
-// ค้นสนามบินพาณิชย์ใกล้พิกัด (best-effort คืน [] เสมอ — caller ใช้ขาบินตรงเดิมต่อได้)
+// รายชื่อสนามบินพาณิชย์หลักในไทย (IATA + พิกัดโดยประมาณ) — ตัวสำรองเมื่อ Overpass
+// ค้นไม่เจอ/ล่ม ขาบินจะได้แทรกสนามบินเสมอ (IATA ถูกต้อง พิกัดใกล้เคียงพอสำหรับขาบิน)
+const CURATED_AIRPORTS = [
+    { iata: 'DMK', name: 'ท่าอากาศยานดอนเมือง', latitude: 13.91, longitude: 100.61 },
+    { iata: 'BKK', name: 'ท่าอากาศยานสุวรรณภูมิ', latitude: 13.69, longitude: 100.75 },
+    { iata: 'CNX', name: 'ท่าอากาศยานเชียงใหม่', latitude: 18.77, longitude: 100.01 },
+    { iata: 'CEI', name: 'ท่าอากาศยานแม่ฟ้าหลวง เชียงราย', latitude: 19.95, longitude: 99.85 },
+    { iata: 'HGN', name: 'ท่าอากาศยานแม่ฮ่องสอน', latitude: 19.30, longitude: 97.98 },
+    { iata: 'LPT', name: 'ท่าอากาศยานลำปาง', latitude: 18.27, longitude: 99.50 },
+    { iata: 'PRH', name: 'ท่าอากาศยานแพร่', latitude: 18.13, longitude: 100.16 },
+    { iata: 'NNT', name: 'ท่าอากาศยานน่านนคร', latitude: 18.81, longitude: 100.78 },
+    { iata: 'LOE', name: 'ท่าอากาศยานเลย', latitude: 17.44, longitude: 101.72 },
+    { iata: 'PHS', name: 'ท่าอากาศยานพิษณุโลก', latitude: 16.78, longitude: 100.28 },
+    { iata: 'MAQ', name: 'ท่าอากาศยานแม่สอด', latitude: 16.70, longitude: 98.55 },
+    { iata: 'UTP', name: 'ท่าอากาศยานนานาชาติอู่ตะเภา', latitude: 12.68, longitude: 101.01 },
+    { iata: 'HHQ', name: 'ท่าอากาศยานหัวหิน', latitude: 12.64, longitude: 99.95 },
+    { iata: 'CJM', name: 'ท่าอากาศยานชุมพร', latitude: 10.72, longitude: 99.36 },
+    { iata: 'URT', name: 'ท่าอากาศยานสุราษฎร์ธานี', latitude: 9.13, longitude: 99.14 },
+    { iata: 'USM', name: 'ท่าอากาศยานสมุย', latitude: 9.55, longitude: 100.06 },
+    { iata: 'UNN', name: 'ท่าอากาศยานระนอง', latitude: 9.87, longitude: 98.59 },
+    { iata: 'HKT', name: 'ท่าอากาศยานภูเก็ต', latitude: 8.11, longitude: 98.31 },
+    { iata: 'KBV', name: 'ท่าอากาศยานกระบี่', latitude: 8.10, longitude: 98.98 },
+    { iata: 'TDX', name: 'ท่าอากาศยานตรัง', latitude: 7.51, longitude: 99.62 },
+    { iata: 'NST', name: 'ท่าอากาศยานนครศรีธรรมราช', latitude: 8.54, longitude: 99.94 },
+    { iata: 'HDY', name: 'ท่าอากาศยานหาดใหญ่', latitude: 6.93, longitude: 100.39 },
+    { iata: 'NAW', name: 'ท่าอากาศยานนราธิวาส', latitude: 6.52, longitude: 101.74 },
+    { iata: 'BTZ', name: 'ท่าอากาศยานเบตง', latitude: 5.78, longitude: 101.12 },
+    { iata: 'UBP', name: 'ท่าอากาศยานอุบลราชธานี', latitude: 15.25, longitude: 104.87 },
+    { iata: 'UDN', name: 'ท่าอากาศยานอุดรธานี', latitude: 17.39, longitude: 102.79 },
+    { iata: 'KKC', name: 'ท่าอากาศยานขอนแก่น', latitude: 16.47, longitude: 102.78 },
+    { iata: 'ROI', name: 'ท่าอากาศยานร้อยเอ็ด', latitude: 16.12, longitude: 103.77 },
+    { iata: 'SNO', name: 'ท่าอากาศยานสกลนคร', latitude: 17.20, longitude: 104.12 },
+    { iata: 'KOP', name: 'ท่าอากาศยานนครพนม', latitude: 17.38, longitude: 104.64 },
+    { iata: 'BFV', name: 'ท่าอากาศยานบุรีรัมย์', latitude: 15.23, longitude: 103.25 },
+];
+
+// สนามบินสำรองที่ใกล้พิกัดสุดในรัศมี (คืน POI shape เดียวกับ OSM + source: 'curated')
+const nearestCuratedAirports = (latitude, longitude, radiusMeters, limit) => {
+    const out = [];
+    for (const airport of CURATED_AIRPORTS) {
+        const km = haversineKm(latitude, longitude, airport.latitude, airport.longitude);
+        if (km == null || km * 1000 > radiusMeters) continue;
+        out.push({
+            id: `curated:${airport.iata}`,
+            osmType: 'curated',
+            osmId: airport.iata,
+            name: `${airport.name} (${airport.iata})`,
+            brand: '',
+            type: 'airport',
+            typeLabel: TYPE_LABEL_TH.airport,
+            latitude: airport.latitude,
+            longitude: airport.longitude,
+            openingHours: '',
+            iata: airport.iata,
+            icao: '',
+            distanceKm: km,
+            source: 'curated',
+        });
+    }
+    out.sort((a, b) => a.distanceKm - b.distanceKm);
+    return out.slice(0, Math.max(limit, 1));
+};
+
+// ค้นสนามบินพาณิชย์ใกล้พิกัด — OSM ก่อน (สด/พิกัดตรง) ว่างหรือล่มค่อยใช้รายชื่อสำรอง
+// (best-effort คืน [] เฉพาะเมื่อไม่มีสนามบินในรัศมีเลย — caller ใช้ขาบินตรงเดิมต่อได้)
 // รัศมีกว้างกว่าจุดพักทั่วไปมาก (สนามบินอยู่ห่างกันเป็นร้อย กม.) สูงสุด 200 กม.
 async function searchAirports(latitude, longitude, { radius = AIRPORT_SEARCH_RADIUS_METERS, limit = AIRPORT_SEARCH_LIMIT } = {}) {
-    const pois = await searchRestStops(latitude, longitude, { radius, types: ['airport'], limit: Math.max(limit, 1) * 2 });
-    return pois.filter((poi) => poi && poi.type === 'airport' && poi.iata).slice(0, Math.max(limit, 1));
+    const cleanLimit = Math.max(limit, 1);
+    const pois = await searchRestStops(latitude, longitude, { radius, types: ['airport'], limit: cleanLimit * 2 });
+    const live = pois.filter((poi) => poi && poi.type === 'airport' && poi.iata).slice(0, cleanLimit);
+    if (live.length > 0) return live;
+    const lat = finiteCoord(latitude);
+    const lon = finiteCoord(longitude);
+    if (lat == null || lon == null) return [];
+    const cleanRadius = Math.min(
+        AIRPORT_MAX_RADIUS_METERS,
+        Math.max(500, Math.round(Number(radius) || AIRPORT_SEARCH_RADIUS_METERS)),
+    );
+    return nearestCuratedAirports(lat, lon, cleanRadius, cleanLimit);
 }
 
 // สร้าง stop สนามบินสำหรับแทรกในขาบิน — chainDayTimes จะคำนวณเวลา/segments ให้ใหม่อีกที
@@ -335,30 +409,36 @@ async function searchAirports(latitude, longitude, { radius = AIRPORT_SEARCH_RAD
 const AIRPORT_DEPARTURE_DURATION_MINUTES = 30;
 const AIRPORT_ARRIVAL_DURATION_MINUTES = 30;
 
-const buildAirportStop = (poi, mode, { isDeparture = true } = {}) => ({
-    destinationId: poi.id,
-    place: poi.name,
-    province: '',
-    activity: isDeparture
-        ? `เดินทางไป${poi.name}เพื่อขึ้นเครื่อง`
-        : `ลงเครื่องที่${poi.name}แล้วเดินทางต่อ`,
-    latitude: poi.latitude,
-    longitude: poi.longitude,
-    imageUrl: '',
-    arrivalTime: '09:00',
-    durationMinutes: isDeparture ? AIRPORT_DEPARTURE_DURATION_MINUTES : AIRPORT_ARRIVAL_DURATION_MINUTES,
-    entryCost: 0,
-    foodCost: 0,
-    transportMode: mode,
-    transportCost: 0,
-    tip: isDeparture
-        ? `ขึ้นเครื่องที่${poi.name} — เผื่อเวลาเช็คอิน/โหลดกระเป๋าและตรวจสอบตารางบินกับสายการบินอีกครั้ง (ข้อมูล ${REST_STOP_ATTRIBUTION})`
-        : `ลงเครื่องที่${poi.name} — เผื่อเวลารับกระเป๋าแล้วเดินทางต่อ (ข้อมูล ${REST_STOP_ATTRIBUTION})`,
-    segments: [],
-    stopType: 'transfer',
-    restType: 'airport',
-    isRestStop: true,
-});
+const buildAirportStop = (poi, mode, { isDeparture = true } = {}) => {
+    // สนามบินสำรองพิกัดโดยประมาณ — บอกผู้ใช้ให้ตรวจสอบกับสายการบิน (OSM ใช้เครดิต ODbL)
+    const sourceNote = poi.source === 'curated'
+        ? 'ตำแหน่งสนามบินจากฐานข้อมูลสำรอง (พิกัดโดยประมาณ ควรตรวจสอบกับสายการบิน)'
+        : `ข้อมูล ${REST_STOP_ATTRIBUTION}`;
+    return {
+        destinationId: poi.id,
+        place: poi.name,
+        province: '',
+        activity: isDeparture
+            ? `เดินทางไป${poi.name}เพื่อขึ้นเครื่อง`
+            : `ลงเครื่องที่${poi.name}แล้วเดินทางต่อ`,
+        latitude: poi.latitude,
+        longitude: poi.longitude,
+        imageUrl: '',
+        arrivalTime: '09:00',
+        durationMinutes: isDeparture ? AIRPORT_DEPARTURE_DURATION_MINUTES : AIRPORT_ARRIVAL_DURATION_MINUTES,
+        entryCost: 0,
+        foodCost: 0,
+        transportMode: mode,
+        transportCost: 0,
+        tip: isDeparture
+            ? `ขึ้นเครื่องที่${poi.name} — เผื่อเวลาเช็คอิน/โหลดกระเป๋าและตรวจสอบตารางบินกับสายการบินอีกครั้ง (${sourceNote})`
+            : `ลงเครื่องที่${poi.name} — เผื่อเวลารับกระเป๋าแล้วเดินทางต่อ (${sourceNote})`,
+        segments: [],
+        stopType: 'transfer',
+        restType: 'airport',
+        isRestStop: true,
+    };
+};
 
 // สร้าง stop ที่พักค้างคืนท้ายวัน — โครงเดียวกับจุดพักรายทาง แต่ duration 60 นาที
 // (เวลาเช็คอิน/พัก ไม่ใช่เวลานอนทั้งคืน) และ tip บอกชัดว่าพักที่นี่ก่อนเที่ยวต่อวันถัดไป
@@ -485,11 +565,24 @@ async function enrichPlanWithFlightTransfers(planData, {
             }
             const dep = Array.isArray(depAirports) ? depAirports[0] : null;
             const arr = Array.isArray(arrAirports) ? arrAirports[0] : null;
-            if (!dep || !arr) { i++; continue; }
+            const legDesc = `ขาบินวันที่ ${day?.day ?? '?'} ${Math.round(directKm)} กม. → ${stop.place || ''}`;
+            if (!dep || !arr) {
+                console.warn(`[flight] ${legDesc}: หาสนามบินไม่เจอ (ต้น=${dep?.iata || '-'} ปลาย=${arr?.iata || '-'} รัศมี 150 กม.) — คงขาบินตรงเดิม`);
+                i++;
+                continue;
+            }
             // สนามบินเดียวกัน (เช่น เที่ยวรอบกรุงเทพ) หรือบินสั้นกว่าคุ้ม — ไม่ต้องแทรก
-            if (dep.id === arr.id || (dep.iata && dep.iata === arr.iata)) { i++; continue; }
+            if (dep.id === arr.id || (dep.iata && dep.iata === arr.iata)) {
+                console.warn(`[flight] ${legDesc}: สนามบินต้นปลายเดียวกัน (${dep.iata || dep.id}) — คงขาบินตรงเดิม`);
+                i++;
+                continue;
+            }
             const airKm = haversineKm(dep.latitude, dep.longitude, arr.latitude, arr.longitude);
-            if (airKm == null || airKm < FLIGHT_MIN_AIRPORT_KM) { i++; continue; }
+            if (airKm == null || airKm < FLIGHT_MIN_AIRPORT_KM) {
+                console.warn(`[flight] ${legDesc}: สนามบินห่างกันแค่ ~${airKm == null ? '-' : Math.round(airKm)} กม. — คงขาบินตรงเดิม`);
+                i++;
+                continue;
+            }
             // แทรกสนามบิน 2 จุดหน้า dest; ขาสุดท้ายเป็นรถจึงเปลี่ยน dest เป็นภาคพื้น
             // (ล้างค่า leg เดิมของ dest ก่อน — ไม่งั้น chain คงราคา flight เดิมไว้)
             const oldDestTransport = Number(stop.transportCost) || 0;
@@ -1129,6 +1222,8 @@ module.exports = {
     AIRPORT_ARRIVAL_DURATION_MINUTES,
     searchRestStops,
     searchAirports,
+    nearestCuratedAirports,
+    CURATED_AIRPORTS,
     buildAirportStop,
     isMilitaryOnlyAirfield,
     enrichPlanWithFlightTransfers,
