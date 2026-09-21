@@ -25,6 +25,7 @@ const {
     validateOpeningAndLateNight,
     splitOverflowingDays,
     applyCarFuelCosts,
+    normalizeThaiName,
     LOCAL_FUEL_CAP_PER_DAY,
 } = require('../utils/planScheduler');
 const { config } = require('../config/env');
@@ -32,7 +33,7 @@ const {
     freeWebSearch,
     formatWebSearchContext,
 } = require('./webSearchHelper');
-const { enrichPlanWithRestStops } = require('./restStopService');
+const { enrichPlanWithRestStops, enrichPlanWithFlightTransfers } = require('./restStopService');
 const { findNearby } = require('../repositories/placeSearchRepository');
 const {
     chatCompletion,
@@ -142,10 +143,8 @@ const stopUsesFerry = (stop) => {
 const ISLAND_KEYWORDS = ['เกาะ', 'หมู่เกาะ', 'island', 'islands', 'koh', 'ko.'];
 const ISLAND_PROVINCE_KEYWORDS = ['ภูเก็ต', 'phuket'];
 
-const normalizeIslandName = (value) => String(value || '')
-    .normalize('NFKC')
-    .toLocaleLowerCase('th')
-    .replace(/[^\p{L}\p{N}]+/gu, '');
+// regex เดียวกับ normalizeThaiName กลาง — alias มาใช้แทนนิยามซ้ำ
+const normalizeIslandName = normalizeThaiName;
 
 const isIslandPlace = (place) => {
     if (!place || typeof place !== 'object') return false;
@@ -242,9 +241,6 @@ const findExcessIslandCrossings = (planData, mustVisitPlaces, allPlaces) => {
     return violations;
 };
 
-// alias เดิมเพื่อให้โค้ดอื่นที่เรียกชื่อเก่าไม่พัง และใช้ logic ใหม่ที่ครอบคลุมทุกพาหนะ
-const findExcessFerryCrossings = findExcessIslandCrossings;
-
 const formatFerryViolations = (violations) => violations
     .map((violation) =>
         `วันที่ ${violation.day || '?'}: ${violation.stops.map((stop) => stop.place).join(', ')}`,
@@ -257,10 +253,7 @@ const formatIslandViolations = formatFerryViolations;
 // จับคู่แบบยืดหยุ่น: ชื่อเต็ม ชื่อย่อ หรือคำสำคัญตรงกันเกินส่วนใหญ่
 // ถ้าไม่มีสถานที่ไหนถูกพูดถึงเลยจะไม่ส่ง card กลับ (ไม่ fallback เป็นผล RAG)
 const pickPlacesMentionedInAnswer = (answer, places) => {
-    const normalize = (value) => String(value || '')
-        .normalize('NFKC')
-        .toLocaleLowerCase('th')
-        .replace(/[^\p{L}\p{N}]+/gu, '');
+    const normalize = normalizeThaiName;
     const answerText = normalize(answer);
     if (!answerText) return [];
 
@@ -683,7 +676,8 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
     transportMode ของแต่ละ stop หมายถึงพาหนะหลักที่ใช้เดินทางมาจาก stop ก่อนหน้า และต้องเลือกจากวิธีเดินทางที่ผู้ใช้ยอมรับเท่านั้น
     ถ้าวิธีเดินทางที่ผู้ใช้เลือกไม่เหมาะกับสถานที่บังคับเลือก ให้ยังคงใส่สถานที่นั้นในแผนและระบุใน tip ให้ตรวจสอบวิธีเดินทางจริง
     แต่ละ stop เลือก transportMode ต่างกันได้ตามความเหมาะสม ห้ามใช้รถยนต์หรือเดินข้ามทะเล
-    ถ้าเป็นเครื่องบิน รถไฟ หรือเรือ ให้ใส่ segments แยกช่วงไปสถานี/สนามบิน/ท่าเรือ ช่วงขนส่งหลัก และช่วงต่อไปยังจุดหมาย โดยใช้ชื่อจุดเชื่อมต่อจริงที่มั่นใจเท่านั้น
+    ถ้าเป็นรถไฟหรือเรือ ให้ใส่ segments แยกช่วงไปสถานี/ท่าเรือ ช่วงขนส่งหลัก และช่วงต่อไปยังจุดหมาย โดยใช้ชื่อจุดเชื่อมต่อจริงที่มั่นใจเท่านั้น
+    ถ้าเป็นเครื่องบิน ห้ามสร้าง stop สนามบินเองเด็ดขาด — แค่ตั้ง transportMode เป็น flight สำหรับขาที่ไกลจนต้องบิน (≥250 กม.) ระบบจะแทรกสนามบินต้นทาง/ปลายทางจริงจาก OpenStreetMap พร้อมคำนวณเวลาและค่าโดยสารให้เอง
     ใช้ flight สำหรับระยะไกลที่ต้องบิน, ferry สำหรับการข้ามเกาะ/ทะเล, train สำหรับเส้นทางรถไฟ, bus หรือ car สำหรับถนน และ walking เฉพาะระยะที่เดินได้จริง
     ห้ามแต่งหมายเลขเที่ยวบิน รอบเรือ รอบรถไฟ หรือเวลาออกเดินทางจริง หากไม่มีข้อมูลตารางเวลา ให้ระบุใน tip ว่าเป็นเวลาโดยประมาณและควรตรวจสอบตารางกับผู้ให้บริการ
     ถ้าผู้ใช้อนุญาตวิธีเดินทางระยะไกลและไม่ได้จำกัดจังหวัด สามารถวางแผนหลายจังหวัดได้เมื่อจำนวนวันและงบประมาณเหมาะสม แต่ไม่จำเป็นต้องฝืนเดินทางไกล
@@ -803,6 +797,24 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                     startName: 'จุดเริ่มต้น',
                     primaryMode: allowedTransportModes[0] || 'car',
                 });
+                // ---- ขาบินสมจริง: ขา flight ≥250 กม. แทรกสนามบิน OSM 2 จุด ----
+                // (นั่งรถไปสนามบินต้นทาง → บิน → นั่งรถต่อ — best-effort ล้มก็ใช้ขาบินตรงเดิม)
+                // ทำก่อน split กันเที่ยวดึก เพื่อให้ split เห็นเวลาจริงรวมสนามบินแล้ว
+                try {
+                    const groundMode = allowedTransportModes.includes('car')
+                        ? 'car'
+                        : allowedTransportModes.includes('bus') ? 'bus' : 'car';
+                    const { enriched } = await enrichPlanWithFlightTransfers(planData, {
+                        primaryGroundMode: groundMode,
+                        startLat: tripInput.start_latitude,
+                        startLng: tripInput.start_longitude,
+                    });
+                    if (enriched > 0) {
+                        console.warn(`[ai] enriched ${enriched} flight legs with OSM airports`);
+                    }
+                } catch (flightError) {
+                    console.warn(`[ai] flight enrichment skipped: ${flightError.message}`);
+                }
                 // ---- กันเที่ยวดึก: วันที่ล้นถึง ≥21:00 / เกิน 22:00 ให้ย้ายจุดที่เหลือไปวันถัดไป ----
                 // (สร้างวันใหม่สูงสุด 7 วัน วันใหม่เริ่มเช้าใหม่ — แก้เคส ถึง 23:09 / 00:45 / 03:21)
                 try {

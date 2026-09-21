@@ -17,11 +17,14 @@ const {
     DEFAULT_DAY_START_MINUTES,
     DAY_BUDGET_MINUTES,
 } = require('../utils/planScheduler');
+const { fetchWithTimeout } = require('../utils/httpHelper');
+const { createTtlCache } = require('../utils/ttlCache');
 
 const REST_STOP_ATTRIBUTION =
     '© OpenStreetMap contributors (ODbL) · POI via Overpass API';
 
 // Overpass filter ต่อประเภท — ใช้กับ nwr(...)(around:radius,lat,lon)
+// สนามบินกรองเฉพาะที่มีรหัส IATA (ตัดสนามบินเล็ก/ลานบินย่อยที่ไม่มีเที่ยวบินพาณิชย์)
 const REST_STOP_FILTERS = {
     convenience: '["shop"="convenience"]',
     fuel: '["amenity"="fuel"]',
@@ -31,6 +34,7 @@ const REST_STOP_FILTERS = {
     parking: '["amenity"="parking"]',
     toilets: '["amenity"="toilets"]',
     rest_area: '["highway"="rest_area"]',
+    airport: '["aeroway"="aerodrome"]["iata"]',
 };
 
 // ชุด default ตาม use-case: แวะพักรายทาง vs ค้างคืน
@@ -46,7 +50,13 @@ const TYPE_LABEL_TH = {
     parking: 'ที่จอดรถ',
     toilets: 'ห้องน้ำ',
     rest_area: 'จุดพักรถ',
+    airport: 'สนามบิน',
 };
+
+// สนามบินอยู่ห่างกันมาก (ต่างจากปั๊ม/คาเฟ่) — ค้นได้ไกลสุด 200 กม. (ปั๊ม/คาเฟ่แค่ 20 กม.)
+const AIRPORT_MAX_RADIUS_METERS = 200000;
+const AIRPORT_SEARCH_RADIUS_METERS = 150000;
+const AIRPORT_SEARCH_LIMIT = 3;
 
 const REST_ELIGIBLE_MODES = new Set(['car', 'bus']);
 const MAX_REST_PER_LEG = 2;
@@ -83,6 +93,7 @@ const REST_FOOD_COST_BY_TYPE = {
     parking: 20,
     toilets: 10,
     rest_area: 0,
+    airport: 0,
     place: 50,
 };
 
@@ -122,42 +133,17 @@ const parseAdmissionPrice = (fee, fallback = OVERNIGHT_ENTRY_COST_ESTIMATE) => {
 };
 
 // cache ใน memory — Overpass public ช้า/rate-limit จึงจำผล 30 นาที (default)
-const restCache = new Map(); // key -> { expiresAt, results }
-const MAX_CACHE_ENTRIES = 200;
-
-const getCache = (key) => {
-    const entry = restCache.get(key);
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-        restCache.delete(key);
-        return null;
-    }
-    return entry.results;
-};
-
-const setCache = (key, results) => {
-    if (restCache.size >= MAX_CACHE_ENTRIES) {
-        const oldestKey = restCache.keys().next().value;
-        restCache.delete(oldestKey);
-    }
-    const ttl = Math.max(0, config.overpass?.cacheTtlMs ?? 1800000);
-    restCache.set(key, { expiresAt: Date.now() + ttl, results });
-};
+// (logic เดิม ย้ายไปใช้ createTtlCache/fetchWithTimeout กลางใน utils)
+const { get: getCache, set: setCache } = createTtlCache({
+    maxEntries: 200,
+    getTtlMs: () => Math.max(0, config.overpass?.cacheTtlMs ?? 1800000),
+});
 
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const fetchWithTimeout = async (url, options = {}, timeoutMs) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        return await fetch(url, { ...options, signal: controller.signal });
-    } finally {
-        clearTimeout(timeout);
-    }
-};
-
 // เดารายละเอียดประเภทจาก tags ของ element (ใช้ตอน query รวมหลายประเภทพร้อมกัน)
 const inferRestType = (tags = {}) => {
+    if (tags.aeroway === 'aerodrome') return 'airport';
     if (tags.highway === 'rest_area') return 'rest_area';
     if (tags.amenity === 'fuel') return 'fuel';
     if (tags.amenity === 'cafe') return 'cafe';
@@ -171,10 +157,27 @@ const inferRestType = (tags = {}) => {
 
 const resolvePoiName = (tags = {}, fallbackType = 'place') => {
     const named = String(tags['name:th'] || tags.name || '').trim();
+    // สนามบินต่อรหัส IATA ท้ายชื่อเสมอ (เช่น "ท่าอากาศยานดอนเมือง (DMK)") —
+    // การ์ดแผนโชว์ชื่อนี้ตรง ๆ ผู้ใช้เห็นได้ทันทีว่าบินขึ้น/ลงที่ไหน
+    if (fallbackType === 'airport') {
+        const iata = String(tags.iata || '').trim().toUpperCase();
+        const base = named || String(tags.brand || tags.operator || '').trim() || 'สนามบิน';
+        return iata ? `${base} (${iata})` : `${base} (OSM)`;
+    }
     if (named) return named;
     const brand = String(tags.brand || tags.operator || '').trim();
     if (brand) return brand;
     return `${TYPE_LABEL_TH[fallbackType] || 'จุดแวะพัก'} (OSM)`;
+};
+
+// ฐานทัพอากาศล้วน (เช่น ฐานบินโคกกะเทียม KKM) มี iata แต่ไม่มีเที่ยวบินพาณิชย์ —
+// ข้ามไป (สนามบินทหารที่ใช้ร่วมกับพลเรือนอย่างดอนเมืองมี aerodrome:type=military/public จึงรอด)
+const isMilitaryOnlyAirfield = (tags = {}) => {
+    const useType = String(tags['aerodrome:type'] || '').toLowerCase();
+    if (useType.includes('public') || useType.includes('civil')) return false;
+    if (tags.military != null && String(tags.military).trim() !== '') return true;
+    const name = String(tags['name:th'] || tags.name || '');
+    return /ฐานบิน|ฐานทัพอากาศ|air\s*force\s*base|\bair\s*base\b/i.test(name);
 };
 
 // ค้น POI รอบพิกัด — คืน [] แทน throw เสมอ (caller ทำงานต่อได้โดยไม่มีจุดพัก)
@@ -190,7 +193,9 @@ async function searchRestStops(latitude, longitude, { radius = 5000, types = ROA
     )];
     if (wanted.length === 0) return [];
 
-    const cleanRadius = Math.min(20000, Math.max(500, Math.round(Number(radius) || 5000)));
+    const hasAirport = wanted.includes('airport');
+    const maxRadius = hasAirport ? AIRPORT_MAX_RADIUS_METERS : 20000;
+    const cleanRadius = Math.min(maxRadius, Math.max(500, Math.round(Number(radius) || 5000)));
     const cleanLimit = Math.min(20, Math.max(1, Math.round(Number(limit) || 10)));
     const cacheKey = `${lat.toFixed(3)}:${lon.toFixed(3)}:${cleanRadius}:${[...wanted].sort().join('+')}:${cleanLimit}`;
     const cached = getCache(cacheKey);
@@ -212,7 +217,10 @@ async function searchRestStops(latitude, longitude, { radius = 5000, types = ROA
     };
     // เริ่มจากรัศมีแคบกัน Overpass 504 แล้วค่อยขยายถ้าไม่เจอ
     // (รัศมีกว้าง + หลาย filter = query หนัก โดยเฉพาะจุดกลางทุ่ง/ทางหลวงชนบท)
-    const radiusSteps = cleanRadius <= 3000 ? [cleanRadius] : [3000, cleanRadius];
+    // สนามบินหายากในระยะใกล้ — ยิงรัศมีเต็มครั้งเดียว (ข้ามขั้น 3 กม. ที่ไม่มีวันเจอ)
+    const radiusSteps = hasAirport
+        ? [cleanRadius]
+        : (cleanRadius <= 3000 ? [cleanRadius] : [3000, cleanRadius]);
 
     for (const stepRadius of radiusSteps) {
     const ql = buildQuery(stepRadius);
@@ -239,6 +247,8 @@ async function searchRestStops(latitude, longitude, { radius = 5000, types = ROA
                 if (pLat == null || pLon == null) continue;
                 const tags = (el?.tags && typeof el.tags === 'object') ? el.tags : {};
                 const type = inferRestType(tags);
+                // ฐานทัพอากาศล้วนไม่มีเที่ยวบินพาณิชย์ — ข้าม (สนามบินร่วมทหาร/พลเรือนรอด)
+                if (type === 'airport' && isMilitaryOnlyAirfield(tags)) continue;
                 pois.push({
                     id: `osm:${el.type || 'node'}/${el.id}`,
                     osmType: el.type || 'node',
@@ -250,11 +260,24 @@ async function searchRestStops(latitude, longitude, { radius = 5000, types = ROA
                     latitude: pLat,
                     longitude: pLon,
                     openingHours: String(tags.opening_hours || '').trim(),
+                    iata: type === 'airport' ? String(tags.iata || '').trim().toUpperCase() : '',
+                    icao: type === 'airport' ? String(tags.icao || '').trim().toUpperCase() : '',
                     distanceKm: haversineKm(lat, lon, pLat, pLon) ?? null,
                 });
             }
             pois.sort((a, b) => (a.distanceKm ?? 9999) - (b.distanceKm ?? 9999));
-            const sliced = pois.slice(0, cleanLimit);
+            // สนามบินเดียวใน OSM มีได้หลาย element (node+way+relation) —
+            // เรียงใกล้ก่อนแล้วตัดซ้ำด้วยรหัส IATA เก็บเฉพาะจุดที่ใกล้สุด
+            const deduped = [];
+            const seenIata = new Set();
+            for (const poi of pois) {
+                if (poi.iata) {
+                    if (seenIata.has(poi.iata)) continue;
+                    seenIata.add(poi.iata);
+                }
+                deduped.push(poi);
+            }
+            const sliced = deduped.slice(0, cleanLimit);
             // เจอแล้วก็คืนเลย — แต่ถ้าว่างและยังเหลือ step กว้างกว่าให้ลองต่อ
             if (sliced.length > 0 || stepRadius === radiusSteps[radiusSteps.length - 1]) {
                 setCache(cacheKey, sliced);
@@ -295,6 +318,47 @@ const buildRestStop = (poi, mode) => {
         isRestStop: true,
     };
 };
+
+// ค้นสนามบินพาณิชย์ใกล้พิกัด (best-effort คืน [] เสมอ — caller ใช้ขาบินตรงเดิมต่อได้)
+// รัศมีกว้างกว่าจุดพักทั่วไปมาก (สนามบินอยู่ห่างกันเป็นร้อย กม.) สูงสุด 200 กม.
+async function searchAirports(latitude, longitude, { radius = AIRPORT_SEARCH_RADIUS_METERS, limit = AIRPORT_SEARCH_LIMIT } = {}) {
+    const pois = await searchRestStops(latitude, longitude, { radius, types: ['airport'], limit: Math.max(limit, 1) * 2 });
+    return pois.filter((poi) => poi && poi.type === 'airport' && poi.iata).slice(0, Math.max(limit, 1));
+}
+
+// สร้าง stop สนามบินสำหรับแทรกในขาบิน — chainDayTimes จะคำนวณเวลา/segments ให้ใหม่อีกที
+// ขาบิน 1 ขาได้สนามบิน 2 จุด: ต้นทาง (นั่งรถไปขึ้นเครื่อง, duration 30 เผื่อเช็คอินเบื้องต้น)
+// กับปลายทาง (ลงเครื่อง, duration 30 เผื่อรับกระเป๋า) — เวลารอขึ้นเครื่องหลัก (2 ชม.)
+// อยู่ใน overhead ของขา flight อยู่แล้ว (ดู MODE_OVERHEAD_MINUTES)
+// stopType 'transfer' (ไม่ใช่ 'rest') + isRestStop true เพื่อให้การ์ด/หมุดใช้ชุดเดียวกับจุดพัก
+// แต่ข้อความ UI แยกด้วย restType 'airport' (ไอคอนเครื่องบิน + คำว่า "เปลี่ยนเครื่อง")
+const AIRPORT_DEPARTURE_DURATION_MINUTES = 30;
+const AIRPORT_ARRIVAL_DURATION_MINUTES = 30;
+
+const buildAirportStop = (poi, mode, { isDeparture = true } = {}) => ({
+    destinationId: poi.id,
+    place: poi.name,
+    province: '',
+    activity: isDeparture
+        ? `เดินทางไป${poi.name}เพื่อขึ้นเครื่อง`
+        : `ลงเครื่องที่${poi.name}แล้วเดินทางต่อ`,
+    latitude: poi.latitude,
+    longitude: poi.longitude,
+    imageUrl: '',
+    arrivalTime: '09:00',
+    durationMinutes: isDeparture ? AIRPORT_DEPARTURE_DURATION_MINUTES : AIRPORT_ARRIVAL_DURATION_MINUTES,
+    entryCost: 0,
+    foodCost: 0,
+    transportMode: mode,
+    transportCost: 0,
+    tip: isDeparture
+        ? `ขึ้นเครื่องที่${poi.name} — เผื่อเวลาเช็คอิน/โหลดกระเป๋าและตรวจสอบตารางบินกับสายการบินอีกครั้ง (ข้อมูล ${REST_STOP_ATTRIBUTION})`
+        : `ลงเครื่องที่${poi.name} — เผื่อเวลารับกระเป๋าแล้วเดินทางต่อ (ข้อมูล ${REST_STOP_ATTRIBUTION})`,
+    segments: [],
+    stopType: 'transfer',
+    restType: 'airport',
+    isRestStop: true,
+});
 
 // สร้าง stop ที่พักค้างคืนท้ายวัน — โครงเดียวกับจุดพักรายทาง แต่ duration 60 นาที
 // (เวลาเช็คอิน/พัก ไม่ใช่เวลานอนทั้งคืน) และ tip บอกชัดว่าพักที่นี่ก่อนเที่ยวต่อวันถัดไป
@@ -347,6 +411,166 @@ const buildOvernightStopFromDb = (row, mode) => {
     };
 };
 
+// ขาบินสมจริงด้วยสนามบินจริงจาก OSM (ไม่ต้องใช้ key, ฟรี)
+// ขา flight ตรง prev → dest ที่ระยะ ≥250 กม. แทรกสนามบิน 2 จุด กลายเป็น:
+// [..., prev, สนามบินต้นทาง (นั่งรถไป), สนามบินปลายทาง (บิน), dest (นั่งรถต่อ)]
+// แล้วเดินโซ่เวลาใหม่ทั้งวัน — แผนที่วาดขารถตามถนนจริง (OSRM) + ขาบินเส้นตรงสนามบินถึงสนามบิน
+// สนามบินต้น-ปลายห่างกัน <150 กม. หรือหาไม่เจอ → คงขาบินตรงเดิม (best-effort ไม่ล้มทั้งทริป)
+// findAirports รับมาเพื่อทดสอบได้โดยไม่ต้องยิง Overpass (default = searchAirports)
+const FLIGHT_MIN_DIRECT_KM = 250;
+const FLIGHT_MIN_AIRPORT_KM = 150;
+
+async function enrichPlanWithFlightTransfers(planData, {
+    primaryGroundMode = 'car',
+    startLat,
+    startLng,
+    findAirports = searchAirports,
+} = {}) {
+    if (!planData || typeof planData !== 'object') return { enriched: 0 };
+    if (config.overpass && config.overpass.enabled === false) return { enriched: 0 };
+    const days = Array.isArray(planData.days) ? planData.days : [];
+    if (days.length === 0) return { enriched: 0 };
+    const groundRaw = String(primaryGroundMode || 'car').toLowerCase();
+    const groundMode = ['car', 'bus'].includes(groundRaw) ? groundRaw : 'car';
+    // origin ของวันนั้น (helper กลาง — โหมดขาแรกคงที่ groundMode)
+    const originFor = (dayIndex) => getDayOrigin(days, dayIndex, {
+        startLat, startLng, modeFor: () => groundMode,
+    });
+
+    let enriched = 0;
+    let transportDelta = 0;
+    for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+        const day = days[dayIndex];
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        if (stops.length === 0) continue;
+        let i = 0;
+        while (i < stops.length) {
+            const stop = stops[i];
+            // เฉพาะขาบินเข้าที่เที่ยวใน DB — ข้ามจุดพัก/ที่พัก/osm และขาที่ไม่ใช่ flight
+            if (!stop || typeof stop !== 'object'
+                || stop.isRestStop === true
+                || String(stop.destinationId ?? '').startsWith('osm:')
+                || String(stop.transportMode || '').toLowerCase() !== 'flight') {
+                i++;
+                continue;
+            }
+            let fromLat;
+            let fromLng;
+            if (i === 0) {
+                const origin = originFor(dayIndex);
+                if (!origin) { i++; continue; }
+                fromLat = origin.lat;
+                fromLng = origin.lng;
+            } else {
+                fromLat = finiteCoord(stops[i - 1]?.latitude);
+                fromLng = finiteCoord(stops[i - 1]?.longitude);
+                if (fromLat == null || fromLng == null) { i++; continue; }
+            }
+            const toLat = finiteCoord(stop.latitude);
+            const toLng = finiteCoord(stop.longitude);
+            if (toLat == null || toLng == null) { i++; continue; }
+            // บินใกล้ ๆ ไม่คุ้มขึ้นเครื่อง — คงขาเดิมไว้
+            const directKm = haversineKm(fromLat, fromLng, toLat, toLng);
+            if (directKm == null || directKm < FLIGHT_MIN_DIRECT_KM) { i++; continue; }
+            let depAirports = [];
+            let arrAirports = [];
+            try {
+                [depAirports, arrAirports] = await Promise.all([
+                    findAirports(fromLat, fromLng),
+                    findAirports(toLat, toLng),
+                ]);
+            } catch {
+                i++;
+                continue;
+            }
+            const dep = Array.isArray(depAirports) ? depAirports[0] : null;
+            const arr = Array.isArray(arrAirports) ? arrAirports[0] : null;
+            if (!dep || !arr) { i++; continue; }
+            // สนามบินเดียวกัน (เช่น เที่ยวรอบกรุงเทพ) หรือบินสั้นกว่าคุ้ม — ไม่ต้องแทรก
+            if (dep.id === arr.id || (dep.iata && dep.iata === arr.iata)) { i++; continue; }
+            const airKm = haversineKm(dep.latitude, dep.longitude, arr.latitude, arr.longitude);
+            if (airKm == null || airKm < FLIGHT_MIN_AIRPORT_KM) { i++; continue; }
+            // แทรกสนามบิน 2 จุดหน้า dest; ขาสุดท้ายเป็นรถจึงเปลี่ยน dest เป็นภาคพื้น
+            // (ล้างค่า leg เดิมของ dest ก่อน — ไม่งั้น chain คงราคา flight เดิมไว้)
+            const oldDestTransport = Number(stop.transportCost) || 0;
+            stop.transportCost = 0;
+            stop.segments = [];
+            stop.transportMode = groundMode;
+            const depStop = buildAirportStop(dep, groundMode, { isDeparture: true });
+            const arrStop = buildAirportStop(arr, 'flight', { isDeparture: false });
+            const anchor = getDayDeparture(day);
+            const origin = originFor(dayIndex);
+            stops.splice(i, 0, depStop, arrStop);
+            chainDayTimes(day, anchor, origin);
+            const newSum = (Number(depStop.transportCost) || 0)
+                + (Number(arrStop.transportCost) || 0)
+                + (Number(stop.transportCost) || 0);
+            transportDelta += newSum - oldDestTransport;
+            const flightHours = Math.round((airKm / 550) * 10) / 10;
+            const routeNote = `ขานี้บิน ${dep.iata || dep.name}→${arr.iata || arr.name} ` +
+                `(~${Math.round(airKm)} กม. บิน ~${flightHours} ชม. ไม่รวมรอขึ้นเครื่อง) ` +
+                `ควรตรวจสอบตารางบินกับสายการบินอีกครั้ง`;
+            stop.tip = stop.tip ? `${stop.tip} ${routeNote}` : routeNote;
+            enriched++;
+            i += 3;
+        }
+    }
+    // ปรับยอดรวมด้วยผลต่างค่าเดินทาง (ขาบินใหม่มักถูกลงเพราะเรทค่าเครื่องสมจริง)
+    if (transportDelta !== 0) {
+        const total = Number(planData.totalEstimatedCost);
+        planData.totalEstimatedCost = Math.max(
+            0, (Number.isFinite(total) ? total : 0) + transportDelta);
+        if (!planData.budgetBreakdown || typeof planData.budgetBreakdown !== 'object') {
+            planData.budgetBreakdown = { accommodation: 0, food: 0, transport: 0, activities: 0 };
+        }
+        const transport = Number(planData.budgetBreakdown.transport);
+        planData.budgetBreakdown.transport = Math.max(
+            0, (Number.isFinite(transport) ? transport : 0) + transportDelta);
+    }
+    if (enriched > 0) {
+        planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+        const credit = `ขาบินระยะไกล ${enriched} ขา ระบบแทรกสนามบินจริงจาก ${REST_STOP_ATTRIBUTION} ให้แล้ว ` +
+            `(นั่งรถไปสนามบิน → บิน → นั่งรถต่อ)`;
+        if (!planData.tips.includes(credit)) planData.tips.push(credit);
+    }
+    return { enriched };
+}
+
+// origin ของวันสำหรับคำนวณขาแรก (ใช้ร่วมกันทั้ง flight/rest enrichment):
+// วันแรก = GPS/จุดปักของผู้ใช้, วันถัดไป = จุดสุดท้ายของวันก่อน
+// modeFor(last, dayIndex) ตัดสินโหมดขาแรก — flight ใช้ groundMode คงที่,
+// rest ใช้ primaryMode/โหมดจุดสุดท้ายของวันก่อน
+const getDayOrigin = (days, dayIndex, { startLat, startLng, modeFor }) => {
+    if (dayIndex <= 0) {
+        const lat = finiteCoord(startLat);
+        const lng = finiteCoord(startLng);
+        if (lat == null || lng == null) return undefined;
+        return { lat, lng, name: 'จุดเริ่มต้น', mode: modeFor(null, dayIndex) };
+    }
+    const prevStops = Array.isArray(days[dayIndex - 1]?.stops) ? days[dayIndex - 1].stops : [];
+    const last = prevStops[prevStops.length - 1];
+    const lat = finiteCoord(last?.latitude);
+    const lng = finiteCoord(last?.longitude);
+    if (lat == null || lng == null) return undefined;
+    return {
+        lat,
+        lng,
+        name: String(last?.place || '').trim(),
+        mode: modeFor(last, dayIndex),
+    };
+};
+
+// เวลาเริ่มเดินโซ่ใหม่ของวัน (departure): arrival จุดแรกหักขาแรกออก
+// (logic เดียวกับ chainAllDaysPreservingOrder; ไม่มีขาแรกก็ใช้ arrival ตรง ๆ)
+// สำคัญ: เรียกก่อน splice จุดแทรก (stops[0] ต้องยังเป็นจุดเดิม)
+const getDayDeparture = (day) => {
+    const stops = Array.isArray(day?.stops) ? day.stops : [];
+    const arrival0 = parseClockToMinutes(stops[0]?.arrivalTime);
+    const firstLeg = Number(stops[0]?.segments?.[0]?.estimatedMinutes);
+    if (arrival0 != null && Number.isFinite(firstLeg) && firstLeg > 0) return arrival0 - firstLeg;
+    return arrival0 ?? DEFAULT_DAY_START_MINUTES;
+};
+
 async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat, startLng, skipOvernight = false } = {}) {
     if (!planData || typeof planData !== 'object') return { added: 0 };
     if (config.overpass && config.overpass.enabled === false) return { added: 0 };
@@ -393,40 +617,15 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         return overnightCount < MAX_OVERNIGHT_PER_DAY;
     };
 
-    // เวลาเริ่มเดินโซ่ใหม่ของวันนั้น (departure): arrival จุดแรกที่เก็บไว้รวมขาแรกแล้ว
-    // จึงหักขาแรกออกก่อน — ไม่งั้นแทรกจุดทีไรเวลาทั้งวันจะเลื่อนไปข้างหน้าทุกครั้ง
-    // (logic เดียวกับ chainAllDaysPreservingOrder; ไม่มีขาแรกก็ใช้ arrival ตรง ๆ)
-    // สำคัญ: เรียกก่อน splice จุดแทรก (stops[0] ต้องยังเป็นจุดเดิม)
-    const dayDeparture = (day) => {
-        const stops = Array.isArray(day?.stops) ? day.stops : [];
-        const arrival0 = parseClockToMinutes(stops[0]?.arrivalTime);
-        const firstLeg = Number(stops[0]?.segments?.[0]?.estimatedMinutes);
-        if (arrival0 != null && Number.isFinite(firstLeg) && firstLeg > 0) return arrival0 - firstLeg;
-        return arrival0 ?? DEFAULT_DAY_START_MINUTES;
-    };
-    // จุดเริ่มของวันนั้นสำหรับคำนวณขาแรก: วันแรก = GPS/จุดปักของผู้ใช้,
-    // วันถัดไป = จุดสุดท้ายของวันก่อน ( enrich วันก่อนหน้าทำเสร็จแล้วเพราะวนตามลำดับ)
-    const dayOrigin = (dayIndex) => {
-        if (dayIndex <= 0) {
-            const lat = finiteCoord(startLat);
-            const lng = finiteCoord(startLng);
-            if (lat == null || lng == null) return undefined;
-            return { lat, lng, name: 'จุดเริ่มต้น', mode: primaryMode };
-        }
-        const prevStops = Array.isArray(days[dayIndex - 1]?.stops)
-            ? days[dayIndex - 1].stops
-            : [];
-        const last = prevStops[prevStops.length - 1];
-        const lat = finiteCoord(last?.latitude);
-        const lng = finiteCoord(last?.longitude);
-        if (lat == null || lng == null) return undefined;
-        return {
-            lat,
-            lng,
-            name: String(last?.place || '').trim(),
-            mode: String(last?.transportMode || primaryMode || 'car'),
-        };
-    };
+    // origin ของวันนั้น (helper กลาง — โหมดขาแรกตาม primaryMode/จุดสุดท้ายวันก่อน)
+    // วันถัดไป anchor ที่จุดสุดท้ายของวันก่อน (enrich วันก่อนหน้าทำเสร็จแล้วเพราะวนตามลำดับ)
+    const originFor = (dayIndex) => getDayOrigin(days, dayIndex, {
+        startLat,
+        startLng,
+        modeFor: (last, idx) => (idx <= 0
+            ? primaryMode
+            : String(last?.transportMode || primaryMode || 'car')),
+    });
     // หยิบจุดอ้างอิงท้ายวันสำหรับหาที่พัก: จุดที่ไม่ใช่ rest ท้ายสุด
     // (วันอาจลงท้ายด้วยจุดพักรายทางที่เพิ่งแทรก) — ถ้าทั้งวันมีแต่ rest ก็ใช้จุดสุดท้าย
     const findOvernightAnchor = (stops) => {
@@ -471,7 +670,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         };
         usedOsmIds.add(`reused:${dayIndex}:${stay.destinationId}`);
         stops.push(stay);
-        chainDayTimes(day, dayDeparture(day));
+        chainDayTimes(day, getDayDeparture(day));
         collectStopCosts(stops[stops.length - 1]);
         added++;
         overnightAdded++;
@@ -529,7 +728,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
                 usedOsmIds.add(`db:${dbPick.id}`);
                 const dbStop = buildOvernightStopFromDb(dbPick, mode);
                 stops.push(dbStop);
-                chainDayTimes(day, dayDeparture(day));
+                chainDayTimes(day, getDayDeparture(day));
                 collectStopCosts(stops[stops.length - 1]);
                 added++;
                 overnightAdded++;
@@ -556,7 +755,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
             usedOsmIds.add(pick.id);
             const osmStop = buildOvernightStop(pick, mode);
             stops.push(osmStop);
-            chainDayTimes(day, dayDeparture(day));
+            chainDayTimes(day, getDayDeparture(day));
             collectStopCosts(stops[stops.length - 1]);
             added++;
             overnightAdded++;
@@ -587,7 +786,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         };
         usedOsmIds.add(fallbackStop.destinationId);
         stops.push(fallbackStop);
-        chainDayTimes(day, dayDeparture(day));
+        chainDayTimes(day, getDayDeparture(day));
         collectStopCosts(stops[stops.length - 1]);
         added++;
         overnightAdded++;
@@ -606,7 +805,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         let dayAdded = 0;
         // เก็บงานแทรกเป็น (index รวม offset แล้ว) แล้ว splice จากหน้าไปหลัง
         const insertions = [];
-        const origin = dayOrigin(dayIndex);
+        const origin = originFor(dayIndex);
 
         // เอาแค่ปั๊มน้ำมัน — ไม่เจอปั๊มข้ามขานี้ไป ไม่เติมคาเฟ่/ร้านสะดวกซื้อแทน
         const pickRestNear = async (midLat, midLon) => {
@@ -698,7 +897,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         if (insertions.length > 0) {
             // จับ departure ก่อน splice (stops[0] ต้องยังเป็นจุดเดิม)
             // แล้วเดินโซ่ใหม่พร้อม origin — ไม่งั้นขาแรกหายจากตารางเวลา
-            const anchor = dayDeparture(day);
+            const anchor = getDayDeparture(day);
             insertions.sort((a, b) => a.index - b.index);
             // index คำนวณรวม offset ของ insertion ก่อนหน้าแล้ว จึง splice จากหน้าไปหลัง
             for (const item of insertions) {
@@ -721,7 +920,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
             stop && typeof stop === 'object'
             && (stop.isRestStop === true || String(stop.destinationId ?? '').startsWith('osm:'))).length;
         if (restCount >= MAX_REST_PER_DAY) return 0;
-        const origin = dayOrigin(dayIndex);
+        const origin = originFor(dayIndex);
         let totalKm = 0;
         let longest = null;
         // ขาแรก: origin → จุดแรกของวัน (ข้ามถ้าจุดแรกเป็นปั๊มอยู่แล้ว)
@@ -781,7 +980,7 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         usedOsmIds.add(pick.id);
         const fuelStop = buildRestStop(pick, longest.mode);
         // จับ departure ก่อน splice แล้วเดินโซ่ใหม่พร้อม origin — ไม่งั้นขาแรกหายจากตารางเวลา
-        const anchor = dayDeparture(day);
+        const anchor = getDayDeparture(day);
         stops.splice(longest.index, 0, fuelStop);
         chainDayTimes(day, anchor, origin);
         collectStopCosts(stops[longest.index]);
@@ -922,6 +1121,16 @@ module.exports = {
     LONG_DRIVE_FUEL_KM,
     FUEL_SEARCH_RADIUS_METERS,
     OVERNIGHT_DURATION_MINUTES,
+    AIRPORT_SEARCH_RADIUS_METERS,
+    AIRPORT_SEARCH_LIMIT,
+    FLIGHT_MIN_DIRECT_KM,
+    FLIGHT_MIN_AIRPORT_KM,
+    AIRPORT_DEPARTURE_DURATION_MINUTES,
+    AIRPORT_ARRIVAL_DURATION_MINUTES,
     searchRestStops,
+    searchAirports,
+    buildAirportStop,
+    isMilitaryOnlyAirfield,
+    enrichPlanWithFlightTransfers,
     enrichPlanWithRestStops,
 };

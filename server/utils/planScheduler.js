@@ -179,6 +179,13 @@ const finiteCoord = (value) => {
     return Number.isFinite(parsed) ? parsed : null;
 };
 
+// normalize ชื่อไทย/อังกฤษสำหรับเทียบ (ตัดอักขระพิเศษ + lowercase)
+// ใช้ร่วมกันหลายไฟล์ (planPlaceNormalizer/aiHelper/ที่นี่) แทนนิยามซ้ำ regex เดียวกัน
+const normalizeThaiName = (value) => String(value || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase('th')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+
 const haversineKm = (aLat, aLng, bLat, bLng) => {
     const lat1 = finiteCoord(aLat);
     const lng1 = finiteCoord(aLng);
@@ -249,8 +256,17 @@ const orderStopsNearestNeighbor = (stops, startLat, startLng) => {
 
 // ประเมินค่าพาหนะต่อขาจากระยะทางจริง — mirror ฝั่ง Flutter estimateTransportCost
 // car = รถยนต์ส่วนตัว คิดค่าน้ำมัน ~3 บาท/กม. ไม่มีขั้นต่ำ (ไม่มีเรทแท็กซี่)
-// walking ฟรี, bus 7/กม., train 12/กม., ferry 25/กม., flight 35/กม., อื่น ๆ 15/กม.
+// walking ฟรี, bus 7/กม., train 12/กม., ferry 25/กม., อื่น ๆ 15/กม.
+// flight (เครื่องบินพาณิชย์): ค่าตั๋วโดยประมาณ = ฐาน 800 + 4 บาท/กม. ขั้นต่ำ 1000
+// (เช่น กรุงเทพ–เชียงใหม่ ~580 กม. ≈ 3100 บาท ใกล้เคียงราคาตั๋วจริง —
+// เรทเดิม 35/กม. ได้สองหมื่นกว่าบาท แพงเกินจริงมาก)
 // km null/ไม่ finite → 0, รถอื่นระยะสั้นกว่า 0.5 กม. → 50 ขั้นต่ำ, นอกนั้นปัดเศษพร้อมขั้นต่ำ 50
+const estimateFlightCostKm = (km) => {
+    const distance = Number(km);
+    if (!Number.isFinite(distance) || distance < 0) return 0;
+    return Math.max(1000, Math.round(800 + distance * 4));
+};
+
 const estimateLegCostKm = (km, modeRaw) => {
     if (km == null) return 0;
     const distance = Number(km);
@@ -258,8 +274,9 @@ const estimateLegCostKm = (km, modeRaw) => {
     const mode = String(modeRaw || 'car').toLowerCase();
     if (mode === 'walking') return 0;
     if (mode === 'car') return estimateFuelCostKm(distance);
+    if (mode === 'flight') return estimateFlightCostKm(distance);
     if (distance < 0.5) return 50;
-    const rates = { bus: 7, train: 12, ferry: 25, flight: 35 };
+    const rates = { bus: 7, train: 12, ferry: 25 };
     const rate = rates[mode] ?? 15;
     return Math.max(50, Math.round(distance * rate));
 };
@@ -510,12 +527,11 @@ const validateDayFit = (planData, { dayBudgetMinutes = DAY_BUDGET_MINUTES } = {}
 const buildPlacesById = (places) => {
     const byId = new Map();
     const byName = new Map();
-    const norm = (v) => String(v || '').normalize('NFKC').toLocaleLowerCase('th').replace(/[^\p{L}\p{N}]+/gu, '');
     for (const place of places || []) {
         if (!place || typeof place !== 'object') continue;
         const id = String(place.id ?? '').trim();
         if (id) byId.set(id, place);
-        const nameKey = norm(place.name);
+        const nameKey = normalizeThaiName(place.name);
         if (nameKey) byName.set(nameKey, place);
     }
     return { byId, byName };
@@ -526,8 +542,7 @@ const findPlaceForStop = (stop, index) => {
     if (!stop || typeof stop !== 'object') return null;
     const id = String(stop.destinationId ?? '').trim();
     if (id && byId && byId.has(id)) return byId.get(id);
-    const norm = (v) => String(v || '').normalize('NFKC').toLocaleLowerCase('th').replace(/[^\p{L}\p{N}]+/gu, '');
-    const key = norm(stop.place);
+    const key = normalizeThaiName(stop.place);
     if (key && byName && byName.has(key)) return byName.get(key);
     return null;
 };
@@ -702,9 +717,11 @@ module.exports = {
     isWithinOpeningHours,
     isLateNightVisit,
     finiteCoord,
+    normalizeThaiName,
     haversineKm,
     computeLegMinutes,
     estimateLegCostKm,
+    estimateFlightCostKm,
     estimateFuelCostKm,
     applyCarFuelCosts,
     orderStopsNearestNeighbor,

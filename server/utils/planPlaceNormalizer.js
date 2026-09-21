@@ -1,7 +1,5 @@
-const normalizePlaceName = (value) => String(value || '')
-    .normalize('NFKC')
-    .toLocaleLowerCase('th')
-    .replace(/[^\p{L}\p{N}]+/gu, '');
+// regex เดียวกับ normalizeThaiName กลาง — import มาใช้แทนนิยามซ้ำ
+const { normalizeThaiName: normalizePlaceName } = require('./planScheduler');
 
 const finiteNumber = (value) => {
     const parsed = Number(value);

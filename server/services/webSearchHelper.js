@@ -8,6 +8,8 @@
 // search_depth=basic (1 credit) ห้ามใช้ advanced (2 credits)
 
 const { config } = require('../config/env');
+const { fetchWithTimeout } = require('../utils/httpHelper');
+const { createTtlCache } = require('../utils/ttlCache');
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 const DDG_API_URL = 'https://api.duckduckgo.com/';
@@ -15,8 +17,7 @@ const WIKI_TH_API_URL = 'https://th.wikipedia.org/w/api.php';
 const WIKI_EN_API_URL = 'https://en.wikipedia.org/w/api.php';
 
 // cache ใน memory กันยิง Tavily ซ้ำคำถามเดิม (ประหยัด credit)
-const searchCache = new Map(); // key -> { expiresAt, results }
-const MAX_CACHE_ENTRIES = 200;
+// (logic เดิม ย้ายไปใช้ createTtlCache/fetchWithTimeout กลางใน utils)
 
 const stripHtml = (value) => String(value || '')
     .replace(/<[^>]*>/g, ' ')
@@ -30,36 +31,10 @@ const stripHtml = (value) => String(value || '')
 
 const normalizeUri = (uri) => String(uri || '').trim().replace(/\/+$/, '').toLowerCase();
 
-const getCache = (key) => {
-    const entry = searchCache.get(key);
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-        searchCache.delete(key);
-        return null;
-    }
-    return entry.results;
-};
-
-const setCache = (key, results) => {
-    if (searchCache.size >= MAX_CACHE_ENTRIES) {
-        const oldestKey = searchCache.keys().next().value;
-        searchCache.delete(oldestKey);
-    }
-    searchCache.set(key, {
-        expiresAt: Date.now() + Math.max(0, config.webSearch.cacheTtlMs),
-        results,
-    });
-};
-
-const fetchWithTimeout = async (url, options = {}, timeoutMs) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        return await fetch(url, { ...options, signal: controller.signal });
-    } finally {
-        clearTimeout(timeout);
-    }
-};
+const { get: getCache, set: setCache } = createTtlCache({
+    maxEntries: 200,
+    getTtlMs: () => Math.max(0, config.webSearch.cacheTtlMs),
+});
 
 // --- Tavily (ตัวหลัก, เสีย 1 credit/call ด้วย search_depth=basic) ---
 const searchTavily = async (queryText, limit, timeoutMs) => {
@@ -232,9 +207,4 @@ const formatWebSearchContext = (results) => {
     ).join('\n\n');
 };
 
-// adapter ให้ formatWebCitations() เดิมใน aiHelper ใช้ต่อได้โดยไม่แก้
-const toGroundingChunks = (results) => results.map((item) => ({
-    web: { title: item.title, uri: item.uri },
-}));
-
-module.exports = { freeWebSearch, formatWebSearchContext, toGroundingChunks };
+module.exports = { freeWebSearch, formatWebSearchContext };

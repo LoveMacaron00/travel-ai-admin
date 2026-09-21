@@ -2,11 +2,7 @@
 // GET /api/mobile/rest-stops — ค้นจุดแวะพัก OSM รอบพิกัด (ไม่ต้อง login)
 
 const { searchRestStops, REST_STOP_ATTRIBUTION, REST_STOP_FILTERS } = require('../services/restStopService');
-
-const finiteCoord = (value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-};
+const { finiteCoord } = require('../utils/planScheduler');
 
 // GET /api/mobile/rest-stops?lat=..&lon=..&radius=..&type=..&limit=..
 // type รับได้หลายค่าคั่น comma (ดู REST_STOP_FILTERS) — ไม่ส่งมา = ร้านสะดวกซื้อ/ปั๊ม/คาเฟ่
@@ -31,7 +27,9 @@ const getRestStops = async (req, res) => {
         });
     }
 
-    const radius = Math.min(20000, Math.max(500, Math.round(Number(req.query.radius) || 5000)));
+    // สนามบินอยู่ห่างกันเป็นร้อย กม. — อนุญาตรัศมีถึง 200 กม. เมื่อค้นสนามบิน
+    const maxRadius = types !== undefined && types.includes('airport') ? 200000 : 20000;
+    const radius = Math.min(maxRadius, Math.max(500, Math.round(Number(req.query.radius) || 5000)));
     const limit = Math.min(20, Math.max(1, Math.round(Number(req.query.limit) || 10)));
 
     try {
