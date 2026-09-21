@@ -41,10 +41,28 @@ const ensureTripsStartDateColumn = async (db = pool) => {
     _tripsStartDateEnsured = true;
 };
 
+// เติมคอลัมน์พิกัดจุดเริ่มต้น (NULL = ทริปเก่าที่สร้างก่อนมีฟิลด์นี้) — pattern เดียวกับ title
+// ใช้คำนวณขากลับ (returnLeg) ตอน PUT/GET แม้ client ไม่ส่งพิกัดมาใหม่
+let _tripsStartCoordsEnsured = false;
+const ensureTripsStartCoordsColumns = async (db = pool) => {
+    if (_tripsStartCoordsEnsured) return;
+    await db.query(`ALTER TABLE trips ADD COLUMN IF NOT EXISTS start_latitude DOUBLE PRECISION`);
+    await db.query(`ALTER TABLE trips ADD COLUMN IF NOT EXISTS start_longitude DOUBLE PRECISION`);
+    _tripsStartCoordsEnsured = true;
+};
+
 const ensureTripsPlanColumns = async (db = pool) => {
     await ensureTripsTitleColumn(db);
     await ensureTripsStartTimeColumn(db);
     await ensureTripsStartDateColumn(db);
+    await ensureTripsStartCoordsColumns(db);
+};
+
+// พิกัดที่ใช้ได้เท่านั้น (lat -90..90, lng -180..180) — อย่างอื่นถือว่าไม่ได้ส่งมา (เก็บ NULL)
+const normalizeStartCoord = (value, min, max) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) return null;
+    return parsed;
 };
 
 // "HH:MM" ที่ใช้ได้เท่านั้น — อย่างอื่นถือว่าไม่ได้ส่งมา (backend ใช้ 09:00 แทน)
@@ -89,6 +107,8 @@ const createGeneratingTrip = async ({
     days,
     startTime,
     startDate,
+    startLatitude,
+    startLongitude,
     budget,
     currency,
     travelStyle,
@@ -98,10 +118,11 @@ const createGeneratingTrip = async ({
     await ensureTripsPlanColumns(db);
     const { rows } = await db.query(
         `INSERT INTO trips
-            (user_id, title, destination, province, days, start_time, start_date, budget, currency,
+            (user_id, title, destination, province, days, start_time, start_date,
+             start_latitude, start_longitude, budget, currency,
              travel_style, group_type, interests, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'generating')
-         RETURNING id`,
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'generating')
+          RETURNING id`,
         [
             userId,
             (typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : null),
@@ -110,6 +131,8 @@ const createGeneratingTrip = async ({
             normalizeDays(days),
             normalizeStartTime(startTime),
             normalizeStartDate(startDate),
+            normalizeStartCoord(startLatitude, -90, 90),
+            normalizeStartCoord(startLongitude, -180, 180),
             budget || null,
             currency || 'THB',
             travelStyle || null,
@@ -143,7 +166,8 @@ const saveGeneratedPlan = async (tripId, planData, fullText, db = pool) => {
 const findUserTripsWithPlans = async (userId, db = pool) => {
     await ensureTripsPlanColumns(db);
     const { rows } = await db.query(
-        `SELECT t.id, t.title, t.destination, t.province, t.days, t.start_time, t.start_date, t.budget,
+        `SELECT t.id, t.title, t.destination, t.province, t.days, t.start_time, t.start_date,
+                t.start_latitude, t.start_longitude, t.budget,
                 t.travel_style, t.group_type, t.status, t.created_at,
                 tp.plan_data
          FROM trips t
@@ -177,6 +201,35 @@ const findTripStartTimeById = async (tripId, db = pool) => {
         [tripId],
     );
     return rows[0]?.start_time ?? null;
+};
+
+// อ่านพิกัดจุดเริ่มต้นที่เก็บไว้ (NULL = ทริปเก่า) — ใช้คำนวณขากลับตอน PUT/GET
+const findTripStartCoordsById = async (tripId, db = pool) => {
+    await ensureTripsPlanColumns(db);
+    const { rows } = await db.query(
+        `SELECT start_latitude, start_longitude FROM trips WHERE id = $1`,
+        [tripId],
+    );
+    const lat = Number(rows[0]?.start_latitude);
+    const lng = Number(rows[0]?.start_longitude);
+    return {
+        latitude: Number.isFinite(lat) ? lat : null,
+        longitude: Number.isFinite(lng) ? lng : null,
+    };
+};
+
+// เติมพิกัดจุดเริ่มต้นเฉพาะเมื่อยังไม่มี (backfill ทริปเก่าครั้งเดียว — ไม่เขียนทับของเดิม)
+const updateTripStartCoordsIfMissing = async (tripId, latitude, longitude, db = pool) => {
+    const lat = normalizeStartCoord(latitude, -90, 90);
+    const lng = normalizeStartCoord(longitude, -180, 180);
+    if (lat == null || lng == null) return 0;
+    await ensureTripsPlanColumns(db);
+    const { rowCount } = await db.query(
+        `UPDATE trips SET start_latitude = $2, start_longitude = $3
+          WHERE id = $1 AND (start_latitude IS NULL OR start_longitude IS NULL)`,
+        [tripId, lat, lng],
+    );
+    return rowCount;
 };
 
 // อัปเดตจำนวนวันที่ resolve แล้ว (เช่น auto_days คำนวณได้ 4 วันแต่ตอน insert เก็บ 3 ไว้ชั่วคราว)
@@ -255,6 +308,8 @@ module.exports = {
     findUserTripsWithPlans,
     findTripWithPlanById,
     findTripStartTimeById,
+    findTripStartCoordsById,
+    updateTripStartCoordsIfMissing,
     updateTripDays,
     updateTripStartTime,
     isTripOwnedByUser,

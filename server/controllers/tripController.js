@@ -13,6 +13,7 @@ const {
     markRentalCarLegs,
     applyTransportDelta,
 } = require('../utils/planScheduler');
+const { computeReturnLeg } = require('../services/restStopService');
 const tripRepository = require('../repositories/tripRepository');
 
 const normalizeStoredPlan = (planData, places) => {
@@ -20,11 +21,27 @@ const normalizeStoredPlan = (planData, places) => {
     sanitizePlaceholderPlanImages(planData);
 };
 
+// คำนวณขากลับใหม่ทุกครั้ง (มากลับรถ=ขับกลับ / มาเครื่องบิน=รถเช่าไปสนามบิน+บินกลับ)
+// ปรับยอดด้วยผลต่างจากขากลับเดิม (หักของเก่าออกก่อนบวกของใหม่ กันนับซ้ำ)
+// ใช้ร่วมกันทั้ง PUT (บันทึกจริง) และ GET (โชว์) — ไม่มีพิกัดบ้านข้ามไปคงของเดิม
+const refreshReturnLeg = async (planData, { startLat, startLng } = {}) => {
+    if (!planData || typeof planData !== 'object' || !Array.isArray(planData.days)) return;
+    const oldCost = Number(planData.returnLeg?.estimatedCost) || 0;
+    const { returnLeg, tip, cost } = await computeReturnLeg(planData, { startLat, startLng });
+    if (!returnLeg) return;
+    planData.returnLeg = returnLeg;
+    applyTransportDelta(planData, cost - oldCost);
+    if (tip) {
+        planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+        if (!planData.tips.includes(tip)) planData.tips.push(tip);
+    }
+};
+
 // ซ่อมแผนเก่าตอนเปิดดู (in-memory เท่านั้น — ไม่เขียนกลับ DB)
 // แผนที่สร้างก่อนมีตัวกันโหมดเพี้ยน/รถเช่า เปิดดูก็เห็นขาบินในเมืองเหมือนเดิม
 // จึงรัน pipeline เดียวกับ PUT ให้ตรงกัน: ลด flight ระยะสั้น → ปักธงรถเช่า → เดินโซ่เวลาใหม่
 // (ไม่มีพิกัดจุดเริ่ม ขาแรกของวันวัดไม่ได้จึงข้ามเหมือน PUT)
-const repairStoredPlanForDisplay = (trip, places) => {
+const repairStoredPlanForDisplay = async (trip, places) => {
     const planData = trip?.plan_data;
     if (!planData || !Array.isArray(planData.days)) return;
     try {
@@ -49,6 +66,16 @@ const repairStoredPlanForDisplay = (trip, places) => {
     } catch {
         // best-effort — ล้มก็โชว์เวลาที่เก็บไว้เดิม
     }
+    // ขากลับคำนวณใหม่ด้วย (มากลับรถ=ขับกลับ / มาเครื่องบิน=ไปสนามบิน+บินกลับ)
+    // ใช้พิกัดบ้านที่เก็บไว้ — ทริปเก่าไม่มีพิกัดข้ามไปคงขากลับเดิม
+    try {
+        await refreshReturnLeg(planData, {
+            startLat: trip?.start_latitude,
+            startLng: trip?.start_longitude,
+        });
+    } catch {
+        // best-effort — ล้มก็โชว์ขากลับเดิม
+    }
 };
 
 // POST /api/trips — สร้าง trip ใหม่แล้ว stream แผน
@@ -70,6 +97,9 @@ const createTripHandler = ({ database = pool, planGenerator = generateTripPlan }
                 startTime: req.body.start_time,
                 // start_date "YYYY-MM-DD" จาก DateRangePicker — เก็บลง trips เพื่อให้แผนเก่าโชว์วันที่จริงได้
                 startDate: req.body.start_date,
+                // พิกัดจุดเริ่มต้น — เก็บลง trips เพื่อคำนวณขากลับตอน PUT/GET
+                startLatitude: req.body.start_latitude,
+                startLongitude: req.body.start_longitude,
                 budget: req.body.budget,
                 currency: req.body.currency,
                 travelStyle: req.body.travel_style,
@@ -104,7 +134,7 @@ const getUserTrips = async (req, res) => {
         const places = await tripRepository.findApprovedPlanPlaces();
         for (const trip of rows) {
             normalizeStoredPlan(trip.plan_data, places);
-            repairStoredPlanForDisplay(trip, places);
+            await repairStoredPlanForDisplay(trip, places);
         }
         res.json(rows);
     } catch (err) {
@@ -121,7 +151,7 @@ const getTripById = async (req, res) => {
         if (!trip) return res.status(404).json({ message: 'ไม่พบแผนเที่ยว' });
         const places = await tripRepository.findApprovedPlanPlaces();
         normalizeStoredPlan(trip.plan_data, places);
-        repairStoredPlanForDisplay(trip, places);
+        await repairStoredPlanForDisplay(trip, places);
         res.json(trip);
     } catch (err) {
         console.error('[tripController] getTripById:', err.message);
@@ -164,6 +194,23 @@ const updateTripPlan = async (req, res) => {
                 : undefined;
         }
         delete planData.start_time;
+        // พิกัดบ้านจาก body (แอปส่งจุดเริ่มปัจจุบันมาด้วย) — เติมลง trips เฉพาะเมื่อยังไม่มี
+        // แล้วใช้คำนวณขากลับ (body มาก่อนค่าที่เก็บไว้)
+        const bodyLat = Number(req.body?.start_latitude);
+        const bodyLng = Number(req.body?.start_longitude);
+        const bodyCoordsValid = Number.isFinite(bodyLat) && Number.isFinite(bodyLng)
+            && bodyLat >= -90 && bodyLat <= 90 && bodyLng >= -180 && bodyLng <= 180;
+        if (bodyCoordsValid) {
+            await tripRepository.updateTripStartCoordsIfMissing(tripId, bodyLat, bodyLng).catch(() => {});
+        }
+        let storedCoords = { latitude: null, longitude: null };
+        try {
+            storedCoords = await tripRepository.findTripStartCoordsById(tripId);
+        } catch {
+            storedCoords = { latitude: null, longitude: null };
+        }
+        const homeLat = bodyCoordsValid ? bodyLat : storedCoords.latitude;
+        const homeLng = bodyCoordsValid ? bodyLng : storedCoords.longitude;
         // โหลดสถานที่พร้อมเวลาเปิด-ปิดเพื่อตรวจเที่ยดึก/นอกเวลาเปิด (best-effort — ล้มก็ตรวจแค่เที่ยวดึก)
         let planPlaces = [];
         try {
@@ -195,12 +242,27 @@ const updateTripPlan = async (req, res) => {
             }
         }
 
+        // ขากลับคำนวณใหม่ทุกครั้งที่บันทึก (มากลับรถ=ขับกลับ / มาเครื่องบิน=ไปสนามบิน+บินกลับ)
+        // ใช้พิกัดบ้านที่ resolve แล้ว — ไม่มีพิกัดคงขากลับเดิมไว้
+        try {
+            await refreshReturnLeg(planData, { startLat: homeLat, startLng: homeLng });
+        } catch {
+            // best-effort — ล้มก็ใช้ขากลับเดิม
+        }
+
         await tripRepository.upsertTripPlan(tripId, JSON.stringify(planData));
         // user เพิ่ม/ลบวันเองจากแอปได้ — sync จำนวนวันกลับ trips.days ให้การ์ด Profile ตรง
         // (normalizeDays clamp 1..7; วันเปล่า chainAllDaysPreservingOrder ข้ามให้อยู่แล้ว)
         await tripRepository.updateTripDays(tripId, planData.days.length);
 
-        res.json({ message: 'บันทึกแผนการเดินทางสำเร็จ', warnings });
+        // ส่งขากลับ + ยอดรวมล่าสุดกลับไปด้วย — แอปอัปเดตหน้าจอทันทีโดยไม่ต้องโหลดใหม่
+        res.json({
+            message: 'บันทึกแผนการเดินทางสำเร็จ',
+            warnings,
+            returnLeg: planData.returnLeg ?? null,
+            totalEstimatedCost: planData.totalEstimatedCost ?? 0,
+            budgetBreakdown: planData.budgetBreakdown ?? {},
+        });
     } catch (err) {
         console.error('[tripController] updateTripPlan:', err.message);
         res.status(500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกแผนการเดินทาง' });

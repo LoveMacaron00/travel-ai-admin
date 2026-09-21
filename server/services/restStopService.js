@@ -11,6 +11,8 @@ const {
     haversineKm,
     computeLegMinutes,
     estimateLegCostKm,
+    estimateRentalCostKm,
+    estimateFlightCostKm,
     chainDayTimes,
     parseClockToMinutes,
     finiteCoord,
@@ -677,6 +679,106 @@ const getDayDeparture = (day) => {
     return arrival0 ?? DEFAULT_DAY_START_MINUTES;
 };
 
+// คำนวณขากลับวันสุดท้าย → จุดเริ่มต้น (ใช้ร่วมกันทั้ง gen/PUT/GET)
+// มากลับรถ = ขับรถกลับค่าน้ำมัน / มาเครื่องบิน = นั่งรถเช่าไปสนามบินต้นทาง + บินกลับ + นั่งรถเข้าบ้าน
+// ไม่เพิ่ม stop — คืน { returnLeg, tip, cost } ให้ caller เขียนลง planData + ปรับยอดเอง
+// หาจุดเริ่ม/สนามบินไม่ได้คืน returnLeg null (caller คงของเดิมไว้)
+async function computeReturnLeg(planData, { startLat, startLng, findAirports = searchAirports, fallbackMode = 'car' } = {}) {
+    const empty = { returnLeg: null, tip: null, cost: 0 };
+    const days = Array.isArray(planData?.days) ? planData.days : [];
+    if (days.length === 0) return empty;
+    const homeLat = finiteCoord(startLat);
+    const homeLng = finiteCoord(startLng);
+    if (homeLat == null || homeLng == null) return empty;
+    const lastDay = days[days.length - 1];
+    const lastStops = Array.isArray(lastDay?.stops) ? lastDay.stops : [];
+    let lastStop = null;
+    for (let i = lastStops.length - 1; i >= 0; i--) {
+        const stop = lastStops[i];
+        if (!stop || typeof stop !== 'object') continue;
+        if (stop.isRestStop === true) continue;
+        if (String(stop.destinationId ?? '').startsWith('osm:')) continue;
+        lastStop = stop;
+        break;
+    }
+    const lastLat = finiteCoord(lastStop?.latitude);
+    const lastLng = finiteCoord(lastStop?.longitude);
+    if (!lastStop || lastLat == null || lastLng == null) return empty;
+
+    // ทริปนี้บินมาไหม (นับขา flight จริง รวม transfer สนามบินขาเข้า)
+    const hasFlight = days.some((day) => (Array.isArray(day?.stops) ? day.stops : [])
+        .some((stop) => stop && typeof stop === 'object'
+            && String(stop.transportMode || '').toLowerCase() === 'flight'));
+
+    // เคสบิน: รถเช่าไปสนามบินต้นทาง → บินกลับ → รถเข้าบ้าน
+    if (hasFlight) {
+        try {
+            const [depList, arrList] = await Promise.all([
+                findAirports(lastLat, lastLng),
+                findAirports(homeLat, homeLng),
+            ]);
+            const dep = Array.isArray(depList) ? depList[0] : null;
+            const arr = Array.isArray(arrList) ? arrList[0] : null;
+            if (dep && arr && dep.id !== arr.id && !(dep.iata && dep.iata === arr.iata)) {
+                const airKm = haversineKm(dep.latitude, dep.longitude, arr.latitude, arr.longitude);
+                if (airKm != null && airKm >= FLIGHT_MIN_AIRPORT_KM) {
+                    const g1km = haversineKm(lastLat, lastLng, dep.latitude, dep.longitude) ?? 0;
+                    const g2km = haversineKm(arr.latitude, arr.longitude, homeLat, homeLng) ?? 0;
+                    const g1 = computeLegMinutes(g1km, 'car').travelMinutes;
+                    const fly = computeLegMinutes(airKm, 'flight').travelMinutes;
+                    const g2 = computeLegMinutes(g2km, 'car').travelMinutes;
+                    const cost = estimateRentalCostKm(g1km)
+                        + estimateFlightCostKm(airKm)
+                        + estimateLegCostKm(g2km, 'car');
+                    const airKmRound = Math.round(airKm * 10) / 10;
+                    const via = `${dep.iata || dep.name} → ${arr.iata || arr.name}`;
+                    return {
+                        returnLeg: {
+                            from: String(lastStop.place || ''),
+                            to: 'จุดเริ่มต้น',
+                            latitude: homeLat,
+                            longitude: homeLng,
+                            distanceKm: airKmRound,
+                            estimatedMinutes: g1 + fly + g2,
+                            estimatedCost: cost,
+                            mode: 'flight',
+                            via,
+                        },
+                        tip: `ขากลับนั่งรถเช่าไป${dep.name} แล้วบิน ${via} ` +
+                            `(~${airKmRound} กม. รวม ~${g1 + fly + g2} นาที) ค่าเดินทางกลับประมาณ ${cost} บาท`,
+                        cost,
+                    };
+                }
+            }
+        } catch {
+            // หาสนามบินไม่ได้ — ตกไปใช้ขากลับภาคพื้นข้างล่าง
+        }
+    }
+
+    // เคสภาคพื้น: กลับด้วยโหมดของจุดสุดท้าย (รถ=น้ำมันตามระยะจริง)
+    const mode = String(lastStop.transportMode || fallbackMode || 'car').toLowerCase();
+    const km = haversineKm(lastLat, lastLng, homeLat, homeLng);
+    if (km == null) return empty;
+    const { travelMinutes } = computeLegMinutes(km, mode);
+    const cost = estimateLegCostKm(km, mode);
+    return {
+        returnLeg: {
+            from: String(lastStop.place || ''),
+            to: 'จุดเริ่มต้น',
+            latitude: homeLat,
+            longitude: homeLng,
+            distanceKm: Math.round(km * 10) / 10,
+            estimatedMinutes: travelMinutes,
+            estimatedCost: cost,
+            mode,
+            via: '',
+        },
+        tip: `ขากลับจาก${String(lastStop.place || 'จุดสุดท้าย')}ถึงจุดเริ่มต้น ~${(Math.round(km * 10) / 10)} กม. ` +
+            `ใช้เวลา ~${travelMinutes} นาที ค่าเดินทางประมาณ ${cost} บาท`,
+        cost,
+    };
+}
+
 async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat, startLng, skipOvernight = false } = {}) {
     if (!planData || typeof planData !== 'object') return { added: 0 };
     if (config.overpass && config.overpass.enabled === false) return { added: 0 };
@@ -1121,48 +1223,19 @@ async function enrichPlanWithRestStops(planData, { primaryMode = 'car', startLat
         }
     }
 
-    // ขากลับวันสุดท้าย → จุดเริ่มต้น: ไม่เพิ่ม stop แต่บันทึก returnLeg พร้อมค่าเดินทาง
+    // ขากลับวันสุดท้าย → จุดเริ่มต้น (มากลับรถ=ขับกลับ / มาเครื่องบิน=รถเช่าไปสนามบิน+บินกลับ)
+    // ไม่เพิ่ม stop แต่บันทึก returnLeg พร้อมค่าเดินทาง
     try {
-        const homeLat = finiteCoord(startLat);
-        const homeLng = finiteCoord(startLng);
-        if (days.length > 0 && homeLat != null && homeLng != null) {
-            const lastDay = days[days.length - 1];
-            const lastStops = Array.isArray(lastDay?.stops) ? lastDay.stops : [];
-            let lastStop = lastStops[lastStops.length - 1];
-            for (let i = lastStops.length - 1; i >= 0; i--) {
-                const stop = lastStops[i];
-                if (!stop || typeof stop !== 'object') continue;
-                if (stop.isRestStop === true) continue;
-                if (String(stop.destinationId ?? '').startsWith('osm:')) continue;
-                lastStop = stop;
-                break;
-            }
-            const lastStopLat = finiteCoord(lastStop?.latitude);
-            const lastStopLng = finiteCoord(lastStop?.longitude);
-            if (lastStop && lastStopLat != null && lastStopLng != null) {
-                const mode = String(lastStop.transportMode || primaryMode || 'car').toLowerCase();
-                const km = haversineKm(lastStopLat, lastStopLng, homeLat, homeLng);
-                if (km != null) {
-                    const { travelMinutes } = computeLegMinutes(km, mode);
-                    // car = รถตัวเอง estimateLegCostKm คิดน้ำมันให้แล้ว
-                    const cost = estimateLegCostKm(km, mode);
-                    planData.returnLeg = {
-                        from: String(lastStop.place || ''),
-                        to: 'จุดเริ่มต้น',
-                        latitude: homeLat,
-                        longitude: homeLng,
-                        distanceKm: Math.round(km * 10) / 10,
-                        estimatedMinutes: travelMinutes,
-                        estimatedCost: cost,
-                        mode,
-                    };
-                    if (Number.isFinite(cost) && cost > 0) addedTransport += cost;
-                    planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
-                    const legTip = `ขากลับจาก${String(lastStop.place || 'จุดสุดท้าย')}ถึงจุดเริ่มต้น ~${(Math.round(km * 10) / 10)} กม. ` +
-                        `ใช้เวลา ~${travelMinutes} นาที ค่าเดินทางประมาณ ${cost} บาท`;
-                    if (!planData.tips.includes(legTip)) planData.tips.push(legTip);
-                }
-            }
+        const { returnLeg, tip, cost } = await computeReturnLeg(planData, {
+            startLat,
+            startLng,
+            fallbackMode: primaryMode,
+        });
+        if (returnLeg) {
+            planData.returnLeg = returnLeg;
+            if (Number.isFinite(cost) && cost > 0) addedTransport += cost;
+            planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+            if (tip && !planData.tips.includes(tip)) planData.tips.push(tip);
         }
     } catch {
         // best-effort — คำนวณขากลับไม่ได้ก็ข้าม ไม่ล้มทั้งแผน
@@ -1241,4 +1314,5 @@ module.exports = {
     isMilitaryOnlyAirfield,
     enrichPlanWithFlightTransfers,
     enrichPlanWithRestStops,
+    computeReturnLeg,
 };
