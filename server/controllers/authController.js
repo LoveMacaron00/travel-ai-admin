@@ -2,7 +2,7 @@
 
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const pool = require('../config/db');
+const { findAdminByEmail } = require('../repositories/authRepository');
 const { adminJwtSecret } = require('../config/jwtSecrets');
 
 /**
@@ -20,8 +20,7 @@ const login = async (req, res) => {
         }
 
         // ค้นหาแอดมินจากฐานข้อมูล
-        const { rows } = await pool.query('SELECT id, email, password FROM admins WHERE email = $1 LIMIT 1', [email]);
-        const admin = rows[0] || null;
+        const admin = await findAdminByEmail(email);
 
         if (!admin) {
             return res.status(401).json({ message: 'Email หรือ Password ไม่ถูกต้อง' });

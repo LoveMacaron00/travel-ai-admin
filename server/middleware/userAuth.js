@@ -1,20 +1,4 @@
-// server/middleware/userAuth.js
-
-const jwt = require('jsonwebtoken');
-const { userJwtSecret } = require('../config/jwtSecrets');
-
-// บังคับให้ request มี JWT ผู้ใช้ที่ตรวจสอบได้ก่อนเข้าถึง route
-const requireUserAuth = (req, res, next) => {
-    const authHeader = req.headers.authorization || '';
-    if (!authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'กรุณาเข้าสู่ระบบ' });
-    }
-    try {
-        req.user = jwt.verify(authHeader.slice(7).trim(), userJwtSecret);
-        next();
-    } catch {
-        return res.status(401).json({ message: 'Token ไม่ถูกต้องหรือหมดอายุ' });
-    }
-};
+// server/middleware/userAuth.js — now delegates to unified auth.js (behavior identical)
+const { requireUserAuth } = require('./auth');
 
 module.exports = { requireUserAuth };

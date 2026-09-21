@@ -31,7 +31,9 @@ const AddDestination = () => {
         latitude: '', longitude: '',
         status: 'approved', category: 'attraction',
         admission_adult: '', admission_child: '',
-        admission_foreigner_adult: '', admission_foreigner_child: ''
+        admission_foreigner_adult: '', admission_foreigner_child: '',
+        room_min_price: '', room_max_price: '',
+        hotel_star: '', check_in_time: '', check_out_time: '', number_of_rooms: ''
     });
     const [images, setImages] = useState([]);
     const [uploading, setUploading] = useState(false);
@@ -162,6 +164,12 @@ const AddDestination = () => {
                     thaiChild: form.admission_child,
                     foreignerAdult: form.admission_foreigner_adult,
                     foreignerChild: form.admission_foreigner_child,
+                    roomMinPrice: form.room_min_price,
+                    roomMaxPrice: form.room_max_price,
+                    hotelStar: form.hotel_star,
+                    checkInTime: form.check_in_time,
+                    checkOutTime: form.check_out_time,
+                    numberOfRooms: form.number_of_rooms,
                 },
             };
             const response = await api.post('/destinations', payload);
@@ -420,6 +428,44 @@ const AddDestination = () => {
                                 </div>
                             </div>
                         </div>
+
+                        {(form.category === 'accommodation' || form.category === 'hotel') && (
+                            <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700/50">
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 block">ราคาที่พัก (ต่อคืน)</label>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1.5 block font-medium">ราคาเริ่มต้น (บาท)</label>
+                                        <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" placeholder="เช่น 1200"
+                                            value={form.room_min_price} onChange={e => handleChange('room_min_price', e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1.5 block font-medium">ราคาสูงสุด (บาท)</label>
+                                        <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" placeholder="เช่น 3500"
+                                            value={form.room_max_price} onChange={e => handleChange('room_max_price', e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1.5 block font-medium">ระดับดาว</label>
+                                        <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" max="5" placeholder="เช่น 4"
+                                            value={form.hotel_star} onChange={e => handleChange('hotel_star', e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1.5 block font-medium">จำนวนห้อง</label>
+                                        <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" type="number" min="0" placeholder="เช่น 40"
+                                            value={form.number_of_rooms} onChange={e => handleChange('number_of_rooms', e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1.5 block font-medium">เวลาเช็คอิน</label>
+                                        <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 14:00"
+                                            value={form.check_in_time} onChange={e => handleChange('check_in_time', e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1.5 block font-medium">เวลาเช็คเอาต์</label>
+                                        <input className="w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50" placeholder="เช่น 12:00"
+                                            value={form.check_out_time} onChange={e => handleChange('check_out_time', e.target.value)} />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Status */}
                         <div className="flex flex-col gap-4">

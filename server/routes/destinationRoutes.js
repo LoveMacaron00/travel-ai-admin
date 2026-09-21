@@ -4,6 +4,9 @@ const express = require('express');
 const router = express.Router();
 const destinationController = require('../controllers/destinationController');
 
+// หมายเหตุ: auth ใส่ระดับ mount path ใน server.js (app.use('/api/destinations', requireAdminAuth, ...))
+// จึงเป็นเส้นทางเฉพาะแอดมินทั้งหมด (หน้าจัดการสถานที่ใน Admin Panel)
+
 // GET /api/destinations - ดึงรายการสถานที่ทั้งหมด (รองรับตัวกรอง)
 // GET /api/destinations/:id - ดึงข้อมูลสถานที่ตาม ID
 // POST /api/destinations - สร้างสถานที่ใหม่

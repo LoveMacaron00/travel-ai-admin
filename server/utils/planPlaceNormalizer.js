@@ -1,7 +1,5 @@
-const normalizePlaceName = (value) => String(value || '')
-    .normalize('NFKC')
-    .toLocaleLowerCase('th')
-    .replace(/[^\p{L}\p{N}]+/gu, '');
+// regex เดียวกับ normalizeThaiName กลาง — import มาใช้แทนนิยามซ้ำ
+const { normalizeThaiName: normalizePlaceName } = require('./planScheduler');
 
 const finiteNumber = (value) => {
     const parsed = Number(value);
@@ -97,6 +95,7 @@ const buildMustVisitStop = (place, day, mode) => {
     return {
         destinationId: String(place?.id ?? '').trim(),
         place: name,
+        province: String(place?.province || '').trim(),
         activity: `แวะชม ${name}`,
         latitude: latitude ?? 0,
         longitude: longitude ?? 0,
@@ -191,6 +190,13 @@ const normalizePlanPlaces = (planData, places = []) => {
         for (const stop of day?.stops || []) {
             if (!stop || typeof stop !== 'object') continue;
 
+            // จุดแวะพัก OSM (osm:...) ไม่ได้มาจาก destinations — เก็บไว้ตามเดิม
+            // (แทรกโดย enrichPlanWithRestStops หลัง normalize รอบสร้างแผน)
+            if (stop.isRestStop === true || String(stop.destinationId ?? '').startsWith('osm:')) {
+                verifiedStops.push(stop);
+                continue;
+            }
+
             const requestedId = String(stop.destinationId ?? '').trim();
             const requestedName = normalizePlaceName(stop.place);
             const nameMatch = requestedName ? byName.get(requestedName) : null;
@@ -206,6 +212,18 @@ const normalizePlanPlaces = (planData, places = []) => {
 
             stop.destinationId = String(matched.id);
             stop.imageUrl = String(matched.image_url || '').trim();
+            stop.province = String(matched.province || stop.province || '').trim();
+            // พกเวลาเปิด-ปิดติด stop ไว้ให้ client โชว์ + server ตรวจนอกเวลาเปิดได้ตอน PUT
+            // (matched มาจาก RAG/DB มี opening_time/closing_time/opening_hours เสมอ)
+            if (matched.opening_time != null && String(matched.opening_time).trim()) {
+                stop.openingTime = String(matched.opening_time).trim();
+            }
+            if (matched.closing_time != null && String(matched.closing_time).trim()) {
+                stop.closingTime = String(matched.closing_time).trim();
+            }
+            if (matched.opening_hours != null && stop.openingHours == null) {
+                stop.openingHours = matched.opening_hours;
+            }
 
             const latitude = finiteNumber(matched.latitude);
             const longitude = finiteNumber(matched.longitude);
@@ -217,7 +235,14 @@ const normalizePlanPlaces = (planData, places = []) => {
     }
 
     // Do not leave empty AI-invented days in the rendered itinerary.
-    planData.days = (planData?.days || []).filter(day => day.stops.length > 0);
+    // วันเปล่าเลขเรียง 1..N (user เพิ่มเองจากแอป) เก็บไว้ให้เติมสถานที่ทีหลัง —
+    // วันเปล่าเลขกระโดด (AI แต่งเลขมา เช่น วันที่ 9 ในทริป 3 วัน) กรองทิ้งเหมือนเดิม
+    planData.days = (planData?.days || []).filter(
+        (day, index) => day.stops.length > 0 || day.day === index + 1,
+    );
+
+    // เรียงเลขวันใหม่ 1..N กันเลขกระโดดหลัง user เพิ่ม/ลบวันเองจากแอป
+    planData.days.forEach((day, index) => { day.day = index + 1; });
 
     return planData;
 };

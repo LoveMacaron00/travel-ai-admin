@@ -138,7 +138,6 @@ CREATE TABLE IF NOT EXISTS destination_images (
     id SERIAL PRIMARY KEY,
     destination_id INT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
     image_url TEXT NOT NULL,
-    caption TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -162,8 +161,7 @@ CREATE TABLE IF NOT EXISTS app_usage_sessions (
     id BIGSERIAL PRIMARY KEY,
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    ended_at TIMESTAMPTZ
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- การเปิดรายละเอียดสถานที่ นับหนึ่งครั้งต่อ activity session
@@ -212,9 +210,12 @@ CREATE TABLE IF NOT EXISTS trips (
     user_id INT REFERENCES users(id) ON DELETE SET NULL,
 
     -- input จาก user
+    title VARCHAR(255), -- ชื่อแผนที่ผู้ใช้ตั้งเอง (NULL = ใช้ destination/province แทน)
     destination VARCHAR(255) NOT NULL,
     province VARCHAR(255),
     days INT NOT NULL DEFAULT 3,
+    start_time VARCHAR(5), -- เวลาเริ่มเดินทาง "HH:MM" (NULL = 09:00)
+    start_date DATE, -- วันที่เริ่มทริป "YYYY-MM-DD" (NULL = ไม่ระบุ ใช้โชว์หัวข้อแต่ละวันเป็นวันที่จริง)
     budget NUMERIC(12,2),
     currency VARCHAR(10) NOT NULL DEFAULT 'THB',
     travel_style VARCHAR(50), -- 'backpacker'|'comfort'|'luxury'
@@ -235,11 +236,10 @@ CREATE TABLE IF NOT EXISTS trip_plans (
     generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- chat_sessions (1 session ต่อ 1 trip)
+-- chat_sessions (session แชททั่วไปของผู้ใช้)
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE SET NULL,
-    trip_id INT REFERENCES trips(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -302,6 +302,101 @@ INSERT INTO plan_preference_options (type, key, label_th, label_en, icon_url, so
     ('transport_mode', 'flight',    'เครื่องบิน',   'Flight',     '/uploads/preferences/flight.png',    6)
 ON CONFLICT (type, key) DO NOTHING;
 
+-- ตารางอ้างอิง 77 จังหวัด (ไทย/อังกฤษ + ภูมิภาค) — ใช้ใน dropdown บันทึก diary
+-- เก็บ code กลางไว้ join อนาคต แต่ diary ยังส่ง name_th เหมือนเดิม (ไม่กระทบข้อมูลเก่า)
+CREATE TABLE IF NOT EXISTS provinces (
+    code VARCHAR(60) PRIMARY KEY,
+    name_th VARCHAR(100) NOT NULL,
+    name_en VARCHAR(100) NOT NULL,
+    region VARCHAR(20) NOT NULL
+        CHECK (region IN ('north', 'northeast', 'central', 'west', 'east', 'south')),
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- seed 77 จังหวัด (ไม่ทับรายการที่แก้ไขไปแล้ว)
+INSERT INTO provinces (code, name_th, name_en, region, sort_order) VALUES
+    ('chiang-rai', 'เชียงราย', 'Chiang Rai', 'north', 1),
+    ('chiang-mai', 'เชียงใหม่', 'Chiang Mai', 'north', 2),
+    ('nan', 'น่าน', 'Nan', 'north', 3),
+    ('phayao', 'พะเยา', 'Phayao', 'north', 4),
+    ('phrae', 'แพร่', 'Phrae', 'north', 5),
+    ('mae-hong-son', 'แม่ฮ่องสอน', 'Mae Hong Son', 'north', 6),
+    ('lampang', 'ลำปาง', 'Lampang', 'north', 7),
+    ('lamphun', 'ลำพูน', 'Lamphun', 'north', 8),
+    ('uttaradit', 'อุตรดิตถ์', 'Uttaradit', 'north', 9),
+    ('kalasin', 'กาฬสินธุ์', 'Kalasin', 'northeast', 10),
+    ('khon-kaen', 'ขอนแก่น', 'Khon Kaen', 'northeast', 11),
+    ('chaiyaphum', 'ชัยภูมิ', 'Chaiyaphum', 'northeast', 12),
+    ('nakhon-phanom', 'นครพนม', 'Nakhon Phanom', 'northeast', 13),
+    ('nakhon-ratchasima', 'นครราชสีมา', 'Nakhon Ratchasima', 'northeast', 14),
+    ('bueng-kan', 'บึงกาฬ', 'Bueng Kan', 'northeast', 15),
+    ('buri-ram', 'บุรีรัมย์', 'Buri Ram', 'northeast', 16),
+    ('maha-sarakham', 'มหาสารคาม', 'Maha Sarakham', 'northeast', 17),
+    ('mukdahan', 'มุกดาหาร', 'Mukdahan', 'northeast', 18),
+    ('yasothon', 'ยโสธร', 'Yasothon', 'northeast', 19),
+    ('roi-et', 'ร้อยเอ็ด', 'Roi Et', 'northeast', 20),
+    ('loei', 'เลย', 'Loei', 'northeast', 21),
+    ('si-sa-ket', 'ศรีสะเกษ', 'Si Sa Ket', 'northeast', 22),
+    ('sakon-nakhon', 'สกลนคร', 'Sakon Nakhon', 'northeast', 23),
+    ('surin', 'สุรินทร์', 'Surin', 'northeast', 24),
+    ('nong-khai', 'หนองคาย', 'Nong Khai', 'northeast', 25),
+    ('nong-bua-lam-phu', 'หนองบัวลำภู', 'Nong Bua Lam Phu', 'northeast', 26),
+    ('amnat-charoen', 'อำนาจเจริญ', 'Amnat Charoen', 'northeast', 27),
+    ('udon-thani', 'อุดรธานี', 'Udon Thani', 'northeast', 28),
+    ('ubon-ratchathani', 'อุบลราชธานี', 'Ubon Ratchathani', 'northeast', 29),
+    ('bangkok', 'กรุงเทพมหานคร', 'Bangkok', 'central', 30),
+    ('kamphaeng-phet', 'กำแพงเพชร', 'Kamphaeng Phet', 'central', 31),
+    ('chai-nat', 'ชัยนาท', 'Chai Nat', 'central', 32),
+    ('nakhon-nayok', 'นครนายก', 'Nakhon Nayok', 'central', 33),
+    ('nakhon-pathom', 'นครปฐม', 'Nakhon Pathom', 'central', 34),
+    ('nakhon-sawan', 'นครสวรรค์', 'Nakhon Sawan', 'central', 35),
+    ('nonthaburi', 'นนทบุรี', 'Nonthaburi', 'central', 36),
+    ('pathum-thani', 'ปทุมธานี', 'Pathum Thani', 'central', 37),
+    ('phra-nakhon-si-ayutthaya', 'พระนครศรีอยุธยา', 'Phra Nakhon Si Ayutthaya', 'central', 38),
+    ('phichit', 'พิจิตร', 'Phichit', 'central', 39),
+    ('phitsanulok', 'พิษณุโลก', 'Phitsanulok', 'central', 40),
+    ('phetchabun', 'เพชรบูรณ์', 'Phetchabun', 'central', 41),
+    ('lop-buri', 'ลพบุรี', 'Lop Buri', 'central', 42),
+    ('samut-prakan', 'สมุทรปราการ', 'Samut Prakan', 'central', 43),
+    ('samut-songkhram', 'สมุทรสงคราม', 'Samut Songkhram', 'central', 44),
+    ('samut-sakhon', 'สมุทรสาคร', 'Samut Sakhon', 'central', 45),
+    ('saraburi', 'สระบุรี', 'Saraburi', 'central', 46),
+    ('sing-buri', 'สิงห์บุรี', 'Sing Buri', 'central', 47),
+    ('sukhothai', 'สุโขทัย', 'Sukhothai', 'central', 48),
+    ('suphan-buri', 'สุพรรณบุรี', 'Suphan Buri', 'central', 49),
+    ('ang-thong', 'อ่างทอง', 'Ang Thong', 'central', 50),
+    ('uthai-thani', 'อุทัยธานี', 'Uthai Thani', 'central', 51),
+    ('kanchanaburi', 'กาญจนบุรี', 'Kanchanaburi', 'west', 52),
+    ('tak', 'ตาก', 'Tak', 'west', 53),
+    ('prachuap-khiri-khan', 'ประจวบคีรีขันธ์', 'Prachuap Khiri Khan', 'west', 54),
+    ('phetchaburi', 'เพชรบุรี', 'Phetchaburi', 'west', 55),
+    ('ratchaburi', 'ราชบุรี', 'Ratchaburi', 'west', 56),
+    ('chanthaburi', 'จันทบุรี', 'Chanthaburi', 'east', 57),
+    ('chachoengsao', 'ฉะเชิงเทรา', 'Chachoengsao', 'east', 58),
+    ('chon-buri', 'ชลบุรี', 'Chon Buri', 'east', 59),
+    ('trat', 'ตราด', 'Trat', 'east', 60),
+    ('prachin-buri', 'ปราจีนบุรี', 'Prachin Buri', 'east', 61),
+    ('rayong', 'ระยอง', 'Rayong', 'east', 62),
+    ('sa-kaeo', 'สระแก้ว', 'Sa Kaeo', 'east', 63),
+    ('krabi', 'กระบี่', 'Krabi', 'south', 64),
+    ('chumphon', 'ชุมพร', 'Chumphon', 'south', 65),
+    ('trang', 'ตรัง', 'Trang', 'south', 66),
+    ('nakhon-si-thammarat', 'นครศรีธรรมราช', 'Nakhon Si Thammarat', 'south', 67),
+    ('narathiwat', 'นราธิวาส', 'Narathiwat', 'south', 68),
+    ('pattani', 'ปัตตานี', 'Pattani', 'south', 69),
+    ('phang-nga', 'พังงา', 'Phang-nga', 'south', 70),
+    ('phatthalung', 'พัทลุง', 'Phatthalung', 'south', 71),
+    ('phuket', 'ภูเก็ต', 'Phuket', 'south', 72),
+    ('yala', 'ยะลา', 'Yala', 'south', 73),
+    ('ranong', 'ระนอง', 'Ranong', 'south', 74),
+    ('songkhla', 'สงขลา', 'Songkhla', 'south', 75),
+    ('satun', 'สตูล', 'Satun', 'south', 76),
+    ('surat-thani', 'สุราษฎร์ธานี', 'Surat Thani', 'south', 77)
+ON CONFLICT (code) DO NOTHING;
+
 -- -------------------------------------------------------------
 -- 8. Support tables
 -- -------------------------------------------------------------
@@ -358,7 +453,6 @@ CREATE INDEX IF NOT EXISTS idx_travel_diary_destination
     ON travel_diary_entries(destination_id);
 
 -- chat
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_trip ON chat_sessions(trip_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_sess ON chat_messages(session_id);
 
 -- feedback

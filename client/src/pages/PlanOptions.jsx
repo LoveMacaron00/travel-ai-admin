@@ -4,8 +4,6 @@ import {
     Pencil,
     Trash2,
     RefreshCw,
-    ChevronUp,
-    ChevronDown,
     X,
     Heart,
     Route,
@@ -15,6 +13,7 @@ import {
     Tags,
     Upload,
     ImageIcon,
+    GripVertical,
 } from 'lucide-react';
 import api from '../utils/api';
 import { resolveAssetUrl } from '../config';
@@ -58,6 +57,8 @@ const PlanOptions = () => {
     const [form, setForm] = useState(emptyForm('interest'));
     const [saving, setSaving] = useState(false);
     const [uploadingIcon, setUploadingIcon] = useState(false);
+    const [draggedIndex, setDraggedIndex] = useState(null);
+    const [dragOverIndex, setDragOverIndex] = useState(null);
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -205,22 +206,61 @@ const PlanOptions = () => {
         }
     };
 
-    // สลับลำดับกับรายการข้างบน/ข้างล่างในหมวดหมู่เดียวกัน
-    const handleMove = async (index, direction) => {
-        const targetIndex = index + direction;
-        if (targetIndex < 0 || targetIndex >= currentList.length) return;
+    const handleDragStart = (e, index) => {
+        setDraggedIndex(index);
+        setDragOverIndex(index);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(index));
+    };
 
-        const a = currentList[index];
-        const b = currentList[targetIndex];
+    const handleDragOver = (e, index) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dragOverIndex !== index) setDragOverIndex(index);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedIndex(null);
+        setDragOverIndex(null);
+    };
+
+    const handleDrop = async (e, targetIndex) => {
+        e.preventDefault();
+        const sourceIndex = draggedIndex ?? Number(e.dataTransfer.getData('text/plain'));
+        setDraggedIndex(null);
+        setDragOverIndex(null);
+
+        if (!Number.isInteger(sourceIndex) || sourceIndex === targetIndex) return;
+
+        const reordered = [...currentList];
+        const [movedItem] = reordered.splice(sourceIndex, 1);
+        reordered.splice(targetIndex, 0, movedItem);
+        const targetOrders = currentList.map((item) => item.sort_order);
+        const temporaryOrder = Math.max(...targetOrders, 0) + 1000000;
+
         try {
-            await Promise.all([
-                api.put(`/preferences/${a.id}`, { ...toPayload(a), sort_order: b.sort_order }),
-                api.put(`/preferences/${b.id}`, { ...toPayload(b), sort_order: a.sort_order }),
-            ]);
+            await api.put(`/preferences/${movedItem.id}`, {
+                ...toPayload(movedItem),
+                sort_order: temporaryOrder,
+            });
+
+            await Promise.all(reordered.map((item, index) => {
+                if (item.id === movedItem.id) return null;
+                return api.put(`/preferences/${item.id}`, {
+                    ...toPayload(item),
+                    sort_order: targetOrders[index],
+                });
+            }).filter(Boolean));
+
+            await api.put(`/preferences/${movedItem.id}`, {
+                ...toPayload(movedItem),
+                sort_order: targetOrders[targetIndex],
+            });
             await fetchData();
         } catch (err) {
-            console.error('Error reordering plan option:', err);
+            console.error('Error dragging plan option:', err);
             await showErrorAlert('จัดลำดับไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+            await fetchData();
         }
     };
 
@@ -377,30 +417,28 @@ const PlanOptions = () => {
                             ) : currentList.map((item, index) => {
                                 const iconSrc = item.icon_url ? resolveAssetUrl(item.icon_url) : null;
                                 return (
-                                    <tr key={item.id} className="group">
+                                    <tr
+                                        key={item.id}
+                                        draggable
+                                        onDragStart={(e) => handleDragStart(e, index)}
+                                        onDragOver={(e) => handleDragOver(e, index)}
+                                        onDrop={(e) => handleDrop(e, index)}
+                                        onDragEnd={handleDragEnd}
+                                        className={`group cursor-grab active:cursor-grabbing transition-colors ${
+                                            draggedIndex === index ? 'opacity-40' : ''
+                                        } ${
+                                            dragOverIndex === index && draggedIndex !== index
+                                                ? 'bg-yellow-500/10'
+                                                : ''
+                                        }`}
+                                    >
                                         <td className="py-2 px-3">
                                             <div className="flex items-center gap-1">
+                                                <GripVertical size={16} className="text-gray-600 group-hover:text-yellow-400 shrink-0" aria-label="ลากเพื่อจัดลำดับ" />
                                                 <span className="text-sm text-gray-400 font-mono w-6">
                                                     {item.sort_order}
                                                 </span>
-                                                <div className="flex flex-col">
-                                                    <button
-                                                        onClick={() => handleMove(index, -1)}
-                                                        disabled={index === 0}
-                                                        className="text-gray-500 hover:text-yellow-400 disabled:opacity-30 disabled:cursor-not-allowed"
-                                                        title="เลื่อนขึ้น"
-                                                    >
-                                                        <ChevronUp size={14} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleMove(index, 1)}
-                                                        disabled={index === currentList.length - 1}
-                                                        className="text-gray-500 hover:text-yellow-400 disabled:opacity-30 disabled:cursor-not-allowed"
-                                                        title="เลื่อนลง"
-                                                    >
-                                                        <ChevronDown size={14} />
-                                                    </button>
-                                                </div>
+
                                             </div>
                                         </td>
                                         <td className="py-2 px-3">

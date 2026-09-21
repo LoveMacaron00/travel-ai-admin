@@ -142,6 +142,46 @@ const ReadDestination = () => {
     ].filter(Boolean);
     const feeDetail = fee.detail || '';
 
+    // รายละเอียดต่อหมวดหมู่จาก TAT (detail ปลายทางมี field ต่างกันตามหมวด)
+    const tatCategoryName = typeof place.category === 'object' ? place.category?.name : place.category;
+    const cleanTatPrice = (value) => {
+        if (value == null) return '';
+        const parsed = Number(String(value).replace(/,/g, ''));
+        if (!Number.isFinite(parsed) || parsed <= 0) return '';
+        return Number.isInteger(parsed)
+            ? parsed.toLocaleString('th-TH')
+            : parsed.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+    };
+    const fmtTatPrice = (value) => {
+        const clean = cleanTatPrice(value);
+        return clean ? `${clean} บาท` : '';
+    };
+    const minPriceText = fmtTatPrice(place.minPrice ?? place.min_price);
+    const maxPriceText = fmtTatPrice(place.maxPrice ?? place.max_price);
+    const hotelInfo = place.information && typeof place.information === 'object' ? place.information : {};
+    const isHotelCategory = tatCategoryName === 'ที่พัก'
+        || hotelInfo.hotelStar != null
+        || minPriceText || maxPriceText;
+    const roomRows = [
+        minPriceText && maxPriceText && minPriceText !== maxPriceText
+            ? { label: 'ราคาห้องพัก', value: `${minPriceText} - ${maxPriceText}` }
+            : (minPriceText || maxPriceText) && { label: 'ราคาห้องพัก', value: minPriceText || maxPriceText },
+        hotelInfo.hotelStar != null && String(hotelInfo.hotelStar).trim() !== '' && { label: 'ระดับดาว', value: `${hotelInfo.hotelStar} ดาว` },
+        hotelInfo.checkInTime && { label: 'เวลาเช็คอิน', value: String(hotelInfo.checkInTime) },
+        hotelInfo.checkOutTime && { label: 'เวลาเช็คเอาต์', value: String(hotelInfo.checkOutTime) },
+        hotelInfo.numberOfRooms != null && String(hotelInfo.numberOfRooms).trim() !== '' && { label: 'จำนวนห้อง', value: `${hotelInfo.numberOfRooms} ห้อง` },
+    ].filter(Boolean);
+    const nameList = (items) => (Array.isArray(items) ? items : [])
+        .map((item) => (typeof item === 'string' ? item : item?.name))
+        .filter(Boolean);
+    const facilityNames = nameList(place.facilities);
+    const serviceNames = nameList(place.services);
+    const paymentNames = nameList(place.paymentMethods);
+    const cuisineNames = nameList(hotelInfo.cuisines);
+    const showHotelSection = isHotelCategory && (roomRows.length > 0 || facilityNames.length > 0 || serviceNames.length > 0 || paymentNames.length > 0);
+    const showCuisineSection = !isHotelCategory && cuisineNames.length > 0;
+    const showPaymentSection = !isHotelCategory && !showCuisineSection && paymentNames.length > 0;
+
     // รวม URL รูปภาพที่เป็นไปได้ทั้งหมดจาก TAT API หรือฐานข้อมูล
     let allImages = [];
 
@@ -304,6 +344,57 @@ const ReadDestination = () => {
                         {desc || 'ไม่มีข้อมูลรายละเอียด...'}
                     </div>
                 </div>
+
+                {showHotelSection && (
+                    <div className="mt-3 pt-3 border-t border-gray-800 relative z-10">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <Ticket size={14} /> ข้อมูลที่พักจาก TAT
+                        </label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl space-y-3">
+                            {roomRows.length > 0 && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {roomRows.map((row) => (
+                                        <div key={row.label} className="flex justify-between gap-3 text-sm bg-black/30 border border-gray-800 rounded-xl px-4 py-3">
+                                            <span className="text-gray-400">{row.label}</span>
+                                            <span className="text-gray-300 font-bold">{row.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {facilityNames.length > 0 && (
+                                <div className="text-sm text-gray-300">สิ่งอำนวยความสะดวก: {facilityNames.join(', ')}</div>
+                            )}
+                            {serviceNames.length > 0 && (
+                                <div className="text-sm text-gray-300">บริการ: {serviceNames.join(', ')}</div>
+                            )}
+                            {paymentNames.length > 0 && (
+                                <div className="text-sm text-gray-300">ชำระเงิน: {paymentNames.join(', ')}</div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {showCuisineSection && (
+                    <div className="mt-3 pt-3 border-t border-gray-800 relative z-10">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <Ticket size={14} /> ประเภทอาหารจาก TAT
+                        </label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-sm text-gray-300">
+                            {cuisineNames.join(', ')}
+                        </div>
+                    </div>
+                )}
+
+                {showPaymentSection && (
+                    <div className="mt-3 pt-3 border-t border-gray-800 relative z-10">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <Ticket size={14} /> การชำระเงินจาก TAT
+                        </label>
+                        <div className="p-4 bg-black/40 border border-gray-800 rounded-xl text-sm text-gray-300">
+                            {paymentNames.join(', ')}
+                        </div>
+                    </div>
+                )}
 
                 {(feeRows.length > 0 || feeDetail) && (
                     <div className="mt-3 pt-3 border-t border-gray-800 relative z-10">
