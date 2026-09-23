@@ -120,18 +120,6 @@ const config = {
         maxResults: Math.min(10, Math.max(1, asNumber(process.env.WEB_SEARCH_MAX_RESULTS, 5))),
         cacheTtlMs: Math.max(0, asNumber(process.env.WEB_SEARCH_CACHE_TTL_MS, 600000)),
     },
-    overpass: {
-        // จุดแวะพัก OSM ผ่าน Overpass API (ฟรี ไม่ต้องใช้ key)
-        // ปิดแล้ว endpoint /rest-stops คืน [] และแผนจะไม่แทรกจุดพัก (ใช้เวลาพักโดยประมาณเดิม)
-        enabled: asBoolean(process.env.OVERPASS_ENABLED, true),
-        // ลองตามลำดับสูงสุด 3 instance กันตัวหลักช้า/busy (คั่นด้วย comma)
-        baseUrls: (process.env.OVERPASS_BASE_URLS || 'https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter,https://overpass.nchc.org.tw/api/interpreter')
-            .split(',')
-            .map((url) => withoutTrailingSlash(url.trim()))
-            .filter(Boolean),
-        timeoutMs: Math.max(8000, asNumber(process.env.OVERPASS_TIMEOUT_MS, 20000)),
-        cacheTtlMs: Math.max(0, asNumber(process.env.OVERPASS_CACHE_TTL_MS, 1800000)),
-    },
     rag: {
         // เกณฑ์ cosine similarity ขั้นต่ำของแชท — ต่ำกว่านี้ถือว่า DB ไม่มีข้อมูลที่เกี่ยวข้อง แล้วไปค้นเว็บแทน
         // (vector search คืนผลใกล้เคียงสุดเสมอแม้ไม่เกี่ยว ถ้าไม่มี threshold web search จะไม่มีวันทำงาน)

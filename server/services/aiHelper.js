@@ -23,35 +23,37 @@ const {
     maxDistanceFromStart,
     validateDayFit,
     validateOpeningAndLateNight,
-    splitOverflowingDays,
-    applyCarFuelCosts,
+                    splitOverflowingDays,
+                    repairDayOpeningOrder,
+                    applyCarFuelCosts,
     normalizeThaiName,
-    downgradeShortFlights,
-    applyTransportDelta,
-    LOCAL_FUEL_CAP_PER_DAY,
 } = require('../utils/planScheduler');
 const { config } = require('../config/env');
 const {
     freeWebSearch,
     formatWebSearchContext,
 } = require('./webSearchHelper');
-const { enrichPlanWithRestStops, enrichPlanWithFlightTransfers } = require('./restStopService');
-const { findNearby } = require('../repositories/placeSearchRepository');
 const {
     chatCompletion,
     chatCompletionStream,
 } = require('./aiProvider');
 // เดิมเรียก Gemini native ตรง ตอนนี้วิ่งผ่าน 9router (OpenAI-compatible) ผ่าน aiProvider
 // (model/key/base URL อ่านจาก config.gemini ซึ่ง map ไป 9router แล้วใน env.js)
+// ระบบไม่มีเครื่องบินแล้ว — เดินทางภาคพื้น/เรือเท่านั้น (รวมจักรยาน)
 const SUPPORTED_TRANSPORT_MODES = new Set([
     'car',
     'walking',
     'bus',
     'train',
     'ferry',
-    'flight',
+    'bicycle',
 ]);
-const LONG_DISTANCE_TRANSPORT_MODES = new Set(['train', 'ferry', 'flight']);
+// alias ที่ client/AI อาจส่งมา → key หลัก
+const TRANSPORT_MODE_ALIASES = {
+    bike: 'bicycle',
+    cycling: 'bicycle',
+};
+const LONG_DISTANCE_TRANSPORT_MODES = new Set(['train', 'ferry']);
 
 // หน่วงเวลาแบบ async สำหรับการ retry request ไปยัง AI
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -61,6 +63,7 @@ const getAllowedTransportModes = (modes) => {
     const allowed = Array.isArray(modes)
         ? modes
             .map((mode) => String(mode).trim().toLowerCase())
+            .map((mode) => TRANSPORT_MODE_ALIASES[mode] || mode)
             .filter((mode) => SUPPORTED_TRANSPORT_MODES.has(mode))
         : [];
     return allowed.length > 0 ? [...new Set(allowed)] : ['car'];
@@ -116,14 +119,18 @@ const formatMustVisitList = (mustVisitPlaces, fallbackRequests) => {
 // ปรับ transport mode ของแผน AI ให้ตรงกับตัวเลือกที่อนุญาต
 const normalizePlanTransportModes = (planData, allowedModes) => {
     // model อาจตอบ mode นอกตัวเลือกของผู้ใช้ จึงบังคับ schema เชิงธุรกิจอีกชั้น
+    const canonMode = (value) => {
+        const lower = String(value || '').trim().toLowerCase();
+        return TRANSPORT_MODE_ALIASES[lower] || lower;
+    };
     for (const day of planData.days || []) {
         for (const stop of day.stops || []) {
-            const mode = String(stop.transportMode || '').toLowerCase();
+            const mode = canonMode(stop.transportMode);
             stop.transportMode = allowedModes.includes(mode) ? mode : allowedModes[0];
 
             if (Array.isArray(stop.segments)) {
                 for (const segment of stop.segments) {
-                    const segmentMode = String(segment.mode || '').toLowerCase();
+                    const segmentMode = canonMode(segment.mode);
                     segment.mode = allowedModes.includes(segmentMode)
                         ? segmentMode
                         : stop.transportMode;
@@ -213,7 +220,7 @@ const findExcessIslandCrossings = (planData, mustVisitPlaces, allPlaces) => {
 
             let isCrossing = false;
             if (prevIsIsland !== null && currIsIsland !== null) {
-                // รู้ภูมิศาสตร์ทั้งสองจุด → นับเมื่อสลับ เกาะ↔ฝั่ง ไม่สนว่าใช้ car/bus/train/ferry/flight/walking อะไร
+                // รู้ภูมิศาสตร์ทั้งสองจุด → นับเมื่อสลับ เกาะ↔ฝั่ง ไม่สนว่าใช้ car/bus/train/ferry/walking อะไร
                 isCrossing = prevIsIsland !== currIsIsland;
             } else {
                 // ข้อมูลภูมิศาสตร์ไม่พอ → ferry ถือว่าเป็นการข้ามทะเล (คงพฤติกรรมเดิมเป็น fallback)
@@ -358,7 +365,7 @@ const regroupIslandsToMinimizeCrossings = (planData, allPlaces) => {
 
 // จัดลำดับจุดแวะในแต่ละวันจากจุดเริ่มต้นจริง (greedy nearest-neighbor)
 // แล้วเดินโซ่เวลา arrivalTime/segments จากระยะทางจริง — เขียนทับเวลาที่ AI เดามาทั้งหมด
-// วันแรก anchor ที่ GPS ของผู้ใช้ วันถัดไป anchor ที่จุดสุดท้ายของวันก่อนหน้า (ค้างคืนตรงนั้น)
+// วันแรก anchor ที่ GPS ของผู้ใช้ วันถัดไป anchor ที่จุดสุดท้ายของวันก่อนหน้า
 // startMinutes คือเวลาออกเดินทาง (departure) — ส่ง origin ทุกวันให้ chainDayTimes คิดขาแรกจริง
 // แต่เวลาเริ่มนับใหม่ทุกวันตามเวลาเริ่มเดินทาง (เช่น ออก 08:30 ทุกวัน)
 const applyDeterministicSchedule = (planData, { startLat, startLng, startMinutes, startName, primaryMode }) => {
@@ -384,7 +391,7 @@ const applyDeterministicSchedule = (planData, { startLat, startLng, startMinutes
         if (lastLat != null && lastLng != null) {
             anchorLat = lastLat;
             anchorLng = lastLng;
-            // วันถัดไป anchor ที่จุดสุดท้ายของวันนี้ (ที่พักค้างคืน) — ใช้ชื่อจุดเป็นต้นทางขาแรก
+            // วันถัดไป anchor ที่จุดสุดท้ายของวันนี้ — ใช้ชื่อจุดเป็นต้นทางขาแรก
             anchorName = String(last?.place || '').trim() || anchorName;
             anchorMode = String(last?.transportMode || anchorMode || 'car').toLowerCase();
         }
@@ -400,9 +407,8 @@ const PLAN_RESPONSE_SCHEMA = {
         totalEstimatedCost: { type: 'number' },
         budgetBreakdown: {
             type: 'object',
-            required: ['accommodation', 'food', 'transport', 'activities'],
+            required: ['food', 'transport', 'activities'],
             properties: {
-                accommodation: { type: 'number' },
                 food: { type: 'number' },
                 transport: { type: 'number' },
                 activities: { type: 'number' },
@@ -503,28 +509,6 @@ async function generateGeminiJson(systemPrompt, userPrompt, maxTokens = 8192) {
     };
 }
 
-// จุดเริ่มอยู่จังหวัดเดียวกับปลายทางไหม (ทริป local — ขับรถตัวเองเที่ยวใกล้ ๆ)
-// client ส่ง is_local_trip มาถ้าเทียบได้แล้ว, ไม่งั้นเช็คเองจากสถานที่ใกล้ GPS สุดใน DB (≤100 กม.)
-// ใช้ข้ามที่พักค้างคืน + คิดขารถยนต์เป็นค่าน้ำมันแทนเรทแท็กซี่
-const isLocalTripRequest = async (tripInput) => {
-    if (tripInput.is_local_trip === true) return true;
-    const dest = String(tripInput.province || tripInput.destination || '').trim();
-    const sLat = finiteCoord(tripInput.start_latitude);
-    const sLng = finiteCoord(tripInput.start_longitude);
-    if (!dest || sLat == null || sLng == null) return false;
-    try {
-        const rows = await findNearby({ latitude: sLat, longitude: sLng, limit: 1 });
-        const nearest = Array.isArray(rows) ? rows[0] : null;
-        if (!nearest || !nearest.province) return false;
-        const distKm = Number(nearest.distance_km);
-        if (!Number.isFinite(distKm) || distKm > 100) return false;
-        const norm = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, '');
-        return norm(nearest.province) === norm(dest);
-    } catch {
-        return false;
-    }
-};
-
 // สร้างแผนแล้ว stream สถานะกลับ Flutter ก่อนบันทึก JSON ที่ normalize ลงฐานข้อมูล
 // สร้างแผนท่องเที่ยวด้วย Gemini แล้วส่งความคืบหน้าผ่าน SSE
 async function generateTripPlan(tripId, tripInput, res) {
@@ -536,9 +520,6 @@ async function generateTripPlan(tripId, tripInput, res) {
     const mustVisitPlaces = await retrievePlacesByIds(
         mustVisitRequests.map((place) => place.id),
     );
-    // ทริป local (อยู่จังหวัดเดียวกับที่เที่ยว) ขับรถตัวเอง — ใช้ข้ามที่พัก + คิดค่าน้ำมัน
-    // detect ฝั่ง server ด้วย กัน client เทียบจังหวัดไม่ได้ตอน _places ยังโหลดไม่เสร็จ
-    const localTrip = await isLocalTripRequest(tripInput);
 
     // ชื่อแผนที่ผู้ใช้กรอก (เช่น "เที่ยวเกาะทั่วไทย") — ใช้เป็นธีมหลักทั้งตอนค้น (RAG) และตอนสั่ง AI
     const tripTitle = typeof tripInput.title === 'string' ? tripInput.title.trim().slice(0, 120) : '';
@@ -581,6 +562,18 @@ async function generateTripPlan(tripId, tripInput, res) {
     }
 
     places = mergePlaces(mustVisitPlaces, places);
+    // แผนไม่มีที่พักแล้ว — กรองหมวด hotel/accommodation ออกจาก pool ที่ AI เลือกได้
+    // (สถานที่ที่ผู้ใช้บังคับเลือกเองยังเคารพเหมือนเดิมผ่าน ensureMustVisitStops)
+    const LODGING_CATEGORIES = new Set(['hotel', 'accommodation']);
+    places = places.filter(
+        (place) => !LODGING_CATEGORIES.has(String(place?.category || '').trim().toLowerCase()),
+    );
+    // มี must-visit = ทริปใช้เฉพาะที่ผู้ใช้เลือกเท่านั้น ห้ามเพิ่มที่อื่น
+    // (pool เหลือแค่ที่เลือก — ที่เลือกเองเป็น hotel ก็ได้ เพราะผู้ใช้เลือกชัด)
+    const exclusiveMustVisit = mustVisitPlaces.length > 0;
+    if (exclusiveMustVisit) {
+        places = [...mustVisitPlaces];
+    }
 
     // ---- เวลาเริ่ม + จำนวนวัน (resolve ก่อนสร้าง prompt) ----
     // start_time "HH:MM" จากฟอร์ม — ใช้ไม่ได้ให้เริ่ม 09:00
@@ -634,6 +627,12 @@ async function generateTripPlan(tripId, tripInput, res) {
         mustVisitRequests,
     );
 
+    // มี must-visit = ทริปใช้เฉพาะที่ผู้ใช้เลือกเท่านั้น ห้ามเพิ่มที่อื่น
+    const placeSelectionRules = exclusiveMustVisit
+        ? `ทริปนี้ใช้เฉพาะสถานที่ที่ผู้ใช้บังคับเลือก ${mustVisitPlaces.length} แห่งด้านล่างเท่านั้น ห้ามเพิ่มสถานที่อื่นใดทั้งสิ้น — กระจายให้ครบทุกที่ลงใน ${effectiveDays} วัน เรียงลำดับตามภูมิศาสตร์เพื่อลดการย้อนเส้นทาง`
+        : `สถานที่ที่ผู้ใช้บังคับเลือกทั้งหมดต้องอยู่ใน stops ของทริปอย่างน้อย 1 ครั้ง และมีความสำคัญเหนือความสนใจ วิธีเดินทาง งบประมาณ และรายการที่ลบซ้ำถ้าขัดกัน — จัดกลุ่มวันและลำดับทริปโดยยึดสถานที่เหล่านี้เป็นหลัก
+    เลือกสถานที่อื่นจากฐานข้อมูลเท่านั้น ให้เหมาะกับความสนใจและงบประมาณ จัดลำดับจากจุดเริ่ม GPS เพื่อลดการย้อนเส้นทาง`;
+
     const systemPrompt =
         `คุณคือผู้เชี่ยวชาญวางแผนการท่องเที่ยวในประเทศไทย
     ตอบเป็นภาษาไทยเสมอ และตอบในรูปแบบ JSON ที่กำหนดเท่านั้น ห้ามมีข้อความอื่นนอก JSON
@@ -644,12 +643,11 @@ async function generateTripPlan(tripId, tripInput, res) {
     - ต้องคัดลอก destinationId, ชื่อ, พิกัด และ imageUrl จากข้อมูลฐานข้อมูลตรงตัว
     - ถ้าข้อมูลมีน้อย ให้สร้างแผนจากรายการที่มีเท่านั้น ห้ามเติมสถานที่อื่นให้ครบจำนวนวัน
     - พยายามจัดกลุ่มสถานที่บนเกาะและบนฝั่งเป็นช่วงเดียวกัน เลี่ยงลำดับ เกาะ → ฝั่ง → เกาะ หรือ ฝั่ง → เกาะ → ฝั่ง ในวันเดียวกัน (ไม่ว่าจะใช้พาหนะชนิดใด) แต่ถ้าจำเป็นต้องข้ามให้ใส่ได้
-    - พยายามให้ข้ามระหว่างเกาะกับฝั่งไม่เกินหนึ่งครั้งต่อวัน ไม่ว่าจะใช้พาหนะชนิดใด (car/bus/train/ferry/flight/walking) ถ้าเกินให้ระบุใน tips ว่าอาจเหนื่อยจากการข้ามบ่อย เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
+    - พยายามให้ข้ามระหว่างเกาะกับฝั่งไม่เกินหนึ่งครั้งต่อวัน ไม่ว่าจะใช้พาหนะชนิดใด (car/bus/train/ferry/bicycle/walking) ถ้าเกินให้ระบุใน tips ว่าอาจเหนื่อยจากการข้ามบ่อย เว้นแต่จำเป็นต่อสถานที่ที่ผู้ใช้บังคับเลือก
     - กรอบเวลาต่อวัน ~10 ชม. รวมเที่ยว+เดินทาง+พัก วันละไม่เกิน 5 จุด อย่ายัดหลายแห่งจนเวลาซ้อนกัน
     - ห้ามจัดเที่ยวดึก: ที่เที่ยวทุกจุดต้องถึงก่อน 21:00 และออกจากที่เที่ยวไม่เกิน 22:00 (เริ่มวันละ ${dayStartClock} บวกกรอบ 10 ชม. ต้องจบไม่เกิน 22:00) ถ้าสถานที่ไกลจนไปถึงดึก ให้กระจายไปวันอื่นแทน อย่ายัดลงวันเดียว
     - ดูเวลาเปิด-ปิดของแต่ละสถานที่ในข้อมูลด้านล่างก่อนจัดลำดับ: อย่าจัดให้ถึงนอกเวลาเปิด-ปิด (เช่น พิพิธภัณฑ์/อุทยานที่ปิด 16:00-18:00 ต้องไปกลางวัน, ตลาดกลางคืน/ถนนคนเดินไปได้เย็น-ค่ำ) ถ้าไม่รู้เวลาเปิดให้จัดช่วงกลางวันไว้ก่อน
-    - ขาขับรถ/รถโดยสารยาว ≥2 ชม. ระบบจะแทรกจุดแวะพักจริงจาก OpenStreetMap ให้เอง (รวมปั๊มน้ำมันในวันขับรถรวมไกล) จึงไม่ต้องสร้าง stop แวะพัก/ปั๊มเองเด็ดขาด — คิดเวลาพักคร่าว ๆ ในแผนได้ตามเหมาะสม
-    - ตอนท้ายของแต่ละวัน (ยกเว้นวันสุดท้าย) ระบบจะแทรกที่พักค้างคืนจากฐานข้อมูลที่พัก (หมวด accommodation/hotel) ให้เอง ถ้าไม่พบจึงค้นจาก OpenStreetMap จึงห้ามสร้าง stop ที่พักเองเด็ดขาด
+    - ห้ามสร้าง stop แวะพัก/ปั๊มน้ำมัน/ที่พักค้างคืน/สนามบินเองเด็ดขาด — แผนมีเฉพาะสถานที่ท่องเที่ยวจากฐานข้อมูลเท่านั้น
     - arrivalTime กับ segments จะถูกระบบคำนวณใหม่จากระยะทางจริงหลัง AI ตอบ จึงไม่ต้องเดาเวลาเดินทางเอง แต่ทุก stop ต้องใส่ arrivalTime "HH:MM" กับ durationMinutes (20-300 นาที) ที่สมเหตุสมผลมาด้วย
 
     ข้อมูลสถานที่จากฐานข้อมูล:
@@ -666,23 +664,20 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
     - ความสนใจ: ${(tripInput.interests || []).join(', ') || 'ไม่ระบุ'}
     - พื้นที่/จังหวัด (ถ้ามี): ${tripInput.destination || 'ให้เลือกจากตำแหน่ง GPS'}
     - วิธีเดินทางที่ยอมรับ: ${allowedTransportModes.join(', ')}
-    - รถยนต์คือรถส่วนตัวของผู้ใช้ (ไม่มีค่าเช่า/แท็กซี่): ประเมิน transportCost ทุกขารถยนต์ตามค่าน้ำมัน ~3 บาท/กม.${localTrip ? ' รวมทั้งวันไม่เกิน 300 บาท' : ''} ยกเว้นขารถในต่างจังหวัดที่ไปถึงโดยเครื่องบิน — ขาพวกนั้นผู้ใช้ไม่มีรถส่วนตัว ต้องคิดเป็นรถเช่า ~10 บาท/กม.
+    - รถยนต์คือรถส่วนตัวของผู้ใช้ (ไม่มีค่าเช่า/แท็กซี่): ประเมิน transportCost ทุกขารถยนต์ตามค่าน้ำมัน ~3 บาท/กม.
     - สถานที่ที่ผู้ใช้บังคับเลือก: ${mustVisitDescription}
     - สถานที่ที่ผู้ใช้ลบและห้ามเสนอซ้ำ: ${(tripInput.excluded_places || []).join(', ') || 'ไม่มี'}
     - เวลาเริ่มเดินทางแต่ละวัน: ${dayStartClock}
     - กรอบเวลาต่อวัน ~10 ชม. (รวมเที่ยว เดินทาง และพัก) วันละไม่เกิน ${MAX_STOPS_PER_DAY} จุด
 
-    สถานที่ที่ผู้ใช้บังคับเลือกทั้งหมดต้องอยู่ใน stops ของทริปอย่างน้อย 1 ครั้ง และมีความสำคัญเหนือความสนใจ วิธีเดินทาง งบประมาณ และรายการที่ลบซ้ำถ้าขัดกัน
-    เลือกสถานที่อื่นจากฐานข้อมูลเท่านั้น ให้เหมาะกับความสนใจและงบประมาณ จัดลำดับจากจุดเริ่ม GPS เพื่อลดการย้อนเส้นทาง
+    ${placeSelectionRules}
     ห้ามเสนอหรือสร้าง stop ที่ไม่มีอยู่ในข้อมูลสถานที่จากฐานข้อมูล แม้จำนวนสถานที่จะไม่พอกับจำนวนวัน
     transportMode ของแต่ละ stop หมายถึงพาหนะหลักที่ใช้เดินทางมาจาก stop ก่อนหน้า และต้องเลือกจากวิธีเดินทางที่ผู้ใช้ยอมรับเท่านั้น
     ถ้าวิธีเดินทางที่ผู้ใช้เลือกไม่เหมาะกับสถานที่บังคับเลือก ให้ยังคงใส่สถานที่นั้นในแผนและระบุใน tip ให้ตรวจสอบวิธีเดินทางจริง
-    แต่ละ stop เลือก transportMode ต่างกันได้ตามความเหมาะสม ห้ามใช้รถยนต์หรือเดินข้ามทะเล
+    แต่ละ stop เลือก transportMode ต่างกันได้ตามความเหมาะสม ห้ามใช้รถยนต์ จักรยาน หรือเดินข้ามทะเล
     ถ้าเป็นรถไฟหรือเรือ ให้ใส่ segments แยกช่วงไปสถานี/ท่าเรือ ช่วงขนส่งหลัก และช่วงต่อไปยังจุดหมาย โดยใช้ชื่อจุดเชื่อมต่อจริงที่มั่นใจเท่านั้น
-    ถ้าเป็นเครื่องบิน ห้ามสร้าง stop สนามบินเองเด็ดขาด — แค่ตั้ง transportMode เป็น flight สำหรับขาที่ไกลจนต้องบิน (≥250 กม.) ระบบจะแทรกสนามบินต้นทาง/ปลายทางจริงจาก OpenStreetMap พร้อมคำนวณเวลาและค่าโดยสารให้เอง
-    ใช้ flight สำหรับระยะไกลที่ต้องบิน, ferry สำหรับการข้ามเกาะ/ทะเล, train สำหรับเส้นทางรถไฟ, bus หรือ car สำหรับถนน และ walking เฉพาะระยะที่เดินได้จริง
-    ห้ามใช้ flight กับขาที่ระยะทางต่ำกว่า ~250 กม. เด็ดขาด (เช่น เดินทางในเมือง/จังหวัดเดียวกันให้ใช้ car/bus/walking — บินระยะสั้นไม่สมจริงทั้งเวลาและราคา)
-    ห้ามแต่งหมายเลขเที่ยวบิน รอบเรือ รอบรถไฟ หรือเวลาออกเดินทางจริง หากไม่มีข้อมูลตารางเวลา ให้ระบุใน tip ว่าเป็นเวลาโดยประมาณและควรตรวจสอบตารางกับผู้ให้บริการ
+    ห้ามใช้เครื่องบิน (flight) เด็ดขาด — ระบบนี้เดินทางภาคพื้นและทางเรือเท่านั้น ใช้ ferry สำหรับการข้ามเกาะ/ทะเล, train สำหรับเส้นทางรถไฟ, bus/car/bicycle สำหรับถนน (จักรยานเฉพาะระยะที่ปั่นได้จริง) และ walking เฉพาะระยะที่เดินได้จริง
+    ห้ามแต่งรอบเรือ รอบรถไฟ หรือเวลาออกเดินทางจริง หากไม่มีข้อมูลตารางเวลา ให้ระบุใน tip ว่าเป็นเวลาโดยประมาณและควรตรวจสอบตารางกับผู้ให้บริการ
     ถ้าผู้ใช้อนุญาตวิธีเดินทางระยะไกลและไม่ได้จำกัดจังหวัด สามารถวางแผนหลายจังหวัดได้เมื่อจำนวนวันและงบประมาณเหมาะสม แต่ไม่จำเป็นต้องฝืนเดินทางไกล
     ค่าใช้จ่ายทั้งหมดเป็นค่าประมาณต่อทริป และทุก stop ต้องมี latitude/longitude ที่ใช้งานบนแผนที่ได้
 
@@ -691,7 +686,6 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
     "summary": "สรุปแผนเที่ยว 2-3 ประโยค",
     "totalEstimatedCost": 0,
     "budgetBreakdown": {
-        "accommodation": 0,
         "food": 0,
         "transport": 0,
         "activities": 0
@@ -790,25 +784,9 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                         console.warn('[ai] island crossings fixed by regrouping');
                     }
                 }
-                // ---- กันโหมดเพี้ยน: ขา flight สั้นกว่า ~250 กม. (เช่น บินในเมือง) ลดเป็นรถยนต์ ----
-                // AI ชอบใส่ flight ให้ขาใกล้ ๆ ทำให้เวลา (overhead 2 ชม.) กับราคา (floor 1000) เพี้ยน
-                // ทำก่อนจัดลำดับ+เดินโซ่ เพื่อให้ chain คำนวณเวลา/ราคาโหมดใหม่ทั้งหมด
-                try {
-                    const { fixed, delta } = downgradeShortFlights(planData, {
-                        startLat: tripInput.start_latitude,
-                        startLng: tripInput.start_longitude,
-                        allowedModes: allowedTransportModes,
-                    });
-                    applyTransportDelta(planData, delta);
-                    if (fixed > 0) {
-                        console.warn(`[ai] downgraded ${fixed} short flight legs to ground transport`);
-                    }
-                } catch (downgradeError) {
-                    console.warn(`[ai] flight downgrade skipped: ${downgradeError.message}`);
-                }
                 // ---- จัดลำดับ + เดินโซ่เวลา deterministic (เขียนทับเวลาที่ AI เดามา) ----
                 // จัดลำดับจากจุดเริ่มต้นจริงแล้วเดินโซ่ ถึง→เที่ยว→ออก→เดินทาง→ถึง ต่อเนื่องทั้งวัน
-                // วันแรก origin = GPS ผู้ใช้, วันถัดไป origin = จุดสุดท้ายของวันก่อน (ที่พักค้างคืน)
+                // วันแรก origin = GPS ผู้ใช้, วันถัดไป origin = จุดสุดท้ายของวันก่อน
                 applyDeterministicSchedule(planData, {
                     startLat: tripInput.start_latitude,
                     startLng: tripInput.start_longitude,
@@ -816,24 +794,6 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                     startName: 'จุดเริ่มต้น',
                     primaryMode: allowedTransportModes[0] || 'car',
                 });
-                // ---- ขาบินสมจริง: ขา flight ≥250 กม. แทรกสนามบิน OSM 2 จุด ----
-                // (นั่งรถไปสนามบินต้นทาง → บิน → นั่งรถต่อ — best-effort ล้มก็ใช้ขาบินตรงเดิม)
-                // ทำก่อน split กันเที่ยวดึก เพื่อให้ split เห็นเวลาจริงรวมสนามบินแล้ว
-                try {
-                    const groundMode = allowedTransportModes.includes('car')
-                        ? 'car'
-                        : allowedTransportModes.includes('bus') ? 'bus' : 'car';
-                    const { enriched } = await enrichPlanWithFlightTransfers(planData, {
-                        primaryGroundMode: groundMode,
-                        startLat: tripInput.start_latitude,
-                        startLng: tripInput.start_longitude,
-                    });
-                    if (enriched > 0) {
-                        console.warn(`[ai] enriched ${enriched} flight legs with OSM airports`);
-                    }
-                } catch (flightError) {
-                    console.warn(`[ai] flight enrichment skipped: ${flightError.message}`);
-                }
                 // ---- กันเที่ยวดึก: วันที่ล้นถึง ≥21:00 / เกิน 22:00 ให้ย้ายจุดที่เหลือไปวันถัดไป ----
                 // (สร้างวันใหม่สูงสุด 7 วัน วันใหม่เริ่มเช้าใหม่ — แก้เคส ถึง 23:09 / 00:45 / 03:21)
                 try {
@@ -847,33 +807,30 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                 } catch (splitError) {
                     console.warn(`[ai] split overflowing days skipped: ${splitError.message}`);
                 }
-                // ---- แทรกจุดแวะพักจริง (OSM/Overpass) กลางขาขับยาว ≥2 ชม. + ปั๊มน้ำมันวันขับไกล ----
-                // best-effort: Overpass ล่ม/หมดเวลาจะได้แผนเดิมพร้อมเวลาพักโดยประมาณ ไม่ล้มทั้งทริป
-                // ทริป local นอนบ้านตัวเองได้ — ข้ามที่พักค้างคืน
+                // ---- ซ่อมจุดที่หลุดเวลาเปิด-ปิด: ลองสลับลำดับในวันเดียวกันให้ตรงเวลาเปิด ----
+                // (best-effort ซ่อมไม่ได้คงเดิม + เตือนผ่าน warnings ข้างล่าง)
                 try {
-                    await enrichPlanWithRestStops(planData, {
-                        primaryMode: allowedTransportModes[0] || 'car',
+                    const { fixed } = repairDayOpeningOrder(planData, places, {
                         startLat: tripInput.start_latitude,
                         startLng: tripInput.start_longitude,
-                        skipOvernight: localTrip,
+                        startMinutes: dayStartMinutes,
+                        primaryMode: allowedTransportModes[0] || 'car',
                     });
-                } catch (restError) {
-                    console.warn(`[ai] rest-stop enrichment skipped: ${restError.message}`);
+                    if (fixed > 0) {
+                        console.warn(`[ai] reordered ${fixed} stops to fit opening hours`);
+                    }
+                } catch (repairError) {
+                    console.warn(`[ai] opening-hours repair skipped: ${repairError.message}`);
                 }
                 // รถยนต์ทุกคันคือรถส่วนตัว: เขียนทับขารถยนต์ทุกขา (รวมที่ AI เดามา)
-                // เป็นค่าน้ำมัน ~3 บาท/กม. — ทริป local cap วันละ 300, ขับไกลจ่ายตามระยะจริง
+                // เป็นค่าน้ำมัน ~3 บาท/กม. จ่ายตามระยะจริง
                 {
-                    const { saved, cappedDays } = applyCarFuelCosts(planData, {
+                    applyCarFuelCosts(planData, {
                         startLat: tripInput.start_latitude,
                         startLng: tripInput.start_longitude,
-                        dailyCap: localTrip ? LOCAL_FUEL_CAP_PER_DAY : null,
                     });
                     planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
-                    const fuelTip = localTrip
-                        ? (saved > 0
-                            ? `ทริปนี้อยู่ในจังหวัดเดียวกับจุดเริ่มต้น — คิดค่าเดินทางรถยนต์ตามค่าน้ำมันจริง (~3 บาท/กม. ไม่เกินวันละ 300 บาท)${cappedDays > 0 ? ` ประหยัดไป ~${Math.round(saved)} บาท` : ''}`
-                            : 'ทริปนี้อยู่ในจังหวัดเดียวกับจุดเริ่มต้น — คิดค่าเดินทางรถยนต์ตามค่าน้ำมันจริง (~3 บาท/กม. ไม่เกินวันละ 300 บาท)')
-                        : 'ค่าเดินทางรถยนต์คิดตามค่าน้ำมันรถส่วนตัว (~3 บาท/กม.) — ไม่มีค่าเช่ารถ/แท็กซี่';
+                    const fuelTip = 'ค่าเดินทางรถยนต์คิดตามค่าน้ำมันรถส่วนตัว (~3 บาท/กม.)';
                     if (!planData.tips.includes(fuelTip)) planData.tips.push(fuelTip);
                 }
                 const { warnings: fitWarnings } = validateDayFit(planData);

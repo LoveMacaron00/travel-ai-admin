@@ -58,6 +58,8 @@ const createMobileControllers = (database) => {
                     image: row.image || '',
                     category: row.category || 'general',
                     viewer: row.viewer || 0,
+                    opening_time: row.opening_time || '',
+                    closing_time: row.closing_time || '',
                 };
             });
 

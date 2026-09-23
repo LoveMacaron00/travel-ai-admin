@@ -190,13 +190,8 @@ const normalizePlanPlaces = (planData, places = []) => {
         for (const stop of day?.stops || []) {
             if (!stop || typeof stop !== 'object') continue;
 
-            // จุดแวะพัก OSM (osm:...) ไม่ได้มาจาก destinations — เก็บไว้ตามเดิม
-            // (แทรกโดย enrichPlanWithRestStops หลัง normalize รอบสร้างแผน)
-            if (stop.isRestStop === true || String(stop.destinationId ?? '').startsWith('osm:')) {
-                verifiedStops.push(stop);
-                continue;
-            }
-
+            // ทุก stop ต้องมาจาก destinations — จุดอื่น (แวะพัก/ที่พัก/สนามบินเก่า, stop แต่งเอง)
+            // ตก normalize ทิ้งทั้งหมด (แผนเก่าถูก strip มาก่อนแล้วชั้นหนึ่ง)
             const requestedId = String(stop.destinationId ?? '').trim();
             const requestedName = normalizePlaceName(stop.place);
             const nameMatch = requestedName ? byName.get(requestedName) : null;

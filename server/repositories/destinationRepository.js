@@ -36,6 +36,8 @@ const findApprovedDestinations = async (language, limit, db = pool) => {
             d.longitude,
             d.image_url AS image,
             d.category,
+            d.opening_time,
+            d.closing_time,
             (
                 SELECT COUNT(*)::int
                 FROM destination_view_events view_events

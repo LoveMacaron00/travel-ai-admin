@@ -1,4 +1,4 @@
-// server/utils/planScheduler.js
+﻿// server/utils/planScheduler.js
 //
 // คำนวณตารางเวลาทริปแบบ deterministic จากพิกัดจริงใน DB (ไม่ใช่ให้ AI เดาเวลา)
 // ใช้ 2 จุด:
@@ -11,17 +11,17 @@ const MODE_SPEEDS_KMH = {
     bus: 40,
     train: 70,
     ferry: 28,
-    flight: 550,
+    bicycle: 15,
 };
 
-// เวลา overhead ต่อขา (รอขึ้นเครื่อง/เรือ/รถไฟ) — รวมในนาทีเดินทางเลย
+// เวลา overhead ต่อขา (รอเรือ/รถไฟ) — รวมในนาทีเดินทางเลย
 const MODE_OVERHEAD_MINUTES = {
     walking: 0,
     car: 0,
     bus: 10,
     train: 30,
     ferry: 30,
-    flight: 120,
+    bicycle: 0,
 };
 
 // กรอบเวลาต่อวัน ~10 ชม. (เช่น 09:00–19:00) ใช้นับว่าแผนแน่นเกินไปหรือไม่
@@ -30,7 +30,6 @@ const MAX_STOPS_PER_DAY = 5;
 const DEFAULT_DAY_START_MINUTES = 9 * 60;
 
 // กันเที่ยวดึก: ไม่จัดที่เที่ยวหลัง 21:00 และวันต้องจบไม่เกิน 22:00
-// (ที่พัก overnight / จุดพัก rest กลางทางได้รับการยกเว้น — นอน/พักได้ดึก)
 const LATE_NIGHT_START_MINUTES = 21 * 60;
 const DAY_HARD_END_MINUTES = 22 * 60;
 const MAX_PLAN_DAYS = 7;
@@ -151,8 +150,8 @@ const isWithinOpeningHours = (arrivalMinutes, departureMinutes, window) => {
     const departure = ((Math.round(departureMinutes) % 1440) + 1440) % 1440;
     const { open, close } = window;
     if (close === open) return true;
-    const overnight = close < open;
-    if (!overnight) {
+    const crossMidnight = close < open;
+    if (!crossMidnight) {
         return arrival >= open && arrival < close && departure <= close + 15;
     }
     // ข้ามคืน: เปิด 18:00 ปิด 02:00 → ช่วง [open,1440) ∪ [0,close]
@@ -160,12 +159,10 @@ const isWithinOpeningHours = (arrivalMinutes, departureMinutes, window) => {
     return inOpen(arrival) && (inOpen(departure) || departure <= close + 15);
 };
 
-// จุดนี้ถือว่า "เที่ยวดึก" ไหม — ที่เที่ยว (ไม่ใช่ overnight/rest) ที่ถึง ≥21:00
+// จุดนี้ถือว่า "เที่ยวดึก" ไหม — ที่เที่ยวที่ถึง ≥21:00
 // หรือออกเกิน 22:00 หรือโผล่ช่วง 00:00-05:00 (formatClock วนรอบเที่ยงคืนแล้ว)
 const isLateNightVisit = (stop, arrivalMinutes, departureMinutes) => {
     if (!stop || typeof stop !== 'object') return false;
-    if (stop.stopType === 'overnight' || stop.isRestStop === true) return false;
-    if (String(stop.destinationId ?? '').startsWith('osm:')) return false;
     const arrival = ((Math.round(arrivalMinutes) % 1440) + 1440) % 1440;
     const departure = ((Math.round(departureMinutes) % 1440) + 1440) % 1440;
     if (arrival >= LATE_NIGHT_START_MINUTES) return true;
@@ -175,6 +172,10 @@ const isLateNightVisit = (stop, arrivalMinutes, departureMinutes) => {
 };
 
 const finiteCoord = (value) => {
+    // null/undefined/'' คือ "ไม่ได้ส่งพิกัดมา" — ต้องคืน null ไม่ใช่ 0
+    // (Number(null) === 0 ถ้าปล่อยผ่าน origin จะกลายเป็น (0,0) กลางมหาสมุทร
+    // แล้วขาแรกของวันแรกจะยาว ~11,000 กม. (~222 ชม.) ยอดรวมพังทั้งทริป)
+    if (value == null || value === '') return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
 };
@@ -210,7 +211,7 @@ const computeLegMinutes = (km, modeRaw) => {
     const overhead = MODE_OVERHEAD_MINUTES[mode] || 0;
     const travelMinutes = Math.max(5, Math.round((distance / speed) * 60 + overhead));
     let restMinutes = 0;
-    if (['car', 'bus', 'train'].includes(mode) && travelMinutes >= 120) {
+    if (['car', 'bus', 'train', 'bicycle'].includes(mode) && travelMinutes >= 120) {
         restMinutes = Math.floor(travelMinutes / 120) * 20;
     }
     return { travelMinutes, restMinutes };
@@ -256,104 +257,24 @@ const orderStopsNearestNeighbor = (stops, startLat, startLng) => {
 
 // ประเมินค่าพาหนะต่อขาจากระยะทางจริง — mirror ฝั่ง Flutter estimateTransportCost
 // car = รถยนต์ส่วนตัว คิดค่าน้ำมัน ~3 บาท/กม. ไม่มีขั้นต่ำ (ไม่มีเรทแท็กซี่)
-// walking ฟรี, bus 7/กม., train 12/กม., ferry 25/กม., อื่น ๆ 15/กม.
-// flight (เครื่องบินพาณิชย์): ค่าตั๋วโดยประมาณ = ฐาน 800 + 4 บาท/กม. ขั้นต่ำ 1000
-// (เช่น กรุงเทพ–เชียงใหม่ ~580 กม. ≈ 3100 บาท ใกล้เคียงราคาตั๋วจริง —
-// เรทเดิม 35/กม. ได้สองหมื่นกว่าบาท แพงเกินจริงมาก)
+// walking/bicycle ฟรี (รถ/จักรยานตัวเอง), bus 7/กม., train 12/กม., ferry 25/กม., อื่น ๆ 15/กม.
 // km null/ไม่ finite → 0, รถอื่นระยะสั้นกว่า 0.5 กม. → 50 ขั้นต่ำ, นอกนั้นปัดเศษพร้อมขั้นต่ำ 50
-const estimateFlightCostKm = (km) => {
-    const distance = Number(km);
-    if (!Number.isFinite(distance) || distance < 0) return 0;
-    return Math.max(1000, Math.round(800 + distance * 4));
-};
-
-// รถเช่าขับเองที่ต่างจังหวัด (บินไปแล้วไม่มีรถส่วนตัวใช้):
-// ~10 บาท/กม. รวมค่าเช่า+น้ำมัน (วิ่ง 100 กม./วัน ≈ ค่าเช่าวันละพัน) ขั้นต่ำ 50
-const RENTAL_RATE_PER_KM = 10;
-const RENTAL_MIN_COST = 50;
-
-const estimateRentalCostKm = (km) => {
-    const distance = Number(km);
-    if (!Number.isFinite(distance) || distance < 0) return 0;
-    return Math.max(RENTAL_MIN_COST, Math.round(distance * RENTAL_RATE_PER_KM));
-};
-
-const estimateLegCostKm = (km, modeRaw, { rentalCar = false } = {}) => {
+const estimateLegCostKm = (km, modeRaw) => {
     if (km == null) return 0;
     const distance = Number(km);
     if (!Number.isFinite(distance) || distance < 0) return 0;
     const mode = String(modeRaw || 'car').toLowerCase();
-    if (mode === 'walking') return 0;
-    if (mode === 'car') {
-        return rentalCar ? estimateRentalCostKm(distance) : estimateFuelCostKm(distance);
-    }
-    if (mode === 'flight') return estimateFlightCostKm(distance);
+    if (mode === 'walking' || mode === 'bicycle') return 0;
+    if (mode === 'car') return estimateFuelCostKm(distance);
     if (distance < 0.5) return 50;
     const rates = { bus: 7, train: 12, ferry: 25 };
     const rate = rates[mode] ?? 15;
     return Math.max(50, Math.round(distance * rate));
 };
 
-// ขารถที่เป็นรถเช่าใช่ไหม (stop ถูกปัก rentalCar โดย markRentalCarLegs)
-const isRentalCarStop = (stop) => !!stop && typeof stop === 'object' && stop.rentalCar === true;
-
-// ปักธงรถเช่าให้ขารถทุกขาที่อยู่หลังขาบินขาแรกของทริป (mutate planData)
-// บินไปต่างจังหวัดแล้วไม่มีรถส่วนตัวใช้ ขับต่อที่นั่นต้องเช่ารถ — ไม่ใช่ค่าน้ำมันรถตัวเอง
-// เขียนค่าเช่า (estimateRentalCostKm) ทับลง stop ทันที — ค่า AI เดิมคิดบนฐานรถส่วนตัว
-// จึงใช้ไม่ได้ ส่วน chain ทีหลังคงค่านี้ไว้ผ่านกติกา keepCost (idempotent รันซ้ำได้)
-// ไม่ต้องมี origin (ดูแค่ลำดับ + พิกัดจุดก่อนหน้า)
-// คืน { marked (ธงใหม่), delta (ผลต่างยอดค่าเดินทางใหม่-เก่า เอาไปบวก totals ต่อ) }
-const markRentalCarLegs = (planData) => {
-    const empty = { marked: 0, delta: 0 };
-    if (!planData || typeof planData !== 'object') return empty;
-    const days = Array.isArray(planData.days) ? planData.days : [];
-    let flown = false;
-    let marked = 0;
-    let delta = 0;
-    let prevLat;
-    let prevLng;
-    for (const day of days) {
-        const stops = Array.isArray(day?.stops) ? day.stops : [];
-        for (const stop of stops) {
-            if (!stop || typeof stop !== 'object') continue;
-            const toLat = finiteCoord(stop.latitude);
-            const toLng = finiteCoord(stop.longitude);
-            // ขาบินนับทุกกรณี (รวมจุด transfer สนามบินที่เป็น isRestStop —
-            // หลัง enrich ขา flight จริงอยู่บน stop สนามบินขาเข้า)
-            if (String(stop.transportMode || '').toLowerCase() === 'flight') {
-                flown = true;
-            } else if (flown
-                && String(stop.transportMode || '').toLowerCase() === 'car'
-                && stop.isRestStop !== true
-                && !String(stop.destinationId ?? '').startsWith('osm:')) {
-                const km = (prevLat != null && prevLng != null && toLat != null && toLng != null)
-                    ? haversineKm(prevLat, prevLng, toLat, toLng)
-                    : null;
-                const rental = km == null ? RENTAL_MIN_COST : estimateRentalCostKm(km);
-                if (!isRentalCarStop(stop)) marked++;
-                // ยอดรวมฝั่ง totals นับจาก transportCost (segments เป็นรายละเอียดแสดงผล)
-                // จึงคิด delta แค่ transportCost กันนับซ้ำ
-                delta += rental - (Number(stop.transportCost) || 0);
-                stop.rentalCar = true;
-                stop.transportCost = rental;
-                if (Array.isArray(stop.segments) && stop.segments[0]) {
-                    stop.segments[0].estimatedCost = rental;
-                }
-            }
-            if (toLat != null && toLng != null) {
-                prevLat = toLat;
-                prevLng = toLng;
-            }
-        }
-    }
-    return { marked, delta };
-};
-
 // รถยนต์ส่วนตัวทุกทริป: คิดแค่ค่าน้ำมันตามระยะจริง
-// (~3 บาท/กม. ≈ น้ำมัน 36 บาท/ลิตร ÷ 12 กม./ลิตร)
-// ทริป local (จังหวัดเดียวกับจุดเริ่ม) รวมไม่เกินวันละ 300 บาท — ไม่มีเรทแท็กซี่แล้ว
+// (~3 บาท/กม. ≈ น้ำมัน 36 บาท/ลิตร ÷ 12 กม./ลิตร) — ไม่มีเรทแท็กซี่แล้ว
 const LOCAL_FUEL_RATE_PER_KM = 3;
-const LOCAL_FUEL_CAP_PER_DAY = 300;
 
 const estimateFuelCostKm = (km) => {
     const distance = Number(km);
@@ -364,15 +285,12 @@ const estimateFuelCostKm = (km) => {
 // รถยนต์ส่วนตัว: ปรับขารถยนต์ทั้งแผนเป็นค่าน้ำมัน (mutate planData)
 // ระยะแต่ละขาคำนวณจากพิกัดจริงด้วยสูตรเดียวกับ chainDayTimes
 // (วันแรกจากจุดเริ่ม, วันถัดไปจากจุดสุดท้ายของวันก่อน) — เปลี่ยนแค่ "ราคา" ไม่แตะเวลา
-// dailyCap = เพดานน้ำมันรวมต่อวัน (ทริป local 300, ไม่ส่งมาคือไม่ cap — ขับไกลจ่ายตามระยะจริง)
-// ขารถเช่า (rentalCar) ข้าม — คิดเรทเช่าไว้แล้ว ไม่ใช่ค่าน้ำมัน
 // ขาไม่ใช่รถยนต์คงเดิม, ขาหาพิกัดไม่ได้คงเดิม
-const applyCarFuelCosts = (planData, { startLat, startLng, dailyCap = null } = {}) => {
-    if (!planData || typeof planData !== 'object') return { saved: 0, cappedDays: 0 };
+const applyCarFuelCosts = (planData, { startLat, startLng } = {}) => {
+    if (!planData || typeof planData !== 'object') return { saved: 0 };
     const days = Array.isArray(planData.days) ? planData.days : [];
-    if (days.length === 0) return { saved: 0, cappedDays: 0 };
+    if (days.length === 0) return { saved: 0 };
     let saved = 0;
-    let cappedDays = 0;
     let prevLat = finiteCoord(startLat);
     let prevLng = finiteCoord(startLng);
     for (const day of days) {
@@ -382,7 +300,6 @@ const applyCarFuelCosts = (planData, { startLat, startLng, dailyCap = null } = {
             const stop = stops[i];
             if (!stop || typeof stop !== 'object') continue;
             if (String(stop.transportMode || 'car').toLowerCase() !== 'car') continue;
-            if (isRentalCarStop(stop)) continue;
             let fromLat;
             let fromLng;
             if (i === 0) {
@@ -400,21 +317,6 @@ const applyCarFuelCosts = (planData, { startLat, startLng, dailyCap = null } = {
             const km = haversineKm(fromLat, fromLng, toLat, toLng);
             if (km == null) continue;
             carLegs.push({ stop, fuel: estimateFuelCostKm(km) });
-        }
-        // รวมค่าน้ำมันทั้งวันเกิน cap → เกลี่ยแบบสัดส่วน (ขาไกลสุดชดเชยเศษปัดเศษ)
-        const cap = Number(dailyCap);
-        const dayFuel = carLegs.reduce((sum, leg) => sum + leg.fuel, 0);
-        if (Number.isFinite(cap) && cap > 0 && dayFuel > cap && dayFuel > 0) {
-            const factor = cap / dayFuel;
-            const ordered = [...carLegs].sort((a, b) => b.fuel - a.fuel);
-            let assigned = 0;
-            ordered.forEach((leg, index) => {
-                leg.fuel = index === ordered.length - 1
-                    ? Math.max(0, cap - assigned)
-                    : Math.round(leg.fuel * factor);
-                assigned += leg.fuel;
-            });
-            cappedDays++;
         }
         for (const { stop, fuel } of carLegs) {
             const oldCost = Number(stop.transportCost) || 0;
@@ -434,16 +336,6 @@ const applyCarFuelCosts = (planData, { startLat, startLng, dailyCap = null } = {
         }
     }
     // ขากลับบ้านก็ขับรถตัวเองกลับ — คิดค่าน้ำมันด้วย (distanceKm เก็บไว้แล้ว)
-    if (planData.returnLeg && typeof planData.returnLeg === 'object'
-        && String(planData.returnLeg.mode || 'car').toLowerCase() === 'car') {
-        const km = Number(planData.returnLeg.distanceKm);
-        if (Number.isFinite(km) && km >= 0) {
-            const fuel = estimateFuelCostKm(km);
-            const old = Number(planData.returnLeg.estimatedCost) || 0;
-            saved += old - fuel;
-            planData.returnLeg.estimatedCost = fuel;
-        }
-    }
     if (saved !== 0) {
         const total = Number(planData.totalEstimatedCost);
         planData.totalEstimatedCost = Math.max(
@@ -454,7 +346,7 @@ const applyCarFuelCosts = (planData, { startLat, startLng, dailyCap = null } = {
                 0, (Number.isFinite(transport) ? transport : 0) - saved);
         }
     }
-    return { saved, cappedDays };
+    return { saved };
 };
 
 // เดินโซ่เวลา arrivalTime ต่อเนื่องทั้งวัน (mutate day):
@@ -481,7 +373,7 @@ const chainDayTimes = (day, startMinutes, origin) => {
                 const mode = String(stop.transportMode || origin?.mode || 'car').toLowerCase();
                 const km = haversineKm(originLat, originLng, firstLat, firstLng);
                 const { travelMinutes } = computeLegMinutes(km, mode);
-                const cost = estimateLegCostKm(km, mode, { rentalCar: isRentalCarStop(stop) });
+                const cost = estimateLegCostKm(km, mode);
                 const originName = String(origin?.name || '').trim() || 'จุดเริ่มต้น';
                 stop.segments = [{
                     mode,
@@ -507,19 +399,17 @@ const chainDayTimes = (day, startMinutes, origin) => {
             const prev = stops[index - 1] || {};
             const km = haversineKm(prev.latitude, prev.longitude, stop.latitude, stop.longitude);
             const mode = String(stop.transportMode || 'car').toLowerCase();
-            const { travelMinutes, restMinutes: rawRestMinutes } = computeLegMinutes(km, mode);
-            // ขาที่มีปลายข้างใดเป็นจุดพัก OSM มีเวลาพักจริง (durationMinutes 20) อยู่แล้ว —
-            // ไม่บวกเวลาพักโดยประมาณซ้ำ ไม่งั้นจะนับพัก 2 รอบ (ทั้ง stop จริง + restMinutes)
-            const isRestLeg = prev.isRestStop === true || stop.isRestStop === true
-                || String(prev.destinationId ?? '').startsWith('osm:')
-                || String(stop.destinationId ?? '').startsWith('osm:');
-            const restMinutes = isRestLeg ? 0 : rawRestMinutes;
+            const { travelMinutes, restMinutes } = computeLegMinutes(km, mode);
             const legTotal = travelMinutes + restMinutes;
+            // เดิน/ปั่นจักรยานของตัวเองฟรีเสมอ — ล้างค่า AI ที่อาจใส่มา (กันยอด transport มีค่าฟรี)
+            const isFreeMode = mode === 'walking' || mode === 'bicycle';
             const keepCost = Number(stop.segments?.[0]?.estimatedCost);
             // ค่า leg จริงจากระยะทาง — คงค่า AI ที่เป็นบวกไว้ ไม่เขียนทับ (กันยอดรวมร่วง)
-            const legCost = Number.isFinite(keepCost) && keepCost > 0
+            const legCost = isFreeMode
+                ? 0
+                : Number.isFinite(keepCost) && keepCost > 0
                 ? keepCost
-                : estimateLegCostKm(km, mode, { rentalCar: isRentalCarStop(stop) });
+                : estimateLegCostKm(km, mode);
             stop.segments = [{
                 mode,
                 from: String(prev.place || ''),
@@ -528,7 +418,9 @@ const chainDayTimes = (day, startMinutes, origin) => {
                 estimatedCost: legCost,
             }];
             const existingTransport = Number(stop.transportCost);
-            stop.transportCost = Number.isFinite(existingTransport) && existingTransport > 0
+            stop.transportCost = isFreeMode
+                ? 0
+                : Number.isFinite(existingTransport) && existingTransport > 0
                 ? existingTransport
                 : legCost;
             if (restMinutes > 0) stop.tip = appendRestNote(stop.tip, travelMinutes, restMinutes);
@@ -617,6 +509,45 @@ const findPlaceForStop = (stop, index) => {
     return null;
 };
 
+// หยิบกรอบเวลาเปิด-ปิดของ stop — ค่าติด stop มาก่อน แล้วค่อยค้นจาก DB
+const getStopOpeningWindow = (stop, index) => {
+    const stopOpen = parseTimeFlexible(stop?.openingTime ?? stop?.opening_time);
+    const stopClose = parseTimeFlexible(stop?.closingTime ?? stop?.closing_time);
+    if (stopOpen != null && stopClose != null) return { open: stopOpen, close: stopClose };
+    const place = findPlaceForStop(stop, index);
+    return place ? getPlaceOpeningWindow(place) : null;
+};
+
+// นับจุดในวันนี้ที่เที่ยวอยู่นอกเวลาเปิด-ปิด (ไม่ mutate) — ไม่รู้เวลาเปิดถือว่าผ่าน
+const countDayOpeningViolations = (day, index) => {
+    const stops = Array.isArray(day?.stops) ? day.stops : [];
+    let count = 0;
+    for (const stop of stops) {
+        if (!stop || typeof stop !== 'object') continue;
+        const arrival = parseClockToMinutes(stop.arrivalTime);
+        if (arrival == null) continue;
+        const departure = arrival + clampDurationMinutes(stop.durationMinutes);
+        const window = getStopOpeningWindow(stop, index);
+        if (window && !isWithinOpeningHours(arrival, departure, window)) count++;
+    }
+    return count;
+};
+
+// นับจุดเที่ยวดึกในวันนี้ (ไม่ mutate) — ใช้กันซ่อมเวลาเปิดแล้วทำเที่ยวดึกเพิ่ม
+const countDayLateNight = (day) => {
+    const stops = Array.isArray(day?.stops) ? day.stops : [];
+    let count = 0;
+    for (const stop of stops) {
+        if (!stop || typeof stop !== 'object') continue;
+        const arrival = parseClockToMinutes(stop.arrivalTime);
+        if (arrival == null) continue;
+        if (isLateNightVisit(stop, arrival, arrival + clampDurationMinutes(stop.durationMinutes))) {
+            count++;
+        }
+    }
+    return count;
+};
+
 // ตรวจเวลาเปิด-ปิด + เที่ยวดึกทั้งแผน (ไม่ mutate)
 // - เที่ยวดึก: ที่เที่ยวที่ถึง ≥21:00 / ออกเกิน 22:00 / ช่วง 00:00-05:00
 // - เปิด-ปิด: เทียบ arrival→departure กับ opening_time/closing_time/opening_hours ใน DB
@@ -632,8 +563,6 @@ const validateOpeningAndLateNight = (planData, places = [], {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
         for (const stop of stops) {
             if (!stop || typeof stop !== 'object') continue;
-            if (stop.stopType === 'overnight' || stop.isRestStop === true) continue;
-            if (String(stop.destinationId ?? '').startsWith('osm:')) continue;
             const arrival = parseClockToMinutes(stop.arrivalTime);
             if (arrival == null) continue;
             const duration = clampDurationMinutes(stop.durationMinutes);
@@ -649,15 +578,7 @@ const validateOpeningAndLateNight = (planData, places = [], {
                 continue;
             }
             // 2) เวลาเปิด-ปิด
-            let window = null;
-            const stopOpen = parseTimeFlexible(stop.openingTime ?? stop.opening_time);
-            const stopClose = parseTimeFlexible(stop.closingTime ?? stop.closing_time);
-            if (stopOpen != null && stopClose != null) {
-                window = { open: stopOpen, close: stopClose };
-            } else {
-                const place = findPlaceForStop(stop, index);
-                if (place) window = getPlaceOpeningWindow(place);
-            }
+            const window = getStopOpeningWindow(stop, index);
             if (window && !isWithinOpeningHours(arrival, departure, window)) {
                 const fmt = (m) => formatClock(m);
                 warnings.push(
@@ -674,8 +595,8 @@ const validateOpeningAndLateNight = (planData, places = [], {
 
 // เกลี่ยวันที่ล้นไปวันถัดไปกันเที่ยวดึก (mutate planData)
 // กติกา: อ่าน arrivalTime ที่ chain ไว้แล้วทีละจุด (รองรับค่าข้ามเที่ยงคืนแบบ 23:09→00:45
-// โดยบวก 1440 เมื่อนาฬิกาย้อนกลับ); ถ้าจุดเที่ยว (ไม่ใช่ overnight/rest)
-// ถึง ≥21:00 / ออกเกิน 22:00 / ช่วง 00:00-05:00 ให้ย้ายจุดนั้น + ที่เหลือไปวันถัดไป
+// โดยบวก 1440 เมื่อนาฬิกาย้อนกลับ); ถ้าจุดเที่ยวถึง ≥21:00 / ออกเกิน 22:00 / ช่วง 00:00-05:00
+// ให้ย้ายจุดนั้น + ที่เหลือไปวันถัดไป
 // (สร้างวันใหม่สูงสุด 7 วัน) วันเดิมเดินโซ่ใหม่คงเวลาเดิม วันใหม่เริ่ม 09:00 ใหม่
 // คืน {moved, createdDays}
 const splitOverflowingDays = (planData, {
@@ -706,16 +627,11 @@ const splitOverflowingDays = (planData, {
             if (clock == null) continue;
             const duration = clampDurationMinutes(stop.durationMinutes);
             const departure = clock + duration;
-            const isOvernight = stop.stopType === 'overnight';
-            const isRest = stop.isRestStop === true || String(stop.destinationId ?? '').startsWith('osm:');
-            // ที่พัก/จุดพักไม่นับเป็นเที่ยวดึก — ปล่อยให้จบดึกได้
-            if (!isOvernight && !isRest) {
-                const tooLate = isLateNightVisit(stop, clock, departure);
-                // ต้องเหลืออย่างน้อย 1 ที่เที่ยวไว้ในวันนี้ กันย้ายทั้งวัน
-                if (tooLate && i > 0) { splitAt = i; break; }
-                // จุดแรกของวันก็ดึกเอง (เช่น ขาแรก 417 นาทีจากต่างจังหวัดมาถึง 23:09)
-                // ย้ายไม่ได้เพราะ i==0 — ปล่อยให้ warnings เตือน + caller เลื่อน start/เพิ่มวันแทน
-            }
+            const tooLate = isLateNightVisit(stop, clock, departure);
+            // ต้องเหลืออย่างน้อย 1 ที่เที่ยวไว้ในวันนี้ กันย้ายทั้งวัน
+            if (tooLate && i > 0) { splitAt = i; break; }
+            // จุดแรกของวันก็ดึกเอง (เช่น ขาแรก 417 นาทีจากต่างจังหวัดมาถึง 23:09)
+            // ย้ายไม่ได้เพราะ i==0 — ปล่อยให้ warnings เตือน + caller เลื่อน start/เพิ่มวันแทน
         }
         if (splitAt === -1) { dayIndex++; continue; }
         // ย้าย stops[splitAt..] ไปวันถัดไป
@@ -746,122 +662,163 @@ const splitOverflowingDays = (planData, {
     return { moved, createdDays };
 };
 
-// ขาบินที่สั้นกว่านี้ถือว่าไม่สมจริง (เช่น AI ใส่ flight ให้ขาในเมือง 3 กม.)
-// 240 นาที overhead ล้วน + ค่าตั๋ว floor 1000 — ต้องลดเป็นภาคพื้น
-const MIN_FLIGHT_LEG_KM = 250;
-
-const GROUND_FALLBACK_LABEL = { car: 'รถยนต์', bus: 'รถโดยสาร', walking: 'เดิน' };
-
-// ลดโหมด flight ที่ระยะสั้นเกินบินให้เป็นภาคพื้น (mutate planData)
-// ไล่วันตามลำดับเหมือนเดินโซ่เวลา: วันแรกจาก origin (startLat/Lng) วันถัดไปจากจุดสุดท้ายวันก่อน
-// เขียนโหมด/เวลา/ราคาโหมดใหม่ลง stop ทันที (chain ทีหลังคงไว้ผ่านกติกา keepCost)
-// ขาที่แปลงหลังขาบินจริงปักธงรถเช่าด้วย (บินมาแล้วไม่มีรถส่วนตัว)
-// ไม่มี origin (เช่น PUT/GET) ขาแรกของวันวัดไม่ได้ → ข้าม (แก้เฉพาะขาที่วัดระยะได้)
-// คืน { fixed (ขาที่แก้), delta (ผลต่างยอดค่าเดินทางใหม่-เก่า เอาไปบวก totals ต่อ) }
-const downgradeShortFlights = (planData, {
+// ซ่อมจุดที่หลุดเวลาเปิด-ปิดด้วยการลองสลับลำดับภายในวันเดียวกัน (mutate planData)
+// วิธี: วันที่ยังมี violation ให้ลองย้ายทีละจุดไปทุกตำแหน่ง เดินโซ่ใหม่ แล้วนับใหม่
+// รับเฉพาะท่าที่ลดจำนวนลงและไม่เพิ่มเที่ยวดึก — ซ่อมไม่ได้คงลำดับเดิมไว้
+// ไม่มี origin ของวันนั้น (เช่น ทริปล่วงหน้าไม่ส่งพิกัดเริ่ม) ข้ามวันนั้นไป (ได้แค่เตือน)
+// ใช้เฉพาะตอนสร้างแผน (PUT เคารพลำดับที่ผู้ใช้จัดเอง ห้ามสลับ)
+// คืน { fixed (จุดที่หลุดน้อยลง) }
+const repairDayOpeningOrder = (planData, places = [], {
     startLat,
     startLng,
-    allowedModes = ['car'],
-    minFlightKm = MIN_FLIGHT_LEG_KM,
+    startMinutes = DEFAULT_DAY_START_MINUTES,
+    primaryMode = 'car',
 } = {}) => {
-    const empty = { fixed: 0, delta: 0 };
-    if (!planData || typeof planData !== 'object') return empty;
+    if (!planData || typeof planData !== 'object') return { fixed: 0 };
     const days = Array.isArray(planData.days) ? planData.days : [];
-    if (days.length === 0) return empty;
-    const allowed = [...new Set(
-        (Array.isArray(allowedModes) ? allowedModes : [])
-            .map((m) => String(m || '').trim().toLowerCase())
-            .filter(Boolean),
-    )];
-    const fallback = ['car', 'bus', 'walking'].find((m) => allowed.includes(m))
-        || allowed[0]
-        || 'car';
-    const fallbackLabel = GROUND_FALLBACK_LABEL[fallback] || fallback;
+    if (days.length === 0) return { fixed: 0 };
+    const index = buildPlacesById(places);
+    let fixed = 0;
     let prevLat = finiteCoord(startLat);
     let prevLng = finiteCoord(startLng);
-    let flown = false;
-    let fixed = 0;
-    let delta = 0;
+    let prevName = 'จุดเริ่มต้น';
+    let prevMode = String(primaryMode || 'car').toLowerCase();
     for (const day of days) {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
-        for (let i = 0; i < stops.length; i++) {
-            const stop = stops[i];
-            if (!stop || typeof stop !== 'object') continue;
-            const toLat = finiteCoord(stop.latitude);
-            const toLng = finiteCoord(stop.longitude);
-            const isFlight = String(stop.transportMode || '').toLowerCase() === 'flight';
-            const isRestLike = stop.isRestStop === true
-                || String(stop.destinationId ?? '').startsWith('osm:');
-            let fromLat;
-            let fromLng;
-            if (i === 0) {
-                // ไม่มี origin วัดขาแรกไม่ได้ — ข้าม แต่จดพิกัดไว้ให้ขาถัดไปวัดต่อ
-                // (ขาบินจริงขาแรกยังนับเป็น flown ไม่ได้เพราะวัดระยะไม่ได้ — อนุรักษ์ไว้ก่อน)
-                if (prevLat == null || prevLng == null) {
-                    if (toLat != null && toLng != null) {
-                        prevLat = toLat;
-                        prevLng = toLng;
-                    }
-                    continue;
-                }
-                fromLat = prevLat;
-                fromLng = prevLng;
+        // origin วันนี้ (เหมือน applyDeterministicSchedule): วันแรกจากจุดเริ่ม วันถัดไปจากจุดสุดท้ายวันก่อน
+        const origin = (prevLat != null && prevLng != null)
+            ? { lat: prevLat, lng: prevLng, name: prevName, mode: prevMode }
+            : undefined;
+        // จดจุดสุดท้ายของวัน (หลังซ่อม) ไว้เป็น origin ให้วันถัดไป
+        const advancePrev = () => {
+            const current = Array.isArray(day?.stops) ? day.stops : [];
+            const tail = current[current.length - 1];
+            const tailLat = finiteCoord(tail?.latitude);
+            const tailLng = finiteCoord(tail?.longitude);
+            if (tailLat != null && tailLng != null) {
+                prevLat = tailLat;
+                prevLng = tailLng;
+                prevName = String(tail?.place || '').trim() || prevName;
+                prevMode = String(tail?.transportMode || prevMode || 'car').toLowerCase();
             } else {
-                fromLat = finiteCoord(stops[i - 1]?.latitude);
-                fromLng = finiteCoord(stops[i - 1]?.longitude);
+                prevLat = null;
+                prevLng = null;
             }
-            if (toLat == null || toLng == null) continue;
-            // จดพิกัดทุกจุด (รวมที่พัก/จุดพัก) — วันถัดไปจะได้วัดขาแรกต่อได้
-            prevLat = toLat;
-            prevLng = toLng;
-            // จุดพักปกติที่ไม่ใช่ขาบินข้าม (ที่พักค้างคืนจะแปลงโหมดข้างล่างถ้าขาเข้าเพี้ยน)
-            if (isRestLike && !isFlight) continue;
-            if (!isFlight) continue;
-            if (fromLat == null || fromLng == null) continue;
-            const km = haversineKm(fromLat, fromLng, toLat, toLng);
-            if (km == null) continue;
-            if (km >= minFlightKm) {
-                flown = true;
-                continue;
-            }
-            // ขาบินสั้น → ลดเป็นภาคพื้น (รวมขาเข้าที่พัก/จุดพัก — โหมดเพี้ยนเหมือนกัน
-            // แต่คง duration/tip/isRestStop ไว้ การ์ดที่พักยังเป็นสีม่วงเหมือนเดิม)
-            // หลังขาบินจริง = รถเช่า
-            const rental = flown && fallback === 'car';
-            const { travelMinutes: groundMinutes } = computeLegMinutes(km, fallback);
-            const legCost = estimateLegCostKm(km, fallback, { rentalCar: rental });
-            delta += legCost - (Number(stop.transportCost) || 0);
-            stop.transportMode = fallback;
-            stop.transportCost = legCost;
-            if (rental) stop.rentalCar = true;
-            if (Array.isArray(stop.segments) && stop.segments[0]) {
-                stop.segments[0].mode = fallback;
-                stop.segments[0].estimatedCost = legCost;
-                stop.segments[0].estimatedMinutes = groundMinutes;
-            }
-            const note = `ขานี้ใกล้ (~${km < 1 ? `${Math.round(km * 1000)} ม.` : `${Math.round(km)} กม.`}) ` +
-                `เปลี่ยนจากเครื่องบินเป็น${rental ? 'รถเช่า' : fallbackLabel}ให้แล้ว (บินไม่คุ้ม)`;
-            stop.tip = stop.tip ? `${stop.tip} ${note}` : note;
-            fixed++;
+        };
+        if (origin == null || stops.length < 2) {
+            advancePrev();
+            continue;
         }
+        const baseOpening = countDayOpeningViolations(day, index);
+        if (baseOpening === 0) {
+            advancePrev();
+            continue;
+        }
+        const baseLate = countDayLateNight(day);
+        let best = null;
+        for (let i = 0; i < stops.length && (best == null || best.opening > 0); i++) {
+            for (let j = 0; j < stops.length; j++) {
+                if (i === j) continue;
+                const trial = [...stops];
+                const [moved] = trial.splice(i, 1);
+                trial.splice(j, 0, moved);
+                day.stops = trial;
+                chainDayTimes(day, startMinutes, origin);
+                const opening = countDayOpeningViolations(day, index);
+                const late = countDayLateNight(day);
+                // รับเฉพาะท่าที่ดีขึ้นจริงและไม่สร้างเที่ยวดึกเพิ่ม
+                if (opening < baseOpening && late <= baseLate
+                    && (best == null || opening < best.opening)) {
+                    best = { order: [...trial], opening };
+                    if (opening === 0) break;
+                }
+            }
+        }
+        if (best != null) {
+            day.stops = best.order;
+            chainDayTimes(day, startMinutes, origin);
+            fixed += baseOpening - best.opening;
+        } else {
+            // ซ่อมไม่ได้ — เดินโซ่กลับลำดับเดิมให้เวลาตรงเหมือนก่อนลอง
+            chainDayTimes(day, startMinutes, origin);
+        }
+        advancePrev();
     }
-    return { fixed, delta };
+    if (fixed > 0) {
+        planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+        const note = `จัดลำดับใหม่ ${fixed} จุดให้ตรงเวลาเปิด-ปิดของสถานที่แล้ว`;
+        if (!planData.tips.includes(note)) planData.tips.push(note);
+    }
+    return { fixed };
 };
 
-// บวกผลต่างค่าเดินทางเข้ายอดรวม (totalEstimatedCost + budgetBreakdown.transport)
-// ใช้ร่วมกันทุก flow ที่แก้ราคา leg (downgrade/mark/enrich) กันยอดรวมหลุดจากยอดขา
-const applyTransportDelta = (planData, delta) => {
-    if (!planData || typeof planData !== 'object') return;
-    if (!Number.isFinite(delta) || delta === 0) return;
-    const total = Number(planData.totalEstimatedCost);
-    planData.totalEstimatedCost = Math.max(
-        0, (Number.isFinite(total) ? total : 0) + delta);
-    if (!planData.budgetBreakdown || typeof planData.budgetBreakdown !== 'object') {
-        planData.budgetBreakdown = { accommodation: 0, food: 0, transport: 0, activities: 0 };
+// ลบจุดแวะพัก/ปั๊ม/ที่พัก/สนามบินตกค้างของแผนเก่า (rest/overnight/transfer/osm:) + ปรับงบตามยอดที่ตัด
+// ใช้ตอนอ่านแผนเก่าจาก DB (in-memory ไม่เขียนกลับ) — แผนใหม่ไม่มี stop พวกนี้แล้ว
+// คืนจำนวน stop ที่ตัดออก (0 = ไม่มีอะไรให้ตัด คง planData เดิม)
+const stripLegacyLodgingAndRestStops = (planData) => {
+    if (!planData || typeof planData !== 'object' || !Array.isArray(planData.days)) return 0;
+    const isLegacyLodgingOrRest = (stop) => {
+        if (!stop || typeof stop !== 'object') return false;
+        return stop.stopType === 'overnight' || stop.stopType === 'rest'
+            || stop.stopType === 'transfer'
+            || stop.isRestStop === true
+            || String(stop.destinationId ?? '').startsWith('osm:')
+            || String(stop.destinationId ?? '').startsWith('curated:');
+    };
+    let removed = 0;
+    let removedTransport = 0;
+    let removedFood = 0;
+    let removedEntry = 0;
+    for (const day of planData.days) {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        const kept = [];
+        for (const stop of stops) {
+            if (isLegacyLodgingOrRest(stop)) {
+                removed++;
+                removedTransport += Number(stop.transportCost) || 0;
+                removedFood += Number(stop.foodCost) || 0;
+                removedEntry += Number(stop.entryCost) || 0;
+            } else {
+                kept.push(stop);
+            }
+        }
+        day.stops = kept;
     }
-    const transport = Number(planData.budgetBreakdown.transport);
-    planData.budgetBreakdown.transport = Math.max(
-        0, (Number.isFinite(transport) ? transport : 0) + delta);
+    if (removed === 0) return 0;
+    const nonNegative = (v) => (Number.isFinite(v) && v > 0 ? v : 0);
+    // ผลรวมของ stop ที่เหลือ — ใช้ประมาณยอดเดิม (ที่เหลือ + ที่ตัด) เมื่อ breakdown หาย/ไม่ตรง
+    const sumKept = (pick) => {
+        let sum = 0;
+        for (const day of planData.days) {
+            for (const stop of day?.stops || []) sum += Number(pick(stop)) || 0;
+        }
+        return sum;
+    };
+    if (!planData.budgetBreakdown || typeof planData.budgetBreakdown !== 'object') {
+        planData.budgetBreakdown = {};
+    }
+    const breakdown = planData.budgetBreakdown;
+    const transportBase = Number.isFinite(Number(breakdown.transport))
+        ? Number(breakdown.transport)
+        : sumKept((s) => s.transportCost) + removedTransport;
+    const foodBase = Number.isFinite(Number(breakdown.food))
+        ? Number(breakdown.food)
+        : sumKept((s) => s.foodCost) + removedFood;
+    const activitiesBase = Number.isFinite(Number(breakdown.activities))
+        ? Number(breakdown.activities)
+        : sumKept((s) => s.entryCost) + removedEntry;
+    breakdown.transport = nonNegative(transportBase - removedTransport);
+    breakdown.food = nonNegative(foodBase - removedFood);
+    breakdown.activities = nonNegative(activitiesBase - removedEntry);
+    // ไม่มีที่พักแล้ว หมวดโรงแรมไม่มีความหมาย — ลบทิ้งเสมอ
+    delete breakdown.accommodation;
+    delete breakdown.hotel;
+    const total = Number(planData.totalEstimatedCost);
+    planData.totalEstimatedCost = nonNegative(
+        (Number.isFinite(total) ? total : transportBase + foodBase + activitiesBase)
+        - removedTransport - removedFood - removedEntry,
+    );
+    return removed;
 };
 
 // เดินโซ่เวลาทุกวันโดยคงลำดับเดิมทุกจุด (ใช้ตอน PUT — เคารพลำดับที่ผู้ใช้จัดเอง)
@@ -896,7 +853,6 @@ module.exports = {
     DAY_HARD_END_MINUTES,
     MAX_PLAN_DAYS,
     LOCAL_FUEL_RATE_PER_KM,
-    LOCAL_FUEL_CAP_PER_DAY,
     parseClockToMinutes,
     parseStartTimeInput,
     parseTimeFlexible,
@@ -909,12 +865,7 @@ module.exports = {
     haversineKm,
     computeLegMinutes,
     estimateLegCostKm,
-    estimateFlightCostKm,
     estimateFuelCostKm,
-    estimateRentalCostKm,
-    isRentalCarStop,
-    markRentalCarLegs,
-    RENTAL_RATE_PER_KM,
     applyCarFuelCosts,
     orderStopsNearestNeighbor,
     chainDayTimes,
@@ -923,8 +874,7 @@ module.exports = {
     validateDayFit,
     validateOpeningAndLateNight,
     splitOverflowingDays,
-    MIN_FLIGHT_LEG_KM,
-    downgradeShortFlights,
-    applyTransportDelta,
+    repairDayOpeningOrder,
+    stripLegacyLodgingAndRestStops,
     chainAllDaysPreservingOrder,
 };
