@@ -282,10 +282,10 @@ const estimateFuelCostKm = (km) => {
     return Math.round(distance * LOCAL_FUEL_RATE_PER_KM);
 };
 
-// รถยนต์ส่วนตัว: ปรับขารถยนต์ทั้งแผนเป็นค่าน้ำมัน (mutate planData)
+// รถยนต์ส่วนตัว: เหมาค่าน้ำมันทั้งวันไว้ที่ขารถขาแรกของวัน (mutate planData)
 // ระยะแต่ละขาคำนวณจากพิกัดจริงด้วยสูตรเดียวกับ chainDayTimes
 // (วันแรกจากจุดเริ่ม, วันถัดไปจากจุดสุดท้ายของวันก่อน) — เปลี่ยนแค่ "ราคา" ไม่แตะเวลา
-// ขาไม่ใช่รถยนต์คงเดิม, ขาหาพิกัดไม่ได้คงเดิม
+// ขารถขาอื่นของวันเป็น 0 (เหมาแล้ว), ขาไม่ใช่รถยนต์คงเดิม, ขาหาพิกัดไม่ได้คงเดิม
 const applyCarFuelCosts = (planData, { startLat, startLng } = {}) => {
     if (!planData || typeof planData !== 'object') return { saved: 0 };
     const days = Array.isArray(planData.days) ? planData.days : [];
@@ -318,15 +318,18 @@ const applyCarFuelCosts = (planData, { startLat, startLng } = {}) => {
             if (km == null) continue;
             carLegs.push({ stop, fuel: estimateFuelCostKm(km) });
         }
-        for (const { stop, fuel } of carLegs) {
+        // เหมาวัน: ขารถขาแรกรับยอดรวมทั้งวัน ขารถขาอื่นเป็น 0 (ยอดรวมเท่าเดิมแค่ย้ายที่โชว์)
+        const dayFuel = carLegs.reduce((sum, leg) => sum + leg.fuel, 0);
+        carLegs.forEach(({ stop }, legIndex) => {
+            const assigned = legIndex === 0 ? dayFuel : 0;
             const oldCost = Number(stop.transportCost) || 0;
-            saved += oldCost - fuel;
-            stop.transportCost = fuel;
+            saved += oldCost - assigned;
+            stop.transportCost = assigned;
             if (Array.isArray(stop.segments) && stop.segments[0]
                 && String(stop.segments[0].mode || 'car').toLowerCase() === 'car') {
-                stop.segments[0].estimatedCost = fuel;
+                stop.segments[0].estimatedCost = assigned;
             }
-        }
+        });
         const last = stops[stops.length - 1];
         const lastLat = finiteCoord(last?.latitude);
         const lastLng = finiteCoord(last?.longitude);
@@ -335,7 +338,6 @@ const applyCarFuelCosts = (planData, { startLat, startLng } = {}) => {
             prevLng = lastLng;
         }
     }
-    // ขากลับบ้านก็ขับรถตัวเองกลับ — คิดค่าน้ำมันด้วย (distanceKm เก็บไว้แล้ว)
     if (saved !== 0) {
         const total = Number(planData.totalEstimatedCost);
         planData.totalEstimatedCost = Math.max(
@@ -663,9 +665,9 @@ const splitOverflowingDays = (planData, {
 };
 
 // ซ่อมจุดที่หลุดเวลาเปิด-ปิดด้วยการลองสลับลำดับภายในวันเดียวกัน (mutate planData)
-// วิธี: วันที่ยังมี violation ให้ลองย้ายทีละจุดไปทุกตำแหน่ง เดินโซ่ใหม่ แล้วนับใหม่
+// วิธี: ล้างขาเข้าเก่าทิ้ง เดินโซ่ใหม่ แล้วลองย้ายทีละจุดไปทุกตำแหน่ง นับ violation ใหม่
 // รับเฉพาะท่าที่ลดจำนวนลงและไม่เพิ่มเที่ยวดึก — ซ่อมไม่ได้คงลำดับเดิมไว้
-// ไม่มี origin ของวันนั้น (เช่น ทริปล่วงหน้าไม่ส่งพิกัดเริ่ม) ข้ามวันนั้นไป (ได้แค่เตือน)
+// ไม่มี origin (เช่น ทริปล่วงหน้าไม่ส่งพิกัดเริ่ม) จุดแรกเริ่ม startMinutes ตรง ๆ แล้วเทียบแบบสัมพัทธ์
 // ใช้เฉพาะตอนสร้างแผน (PUT เคารพลำดับที่ผู้ใช้จัดเอง ห้ามสลับ)
 // คืน { fixed (จุดที่หลุดน้อยลง) }
 const repairDayOpeningOrder = (planData, places = [], {
@@ -705,10 +707,17 @@ const repairDayOpeningOrder = (planData, places = [], {
                 prevLng = null;
             }
         };
-        if (origin == null || stops.length < 2) {
+        if (stops.length < 2) {
             advancePrev();
             continue;
         }
+        // ล้างขาเข้าเก่าทิ้งก่อน — กันเวลาค้างตามลำดับเดิมกวนผลเปรียบเทียบ
+        // มี origin ขาแรกคำนวณจาก origin, ไม่มี origin จุดแรกเริ่ม startMinutes ตรง ๆ
+        for (const stop of stops) {
+            if (stop && typeof stop === 'object') stop.segments = [];
+        }
+        chainDayTimes(day, startMinutes, origin);
+        const original = [...day.stops];
         const baseOpening = countDayOpeningViolations(day, index);
         if (baseOpening === 0) {
             advancePrev();
@@ -716,10 +725,10 @@ const repairDayOpeningOrder = (planData, places = [], {
         }
         const baseLate = countDayLateNight(day);
         let best = null;
-        for (let i = 0; i < stops.length && (best == null || best.opening > 0); i++) {
-            for (let j = 0; j < stops.length; j++) {
+        for (let i = 0; i < original.length && (best == null || best.opening > 0); i++) {
+            for (let j = 0; j < original.length; j++) {
                 if (i === j) continue;
-                const trial = [...stops];
+                const trial = [...original];
                 const [moved] = trial.splice(i, 1);
                 trial.splice(j, 0, moved);
                 day.stops = trial;
@@ -739,7 +748,8 @@ const repairDayOpeningOrder = (planData, places = [], {
             chainDayTimes(day, startMinutes, origin);
             fixed += baseOpening - best.opening;
         } else {
-            // ซ่อมไม่ได้ — เดินโซ่กลับลำดับเดิมให้เวลาตรงเหมือนก่อนลอง
+            // ซ่อมไม่ได้ — คืนลำดับเดิมแล้วเดินโซ่ใหม่ให้เวลาตรงเหมือนก่อนลอง
+            day.stops = original;
             chainDayTimes(day, startMinutes, origin);
         }
         advancePrev();

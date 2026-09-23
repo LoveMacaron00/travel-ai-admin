@@ -830,7 +830,7 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                         startLng: tripInput.start_longitude,
                     });
                     planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
-                    const fuelTip = 'ค่าเดินทางรถยนต์คิดตามค่าน้ำมันรถส่วนตัว (~3 บาท/กม.)';
+                    const fuelTip = 'ค่าเดินทางรถยนต์คิดตามค่าน้ำมันรถส่วนตัว (~3 บาท/กม.) โดยรวมทั้งวันไว้ที่จุดแรกของวันแล้ว';
                     if (!planData.tips.includes(fuelTip)) planData.tips.push(fuelTip);
                 }
                 const { warnings: fitWarnings } = validateDayFit(planData);
