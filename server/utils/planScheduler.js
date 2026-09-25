@@ -520,6 +520,75 @@ const getStopOpeningWindow = (stop, index) => {
     return place ? getPlaceOpeningWindow(place) : null;
 };
 
+// หยิบวันเปิดทำการของ stop ([1..7] จันทร์..อาทิตย์ ตรงกับ Dart DateTime.weekday)
+// ว่าง/ครบทั้งสัปดาห์ = ไม่จำกัด → คืน null
+const getStopOpenDays = (stop) => {
+    const raw = stop?.openDays;
+    if (!Array.isArray(raw)) return null;
+    const days = [...new Set(raw.map(Number).filter(
+        (d) => Number.isInteger(d) && d >= 1 && d <= 7,
+    ))].sort((a, b) => a - b);
+    if (days.length === 0 || days.length === 7) return null;
+    return days;
+};
+
+// ชื่อวันแบบย่อภาษาไทยสำหรับข้อความเตือน ("ส–อา", "จ,พ,ศ")
+const TH_DAY_SHORT = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
+const formatOpenDaysShort = (days) => {
+    const sorted = [...days].sort((a, b) => a - b);
+    let contiguous = sorted.length > 1;
+    for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i] !== sorted[i - 1] + 1) {
+            contiguous = false;
+            break;
+        }
+    }
+    if (contiguous) return `${TH_DAY_SHORT[sorted[0] - 1]}–${TH_DAY_SHORT[sorted[sorted.length - 1] - 1]}`;
+    return sorted.map((d) => TH_DAY_SHORT[d - 1]).join(',');
+};
+
+// "YYYY-MM-DD" → Date (date-only) — ใช้ไม่ได้คืน null (ไม่มีวันเริ่ม = ไม่ตรวจวันเปิด)
+const parseTripStartDate = (value) => {
+    const match = String(value || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+        return null;
+    }
+    if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
+        return null;
+    }
+    return new Date(year, month - 1, day);
+};
+
+// วันที่จริงของ dayIndex (0-based) = วันเริ่มทริป + index — ไม่มีวันเริ่มคืน null
+const dayDateOfTrip = (startDate, dayIndex) => {
+    const start = parseTripStartDate(startDate);
+    if (start == null) return null;
+    return new Date(start.getFullYear(), start.getMonth(), start.getDate() + dayIndex);
+};
+
+// weekday 1..7 (จันทร์..อาทิตย์ ตรงกับ Dart) — Date.getDay() อาทิตย์ = 0
+const weekdayOf = (date) => {
+    const js = date.getDay();
+    return js === 0 ? 7 : js;
+};
+
+// นับจุดในวันนี้ที่ปิดทำการ (ไม่ mutate) — ต้องรู้วันที่ ไม่มีวัน/ไม่มีข้อมูลวันข้าม
+const countDayClosedViolations = (day, dayDate) => {
+    if (!(dayDate instanceof Date) || Number.isNaN(dayDate.getTime())) return 0;
+    const weekday = weekdayOf(dayDate);
+    let count = 0;
+    for (const stop of day?.stops || []) {
+        if (!stop || typeof stop !== 'object') continue;
+        const openDays = getStopOpenDays(stop);
+        if (openDays && !openDays.includes(weekday)) count++;
+    }
+    return count;
+};
+
 // นับจุดในวันนี้ที่เที่ยวอยู่นอกเวลาเปิด-ปิด (ไม่ mutate) — ไม่รู้เวลาเปิดถือว่าผ่าน
 const countDayOpeningViolations = (day, index) => {
     const stops = Array.isArray(day?.stops) ? day.stops : [];
@@ -558,13 +627,30 @@ const countDayLateNight = (day) => {
 const validateOpeningAndLateNight = (planData, places = [], {
     lateNightStart = LATE_NIGHT_START_MINUTES,
     hardEnd = DAY_HARD_END_MINUTES,
+    startDate = null,
 } = {}) => {
     const warnings = [];
     const index = buildPlacesById(places);
-    for (const day of planData?.days || []) {
+    const days = Array.isArray(planData?.days) ? planData.days : [];
+    for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+        const day = days[dayIndex];
         const stops = Array.isArray(day?.stops) ? day.stops : [];
+        const dayDate = startDate != null ? dayDateOfTrip(startDate, dayIndex) : null;
+        const dayWeekday = dayDate != null ? weekdayOf(dayDate) : null;
         for (const stop of stops) {
             if (!stop || typeof stop !== 'object') continue;
+            // 0) ปิดทำการวันนี้ (เช่น ถนนคนเดินเปิดแค่เสาร์-อาทิตย์) — สำคัญสุด ข้ามเช็กอื่น
+            if (dayWeekday != null) {
+                const openDays = getStopOpenDays(stop);
+                if (openDays && !openDays.includes(dayWeekday)) {
+                    warnings.push(
+                        `วันที่ ${day?.day ?? '?'}: “${stop.place || 'ไม่ทราบชื่อ'}” ` +
+                        `ปิดวันนี้ (เปิดเฉพาะ ${formatOpenDaysShort(openDays)}) ` +
+                        `— ควรย้ายไปวันที่เปิดทำการ`,
+                    );
+                    continue;
+                }
+            }
             const arrival = parseClockToMinutes(stop.arrivalTime);
             if (arrival == null) continue;
             const duration = clampDurationMinutes(stop.durationMinutes);
@@ -675,6 +761,7 @@ const repairDayOpeningOrder = (planData, places = [], {
     startLng,
     startMinutes = DEFAULT_DAY_START_MINUTES,
     primaryMode = 'car',
+    startDate = null,
 } = {}) => {
     if (!planData || typeof planData !== 'object') return { fixed: 0 };
     const days = Array.isArray(planData.days) ? planData.days : [];
@@ -685,7 +772,10 @@ const repairDayOpeningOrder = (planData, places = [], {
     let prevLng = finiteCoord(startLng);
     let prevName = 'จุดเริ่มต้น';
     let prevMode = String(primaryMode || 'car').toLowerCase();
-    for (const day of days) {
+    for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+        const day = days[dayIndex];
+        // วันที่จริงของวันนี้ (ถ้ารู้วันเริ่มทริป) — ใช้ตรวจที่ปิดทำการประจำวัน
+        const dayDate = startDate != null ? dayDateOfTrip(startDate, dayIndex) : null;
         const stops = Array.isArray(day?.stops) ? day.stops : [];
         // origin วันนี้ (เหมือน applyDeterministicSchedule): วันแรกจากจุดเริ่ม วันถัดไปจากจุดสุดท้ายวันก่อน
         const origin = (prevLat != null && prevLng != null)
@@ -718,14 +808,17 @@ const repairDayOpeningOrder = (planData, places = [], {
         }
         chainDayTimes(day, startMinutes, origin);
         const original = [...day.stops];
+        // คะแนนรวม = หลุดเวลาเปิด + ปิดทำการวันนี้ (สลับในวันแก้วันปิดไม่ได้ แต่กันไม่ให้แย่ลง)
         const baseOpening = countDayOpeningViolations(day, index);
-        if (baseOpening === 0) {
+        const baseClosed = countDayClosedViolations(day, dayDate);
+        const baseScore = baseOpening + baseClosed;
+        if (baseScore === 0) {
             advancePrev();
             continue;
         }
         const baseLate = countDayLateNight(day);
         let best = null;
-        for (let i = 0; i < original.length && (best == null || best.opening > 0); i++) {
+        for (let i = 0; i < original.length && (best == null || best.score > 0); i++) {
             for (let j = 0; j < original.length; j++) {
                 if (i === j) continue;
                 const trial = [...original];
@@ -734,19 +827,20 @@ const repairDayOpeningOrder = (planData, places = [], {
                 day.stops = trial;
                 chainDayTimes(day, startMinutes, origin);
                 const opening = countDayOpeningViolations(day, index);
+                const closed = countDayClosedViolations(day, dayDate);
                 const late = countDayLateNight(day);
                 // รับเฉพาะท่าที่ดีขึ้นจริงและไม่สร้างเที่ยวดึกเพิ่ม
-                if (opening < baseOpening && late <= baseLate
-                    && (best == null || opening < best.opening)) {
-                    best = { order: [...trial], opening };
-                    if (opening === 0) break;
+                if (opening + closed < baseScore && late <= baseLate
+                    && (best == null || opening + closed < best.score)) {
+                    best = { order: [...trial], score: opening + closed };
+                    if (opening + closed === 0) break;
                 }
             }
         }
         if (best != null) {
             day.stops = best.order;
             chainDayTimes(day, startMinutes, origin);
-            fixed += baseOpening - best.opening;
+            fixed += baseScore - best.score;
         } else {
             // ซ่อมไม่ได้ — คืนลำดับเดิมแล้วเดินโซ่ใหม่ให้เวลาตรงเหมือนก่อนลอง
             day.stops = original;
@@ -837,7 +931,7 @@ const stripLegacyLodgingAndRestStops = (planData) => {
 // คืน warnings ของวันที่แน่น + เที่ยวดึก/นอกเวลาเปิด-ปิด (ถ้าส่ง places มาจะตรวจเปิด-ปิดด้วย)
 const chainAllDaysPreservingOrder = (
     planData,
-    { defaultStartMinutes = DEFAULT_DAY_START_MINUTES, dayBudgetMinutes = DAY_BUDGET_MINUTES, places = null } = {},
+    { defaultStartMinutes = DEFAULT_DAY_START_MINUTES, dayBudgetMinutes = DAY_BUDGET_MINUTES, places = null, startDate = null } = {},
 ) => {
     for (const day of planData?.days || []) {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
@@ -851,7 +945,7 @@ const chainAllDaysPreservingOrder = (
         chainDayTimes(day, departure);
     }
     const warnings = validateDayFit(planData, { dayBudgetMinutes }).warnings;
-    const timeWarnings = validateOpeningAndLateNight(planData, places || []);
+    const timeWarnings = validateOpeningAndLateNight(planData, places || [], { startDate });
     return [...warnings, ...timeWarnings];
 };
 
@@ -868,6 +962,11 @@ module.exports = {
     parseTimeFlexible,
     formatClock,
     getPlaceOpeningWindow,
+    getStopOpeningWindow,
+    getStopOpenDays,
+    countDayClosedViolations,
+    buildPlacesById,
+    findPlaceForStop,
     isWithinOpeningHours,
     isLateNightVisit,
     finiteCoord,

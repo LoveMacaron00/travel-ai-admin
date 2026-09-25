@@ -12,6 +12,7 @@ const {
     stripLegacyLodgingAndRestStops,
 } = require('../utils/planScheduler');
 const tripRepository = require('../repositories/tripRepository');
+const { enrichMissingOpeningHours } = require('../services/openingHoursService');
 
 const normalizeStoredPlan = (planData, places) => {
     // แผนเก่าอาจมีจุดแวะพัก/ปั๊ม/ที่พักตกค้าง — ตัดออกก่อน (in-memory ไม่เขียนกลับ DB)
@@ -22,7 +23,7 @@ const normalizeStoredPlan = (planData, places) => {
 };
 
 // ซ่อมแผนเก่าตอนเปิดดู (in-memory เท่านั้น — ไม่เขียนกลับ DB)
-// เดินโซ่เวลาใหม่ให้ตรงกับเวลาที่เก็บไว้ + เติม warnings (วันแน่น/เที่ยวดึก/นอกเวลาเปิด)
+// เดินโซ่เวลาใหม่ให้ตรงกับเวลาที่เก็บไว้ + เติม warnings (วันแน่น/เที่ยวดึก/นอกเวลาเปิด/ปิดทำการวันนี้)
 const repairStoredPlanForDisplay = async (trip, places) => {
     const planData = trip?.plan_data;
     if (!planData || !Array.isArray(planData.days)) return;
@@ -30,6 +31,7 @@ const repairStoredPlanForDisplay = async (trip, places) => {
         const warnings = chainAllDaysPreservingOrder(planData, {
             defaultStartMinutes: parseStartTimeInput(trip?.start_time),
             places: places || [],
+            startDate: trip?.start_date ?? null,
         });
         if (warnings.length > 0) {
             planData.warnings = [...new Set([...(planData.warnings || []), ...warnings])];
@@ -165,11 +167,24 @@ const updateTripPlan = async (req, res) => {
         } catch {
             planPlaces = [];
         }
+        // วันเริ่มทริปที่เก็บไว้ — ใช้ตรวจที่ปิดทำการประจำวัน (ไม่มีข้ามข้อนี้)
+        let storedStartDate = null;
+        try {
+            storedStartDate = await tripRepository.findTripStartDateById(tripId);
+        } catch {
+            storedStartDate = null;
+        }
+        // เติมเวลาเปิดที่ DB ไม่มีจากเว็บ (Tavily) — ชิป "อาจปิดแล้ว" จะได้แม่นที่สุด
+        try {
+            await enrichMissingOpeningHours(planData, planPlaces);
+        } catch {
+            // best-effort — หาไม่เจอคงเดิม + เตือนเท่าที่รู้
+        }
         const warnings = chainAllDaysPreservingOrder(
             planData,
             defaultStartMinutes === undefined
-                ? { places: planPlaces }
-                : { defaultStartMinutes, places: planPlaces },
+                ? { places: planPlaces, startDate: storedStartDate }
+                : { defaultStartMinutes, places: planPlaces, startDate: storedStartDate },
         );
         if (warnings.length > 0) {
             planData.warnings = [...new Set([...(planData.warnings || []), ...warnings])];

@@ -33,6 +33,7 @@ const {
     freeWebSearch,
     formatWebSearchContext,
 } = require('./webSearchHelper');
+const { enrichMissingOpeningHours } = require('./openingHoursService');
 const {
     chatCompletion,
     chatCompletionStream,
@@ -807,6 +808,16 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                 } catch (splitError) {
                     console.warn(`[ai] split overflowing days skipped: ${splitError.message}`);
                 }
+                // ---- เติมเวลาเปิดที่ DB ไม่มีจากเว็บ (Tavily) — ชิป "อาจปิดแล้ว" จะได้แม่นที่สุด ----
+                // (best-effort หาไม่เจอคงเดิม + validate ข้างล่างเตือนเท่าที่รู้)
+                try {
+                    const { filled } = await enrichMissingOpeningHours(planData, places);
+                    if (filled > 0) {
+                        console.warn(`[ai] filled opening hours from web for ${filled} stops`);
+                    }
+                } catch (webHoursError) {
+                    console.warn(`[ai] web opening-hours lookup skipped: ${webHoursError.message}`);
+                }
                 // ---- ซ่อมจุดที่หลุดเวลาเปิด-ปิด: ลองสลับลำดับในวันเดียวกันให้ตรงเวลาเปิด ----
                 // (best-effort ซ่อมไม่ได้คงเดิม + เตือนผ่าน warnings ข้างล่าง)
                 try {
@@ -815,6 +826,7 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                         startLng: tripInput.start_longitude,
                         startMinutes: dayStartMinutes,
                         primaryMode: allowedTransportModes[0] || 'car',
+                        startDate: tripInput.start_date,
                     });
                     if (fixed > 0) {
                         console.warn(`[ai] reordered ${fixed} stops to fit opening hours`);
@@ -834,8 +846,10 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                     if (!planData.tips.includes(fuelTip)) planData.tips.push(fuelTip);
                 }
                 const { warnings: fitWarnings } = validateDayFit(planData);
-                // ตรวจเที่ยวดึก + นอกเวลาเปิด-ปิดจากข้อมูล DB จริง (places มี opening_time/closing_time)
-                const timeWarnings = validateOpeningAndLateNight(planData, places);
+                // ตรวจเที่ยวดึก + นอกเวลาเปิด-ปิด + ปิดทำการประจำวัน จากข้อมูล DB/เว็บจริง
+                const timeWarnings = validateOpeningAndLateNight(planData, places, {
+                    startDate: tripInput.start_date,
+                });
                 const allWarnings = [...new Set([...earlyWarnings, ...fitWarnings, ...timeWarnings])];
                 if (allWarnings.length > 0) {
                     planData.warnings = allWarnings;

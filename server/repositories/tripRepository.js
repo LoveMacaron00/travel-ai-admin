@@ -181,6 +181,16 @@ const findTripStartTimeById = async (tripId, db = pool) => {
     return rows[0]?.start_time ?? null;
 };
 
+// อ่าน start_date ที่เก็บไว้ของ trip (NULL = ไม่ระบุวัน — ข้ามเช็กวันเปิดทำการ)
+const findTripStartDateById = async (tripId, db = pool) => {
+    await ensureTripsPlanColumns(db);
+    const { rows } = await db.query(
+        `SELECT start_date FROM trips WHERE id = $1`,
+        [tripId],
+    );
+    return rows[0]?.start_date ?? null;
+};
+
 // อัปเดตจำนวนวันที่ resolve แล้ว (เช่น auto_days คำนวณได้ 4 วันแต่ตอน insert เก็บ 3 ไว้ชั่วคราว)
 const updateTripDays = async (tripId, days, db = pool) => {
     await db.query(`UPDATE trips SET days = $2 WHERE id = $1`, [tripId, normalizeDays(days)]);
@@ -257,6 +267,7 @@ module.exports = {
     findUserTripsWithPlans,
     findTripWithPlanById,
     findTripStartTimeById,
+    findTripStartDateById,
     updateTripDays,
     updateTripStartTime,
     isTripOwnedByUser,
