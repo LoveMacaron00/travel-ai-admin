@@ -26,6 +26,7 @@ const {
     validateOpeningAndLateNight,
                     splitOverflowingDays,
                     repairDayOpeningOrder,
+                    dropUnfixableTimeViolations,
                     applyCarFuelCosts,
     normalizeThaiName,
 } = require('../utils/planScheduler');
@@ -630,10 +631,34 @@ async function generateTripPlan(tripId, tripInput, res) {
     );
 
     // มี must-visit = ทริปใช้เฉพาะที่ผู้ใช้เลือกเท่านั้น ห้ามเพิ่มที่อื่น
+    // (ที่บังคับเลือกใส่เสมอแม้ปิด ระบบเตือนผู้ใช้เอง — ไม่ตัดทิ้ง)
     const placeSelectionRules = exclusiveMustVisit
-        ? `ทริปนี้ใช้เฉพาะสถานที่ที่ผู้ใช้บังคับเลือก ${mustVisitPlaces.length} แห่งด้านล่างเท่านั้น ห้ามเพิ่มสถานที่อื่นใดทั้งสิ้น — กระจายให้ครบทุกที่ลงใน ${effectiveDays} วัน เรียงลำดับตามภูมิศาสตร์เพื่อลดการย้อนเส้นทาง`
-        : `สถานที่ที่ผู้ใช้บังคับเลือกทั้งหมดต้องอยู่ใน stops ของทริปอย่างน้อย 1 ครั้ง และมีความสำคัญเหนือความสนใจ วิธีเดินทาง งบประมาณ และรายการที่ลบซ้ำถ้าขัดกัน — จัดกลุ่มวันและลำดับทริปโดยยึดสถานที่เหล่านี้เป็นหลัก
+        ? `ทริปนี้ใช้เฉพาะสถานที่ที่ผู้ใช้บังคับเลือก ${mustVisitPlaces.length} แห่งด้านล่างเท่านั้น ห้ามเพิ่มสถานที่อื่นใดทั้งสิ้น — กระจายให้ครบทุกที่ลงใน ${effectiveDays} วัน เรียงลำดับตามภูมิศาสตร์เพื่อลดการย้อนเส้นทาง ใส่ให้ครบทุกที่แม้บางที่จะปิดในวันที่จัด ระบบจะเตือนผู้ใช้เอง`
+        : `สถานที่ที่ผู้ใช้บังคับเลือกทั้งหมดต้องอยู่ใน stops ของทริปอย่างน้อย 1 ครั้ง และมีความสำคัญเหนือความสนใจ วิธีเดินทาง งบประมาณ และรายการที่ลบซ้ำถ้าขัดกัน — จัดกลุ่มวันและลำดับทริปโดยยึดสถานที่เหล่านี้เป็นหลัก ที่บังคับเลือกใส่เสมอแม้ปิด ระบบจะเตือนผู้ใช้เอง
     เลือกสถานที่อื่นจากฐานข้อมูลเท่านั้น ให้เหมาะกับความสนใจและงบประมาณ จัดลำดับจากจุดเริ่ม GPS เพื่อลดการย้อนเส้นทาง`;
+
+    // ปฏิทินทริปให้ AI เลี่ยงวันปิด ("วันที่ 1 = ส 24/9") — ไม่มี start_date ข้าม
+    const TH_WEEKDAY_SHORT = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+    const buildTripCalendarHint = (startDate, days) => {
+        const m = String(startDate || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (!m) return '';
+        const start = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        if (Number.isNaN(start.getTime())) return '';
+        const parts = [];
+        for (let i = 0; i < days; i++) {
+            const d = new Date(
+                start.getFullYear(),
+                start.getMonth(),
+                start.getDate() + i,
+            );
+            parts.push(`วันที่ ${i + 1} (${TH_WEEKDAY_SHORT[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1})`);
+        }
+        return parts.join(', ');
+    };
+    const tripCalendarHint = buildTripCalendarHint(
+        tripInput.start_date,
+        effectiveDays,
+    );
 
     const systemPrompt =
         `คุณคือผู้เชี่ยวชาญวางแผนการท่องเที่ยวในประเทศไทย
@@ -649,6 +674,7 @@ async function generateTripPlan(tripId, tripInput, res) {
     - กรอบเวลาต่อวัน ~10 ชม. รวมเที่ยว+เดินทาง+พัก วันละไม่เกิน 5 จุด อย่ายัดหลายแห่งจนเวลาซ้อนกัน
     - ห้ามจัดเที่ยวดึก: ที่เที่ยวทุกจุดต้องถึงก่อน 21:00 และออกจากที่เที่ยวไม่เกิน 22:00 (เริ่มวันละ ${dayStartClock} บวกกรอบ 10 ชม. ต้องจบไม่เกิน 22:00) ถ้าสถานที่ไกลจนไปถึงดึก ให้กระจายไปวันอื่นแทน อย่ายัดลงวันเดียว
     - ดูเวลาเปิด-ปิดของแต่ละสถานที่ในข้อมูลด้านล่างก่อนจัดลำดับ: อย่าจัดให้ถึงนอกเวลาเปิด-ปิด (เช่น พิพิธภัณฑ์/อุทยานที่ปิด 16:00-18:00 ต้องไปกลางวัน, ตลาดกลางคืน/ถนนคนเดินไปได้เย็น-ค่ำ) ถ้าไม่รู้เวลาเปิดให้จัดช่วงกลางวันไว้ก่อน
+    - ห้ามจัดสถานที่ในวันที่สถานที่นั้นปิดทำการโดยเด็ดขาด (ดูวันเปิดทำการในข้อมูล ถ้าวันไหนปิดให้เลี่ยงไปวันอื่น ถ้าเลี่ยงไม่ได้ให้ทิ้งที่นั้นไปเลย) — ยกเว้นสถานที่ที่ผู้ใช้บังคับเลือก ให้ใส่ตามที่ผู้ใช้เลือก ระบบจะเตือนผู้ใช้เอง
     - ห้ามสร้าง stop แวะพัก/ปั๊มน้ำมัน/ที่พักค้างคืน/สนามบินเองเด็ดขาด — แผนมีเฉพาะสถานที่ท่องเที่ยวจากฐานข้อมูลเท่านั้น
     - arrivalTime กับ segments จะถูกระบบคำนวณใหม่จากระยะทางจริงหลัง AI ตอบ จึงไม่ต้องเดาเวลาเดินทางเอง แต่ทุก stop ต้องใส่ arrivalTime "HH:MM" กับ durationMinutes (20-300 นาที) ที่สมเหตุสมผลมาด้วย
 
@@ -671,6 +697,8 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
     - สถานที่ที่ผู้ใช้ลบและห้ามเสนอซ้ำ: ${(tripInput.excluded_places || []).join(', ') || 'ไม่มี'}
     - เวลาเริ่มเดินทางแต่ละวัน: ${dayStartClock}
     - กรอบเวลาต่อวัน ~10 ชม. (รวมเที่ยว เดินทาง และพัก) วันละไม่เกิน ${MAX_STOPS_PER_DAY} จุด
+${tripCalendarHint ? `    - ปฏิทินทริป: ${tripCalendarHint} — จัดสถานที่ให้ตรงวันเปิดทำการของแต่ละที่ด้วย` : ''}
+    - วันเปิดทำการ: ใช้ความรู้ทั่วไปประกอบด้วย (เช่น ถนนคนเดินมักเปิดเฉพาะเสาร์-อาทิตย์) ถ้าไม่แน่ใจให้ลงวันเสาร์-อาทิตย์ไว้ก่อน
 
     ${placeSelectionRules}
     ห้ามเสนอหรือสร้าง stop ที่ไม่มีอยู่ในข้อมูลสถานที่จากฐานข้อมูล แม้จำนวนสถานที่จะไม่พอกับจำนวนวัน
@@ -838,6 +866,21 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                     }
                 } catch (repairError) {
                     console.warn(`[ai] opening-hours repair skipped: ${repairError.message}`);
+                }
+                // ---- ตัดที่ AI เลือกเองแต่ยังผิดกติกาเวลาออก (must-visit คงไว้ + เตือน) ----
+                // รับประกันว่า stop ที่เหลือของ AI ไม่ก่อ warnings เวลา — วันว่างโดนทิ้งทั้งวัน
+                try {
+                    const { dropped } = dropUnfixableTimeViolations(planData, places, {
+                        startDate: tripInput.start_date,
+                        mustVisit: mustVisitPlaces,
+                        defaultStartMinutes: dayStartMinutes,
+                    });
+                    if (dropped.length > 0) {
+                        console.warn(`[ai] dropped ${dropped.length} stops violating opening hours: ${dropped.join(', ')}`);
+                        await tripRepository.updateTripDays(tripId, planData.days.length).catch(() => {});
+                    }
+                } catch (dropError) {
+                    console.warn(`[ai] drop violations skipped: ${dropError.message}`);
                 }
                 // รถยนต์ทุกคันคือรถส่วนตัว: เขียนทับขารถยนต์ทุกขา (รวมที่ AI เดามา)
                 // เป็นค่าน้ำมัน ~3 บาท/กม. จ่ายตามระยะจริง

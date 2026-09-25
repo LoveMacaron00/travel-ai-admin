@@ -856,6 +856,116 @@ const repairDayOpeningOrder = (planData, places = [], {
     return { fixed };
 };
 
+// ตัด stop ที่ AI เลือกเองแต่ยังผิดกติกาเวลาออก (mutate planData)
+// ใช้หลัง repair — รับประกันว่า stop ที่เหลือของ AI ไม่ก่อ warnings เวลา
+// (must-visit คงไว้เสมอ + เตือนแทน ไม่ตัดทิ้ง)
+// ตรวจ 3 ข้อ: ปิดทำการวันนี้ / เที่ยวดึก / นอกเวลาเปิด-ปิด
+// วันที่ว่างหลังตัดทิ้งทั้งวัน วันอื่นเรียงเลขใหม่ 1..N + เดินโซ่ใหม่ + ปรับงบ
+// คืน { dropped: [ชื่อที่ตัด] } (ว่าง = ไม่แตะ planData เลย)
+const dropUnfixableTimeViolations = (planData, places = [], {
+    startDate = null,
+    mustVisit = [],
+    defaultStartMinutes = DEFAULT_DAY_START_MINUTES,
+} = {}) => {
+    if (!planData || typeof planData !== 'object') return { dropped: [] };
+    const days = Array.isArray(planData.days) ? planData.days : [];
+    if (days.length === 0) return { dropped: [] };
+    const index = buildPlacesById(places);
+    const mustIds = new Set();
+    const mustNames = new Set();
+    for (const place of mustVisit || []) {
+        const id = String(place?.id ?? '').trim();
+        if (id) mustIds.add(id);
+        const name = normalizeThaiName(place?.name);
+        if (name) mustNames.add(name);
+    }
+    const isMustVisit = (stop) => {
+        const id = String(stop?.destinationId ?? '').trim();
+        if (id && mustIds.has(id)) return true;
+        const name = normalizeThaiName(stop?.place);
+        return !!name && mustNames.has(name);
+    };
+    const dropped = [];
+    let dropTransport = 0;
+    let dropFood = 0;
+    let dropEntry = 0;
+    const keptDays = [];
+    days.forEach((day, dayIndex) => {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        const dayDate = startDate != null ? dayDateOfTrip(startDate, dayIndex) : null;
+        const dayWeekday = dayDate != null ? weekdayOf(dayDate) : null;
+        const kept = [];
+        for (const stop of stops) {
+            if (!stop || typeof stop !== 'object') continue;
+            if (isMustVisit(stop)) {
+                kept.push(stop);
+                continue;
+            }
+            const arrival = parseClockToMinutes(stop.arrivalTime);
+            if (arrival == null) {
+                kept.push(stop);
+                continue;
+            }
+            const duration = clampDurationMinutes(stop.durationMinutes);
+            const departure = arrival + duration;
+            let bad = false;
+            // 1) ปิดทำการวันนี้
+            if (dayWeekday != null) {
+                const openDays = getStopOpenDays(stop);
+                if (openDays && !openDays.includes(dayWeekday)) bad = true;
+            }
+            // 2) เที่ยวดึก
+            if (!bad && isLateNightVisit(stop, arrival, departure)) bad = true;
+            // 3) นอกเวลาเปิด-ปิด
+            if (!bad) {
+                const window = getStopOpeningWindow(stop, index);
+                if (window && !isWithinOpeningHours(arrival, departure, window)) {
+                    bad = true;
+                }
+            }
+            if (bad) {
+                dropped.push(String(stop.place || 'ไม่ทราบชื่อ'));
+                dropTransport += Number(stop.transportCost) || 0;
+                dropFood += Number(stop.foodCost) || 0;
+                dropEntry += Number(stop.entryCost) || 0;
+            } else {
+                kept.push(stop);
+            }
+        }
+        if (kept.length > 0) keptDays.push({ ...day, stops: kept });
+    });
+    if (dropped.length === 0) return { dropped };
+    planData.days = keptDays;
+    // เรียงเลขวันใหม่ 1..N กันเลขกระโดด
+    planData.days.forEach((d, i) => { if (d && typeof d === 'object') d.day = i + 1; });
+    // เดินโซ่ใหม่แบบคงลำดับ (เวลา arrival ของจุดที่เหลืออาจขยับหลังตัด)
+    chainAllDaysPreservingOrder(
+        planData,
+        { defaultStartMinutes, places },
+    );
+    const nonNegative = (v) => (Number.isFinite(v) && v > 0 ? v : 0);
+    if (!planData.budgetBreakdown || typeof planData.budgetBreakdown !== 'object') {
+        planData.budgetBreakdown = {};
+    }
+    const breakdown = planData.budgetBreakdown;
+    breakdown.transport = nonNegative(
+        (Number(breakdown.transport) || 0) - dropTransport,
+    );
+    breakdown.food = nonNegative((Number(breakdown.food) || 0) - dropFood);
+    breakdown.activities = nonNegative(
+        (Number(breakdown.activities) || 0) - dropEntry,
+    );
+    const total = Number(planData.totalEstimatedCost);
+    planData.totalEstimatedCost = nonNegative(
+        (Number.isFinite(total) ? total : 0) - dropTransport - dropFood - dropEntry,
+    );
+    planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+    const shown = dropped.slice(0, 5).join(', ');
+    const note = `ตัดออก ${dropped.length} แห่งเพราะปิดในวันที่จัด (${shown}${dropped.length > 5 ? ' และอีกหลายแห่ง' : ''})`;
+    if (!planData.tips.includes(note)) planData.tips.push(note);
+    return { dropped };
+};
+
 // ลบจุดแวะพัก/ปั๊ม/ที่พัก/สนามบินตกค้างของแผนเก่า (rest/overnight/transfer/osm:) + ปรับงบตามยอดที่ตัด
 // ใช้ตอนอ่านแผนเก่าจาก DB (in-memory ไม่เขียนกลับ) — แผนใหม่ไม่มี stop พวกนี้แล้ว
 // คืนจำนวน stop ที่ตัดออก (0 = ไม่มีอะไรให้ตัด คง planData เดิม)
@@ -984,6 +1094,7 @@ module.exports = {
     validateOpeningAndLateNight,
     splitOverflowingDays,
     repairDayOpeningOrder,
+    dropUnfixableTimeViolations,
     stripLegacyLodgingAndRestStops,
     chainAllDaysPreservingOrder,
 };
