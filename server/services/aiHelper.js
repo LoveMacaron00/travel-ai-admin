@@ -13,6 +13,7 @@ const { ensureMustVisitStops, normalizePlanPlaces } = require('../utils/planPlac
 const {
     DAY_BUDGET_MINUTES,
     MAX_STOPS_PER_DAY,
+    MAX_PLAN_DAYS,
     parseStartTimeInput,
     formatClock,
     finiteCoord,
@@ -796,10 +797,14 @@ ${tripTitle ? `\n    ชื่อแผนที่ผู้ใช้ตั้�
                     primaryMode: allowedTransportModes[0] || 'car',
                 });
                 // ---- กันเที่ยวดึก: วันที่ล้นถึง ≥21:00 / เกิน 22:00 ให้ย้ายจุดที่เหลือไปวันถัดไป ----
-                // (สร้างวันใหม่สูงสุด 7 วัน วันใหม่เริ่มเช้าใหม่ — แก้เคส ถึง 23:09 / 00:45 / 03:21)
+                // (วันใหม่เริ่มเช้าใหม่ — แก้เคส ถึง 23:09 / 00:45 / 03:21)
+                // ช่วงวันที่ผู้ใช้ล็อกไว้ห้ามเกิน (auto ถึงขยายได้สูงสุด 7 วัน)
                 try {
                     const { moved, createdDays } = splitOverflowingDays(planData, {
                         startMinutes: dayStartMinutes,
+                        maxDays: !autoDays && requestedDays != null
+                            ? requestedDays
+                            : MAX_PLAN_DAYS,
                     });
                     if (moved > 0) {
                         console.warn(`[ai] split ${moved} late-night stops to next day (+${createdDays} days)`);
