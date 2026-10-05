@@ -35,6 +35,34 @@ const sanitizePlaceholderPlanImages = (planData) => {
 const MANDATORY_PLACE_TIP =
     'แผนนี้รวมสถานที่ที่ผู้ใช้เลือกไว้โดยตรง แม้ความสนใจหรือวิธีเดินทางที่เลือกจะไม่ตรงทั้งหมด โปรดตรวจสอบวิธีเดินทางจริงก่อนออกเดินทาง';
 
+// ค่าเข้าชมจริงจาก admission_fee ของ DB (ใช้ thaiAdult — แอปคิดฐานผู้ใหญ่ไทย/ทริป 1 ท่าน)
+// admission_fee เป็น {thaiAdult: "100", ...} (string) หรือ JSON string — แปลงไม่ได้คืน null
+// (null = DB ไม่มีข้อมูล ให้คงค่า AI ที่ส่งมาไว้เป็น fallback)
+const dbThaiAdultEntryCost = (admissionFee) => {
+    let fee = admissionFee;
+    if (typeof fee === 'string') {
+        const trimmed = fee.trim();
+        if (!trimmed) return null;
+        try {
+            fee = JSON.parse(trimmed);
+        } catch {
+            return null;
+        }
+    }
+    if (!fee || typeof fee !== 'object' || Array.isArray(fee)) return null;
+    const raw = fee.thaiAdult;
+    if (raw == null || String(raw).trim() === '') return null;
+    const text = String(raw).trim();
+    // ตัวเลขแรกที่เจอ ("100", "100 บาท", "100-200" ใช้ 100) — ไม่มีตัวเลขแต่บอกฟรี = 0
+    const match = text.replace(/,/g, '').match(/\d+(?:\.\d{1,2})?/);
+    if (match) {
+        const value = Number(match[0]);
+        return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+    }
+    if (/(เข้าชมฟรี|ไม่เสียค่า|ค่าเข้าชมฟรี|free)/i.test(text)) return 0;
+    return null;
+};
+
 const arrivalTimeForIndex = (index) => {
     const slots = ['09:00', '11:00', '13:30', '15:30', '17:00'];
     return slots[Math.min(Math.max(index, 0), slots.length - 1)];
@@ -219,6 +247,9 @@ const normalizePlanPlaces = (planData, places = []) => {
             if (matched.opening_hours != null && stop.openingHours == null) {
                 stop.openingHours = matched.opening_hours;
             }
+            // ค่าเข้าชมจริงจาก DB (thaiAdult) ทับค่า AI — DB ไม่มีข้อมูลคงค่า AI ไว้
+            const realEntry = dbThaiAdultEntryCost(matched.admission_fee);
+            if (realEntry != null) stop.entryCost = realEntry;
 
             const latitude = finiteNumber(matched.latitude);
             const longitude = finiteNumber(matched.longitude);

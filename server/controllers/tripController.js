@@ -10,6 +10,8 @@ const {
     parseStartTimeInput,
     chainAllDaysPreservingOrder,
     stripLegacyLodgingAndRestStops,
+    applyMealFoodCosts,
+    recomputeBudgetTotals,
 } = require('../utils/planScheduler');
 const tripRepository = require('../repositories/tripRepository');
 const { enrichMissingOpeningHours } = require('../services/openingHoursService');
@@ -23,7 +25,8 @@ const normalizeStoredPlan = (planData, places) => {
 };
 
 // ซ่อมแผนเก่าตอนเปิดดู (in-memory เท่านั้น — ไม่เขียนกลับ DB)
-// เดินโซ่เวลาใหม่ให้ตรงกับเวลาที่เก็บไว้ + เติม warnings (วันแน่น/เที่ยวดึก/นอกเวลาเปิด/ปิดทำการวันนี้)
+// เดินโซ่เวลาใหม่ให้ตรงกับเวลาที่เก็บไว้ + ค่าใช้จ่ายจริง + เติม warnings
+// (วันแน่น/เที่ยวดึก/นอกเวลาเปิด/ปิดทำการวันนี้)
 const repairStoredPlanForDisplay = async (trip, places) => {
     const planData = trip?.plan_data;
     if (!planData || !Array.isArray(planData.days)) return;
@@ -33,6 +36,13 @@ const repairStoredPlanForDisplay = async (trip, places) => {
             places: places || [],
             startDate: trip?.start_date ?? null,
         });
+        // ยอดงบคำนวณใหม่จากรายจุด (ค่าเข้าจริง DB + อาหารตามมื้อ + เดินทางตามระยะ)
+        try {
+            applyMealFoodCosts(planData);
+            recomputeBudgetTotals(planData);
+        } catch {
+            // best-effort — ล้มก็โชว์ยอดที่เก็บไว้เดิม
+        }
         if (warnings.length > 0) {
             planData.warnings = [...new Set([...(planData.warnings || []), ...warnings])];
             planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
@@ -186,6 +196,14 @@ const updateTripPlan = async (req, res) => {
                 ? { places: planPlaces, startDate: storedStartDate }
                 : { defaultStartMinutes, places: planPlaces, startDate: storedStartDate },
         );
+        // ผู้ใช้จัดลำดับเอง — เคารพลำดับ แต่ค่าใช้จ่ายคำนวณใหม่ให้เป็นค่าจริงเสมอ
+        // (เดินทางตามระยะจาก chain, อาหารตามมื้อ, ยอดรวมจากรายจุด)
+        try {
+            applyMealFoodCosts(planData);
+            recomputeBudgetTotals(planData);
+        } catch {
+            // best-effort — ล้มก็บันทึกยอดเดิม
+        }
         if (warnings.length > 0) {
             planData.warnings = [...new Set([...(planData.warnings || []), ...warnings])];
             planData.tips = Array.isArray(planData.tips) ? planData.tips : [];

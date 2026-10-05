@@ -26,9 +26,13 @@ const {
     validateOpeningAndLateNight,
                     splitOverflowingDays,
                     repairDayOpeningOrder,
+                    relocateTimeViolationsToFittingDay,
                     dropUnfixableTimeViolations,
                     applyCarFuelCosts,
+                    applyMealFoodCosts,
+                    recomputeBudgetTotals,
     normalizeThaiName,
+    buildPlacesById,
 } = require('../utils/planScheduler');
 const { config } = require('../config/env');
 const {
@@ -371,11 +375,13 @@ const regroupIslandsToMinimizeCrossings = (planData, allPlaces) => {
 // วันแรก anchor ที่ GPS ของผู้ใช้ วันถัดไป anchor ที่จุดสุดท้ายของวันก่อนหน้า
 // startMinutes คือเวลาออกเดินทาง (departure) — ส่ง origin ทุกวันให้ chainDayTimes คิดขาแรกจริง
 // แต่เวลาเริ่มนับใหม่ทุกวันตามเวลาเริ่มเดินทาง (เช่น ออก 08:30 ทุกวัน)
-const applyDeterministicSchedule = (planData, { startLat, startLng, startMinutes, startName, primaryMode }) => {
+// chainDayTimes รอเวลาเปิดให้เองเมื่อมาถึงก่อนเวลา (≤3 ชม.) จึงตรงเวลาเปิด-ปิดตั้งแต่รอบแรก
+const applyDeterministicSchedule = (planData, { startLat, startLng, startMinutes, startName, primaryMode, places = [] }) => {
     let anchorLat = finiteCoord(startLat);
     let anchorLng = finiteCoord(startLng);
     let anchorName = String(startName || '').trim() || 'จุดเริ่มต้น';
     let anchorMode = String(primaryMode || 'car').toLowerCase();
+    const placesIndex = Array.isArray(places) && places.length > 0 ? buildPlacesById(places) : null;
     for (const day of planData?.days || []) {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
         if (stops.length === 0) continue;
@@ -387,6 +393,7 @@ const applyDeterministicSchedule = (planData, { startLat, startLng, startMinutes
             day,
             startMinutes,
             hasAnchor ? { lat: anchorLat, lng: anchorLng, name: anchorName, mode: anchorMode } : undefined,
+            placesIndex,
         );
         const last = day.stops[day.stops.length - 1];
         const lastLat = finiteCoord(last?.latitude);
@@ -604,8 +611,10 @@ async function generateTripPlan(tripId, tripInput, res) {
         placeCount: places.length,
     });
     const effectiveDays = autoDays || requestedDays == null ? recommended.days : requestedDays;
-    // สัญญาณเตือนล่วงหน้า (place-first): ขาไกลสุดกินเวลากว่าครึ่งวัน หรือวันที่กำหนดน้อยกว่าที่ประเมิน
+    // สัญญาณเตือนล่วงหน้า (place-first): ขาไกลสุดกินเวลากว่าครึ่งวัน
+    // ส่วนเรื่องจำนวนวันเก็บเป็น dayCountTension ไว้ยืนยันหลังจัดตารางจริง
     const earlyWarnings = [];
+    let dayCountTension = null;
     if (farthestKm > 0) {
         const primaryMode = allowedTransportModes[0] || 'car';
         const { travelMinutes } = computeLegMinutes(farthestKm, primaryMode);
@@ -618,10 +627,12 @@ async function generateTripPlan(tripId, tripInput, res) {
         }
     }
     if (!autoDays && requestedDays != null && requestedDays < recommended.days) {
-        earlyWarnings.push(
-            `กำหนด ${requestedDays} วัน แต่อาจต้องใช้ ~${recommended.days} วัน ` +
-            `(ระยะไกลสุด ~${recommended.maxDistanceKm} กม.) — แผนอาจแน่นเกินไป`,
-        );
+        // วันที่ขอน้อยกว่าที่ตัวประเมินนับจำนวนหยาบๆ — ยังไม่เตือนตอนนี้
+        // เก็บไว้ก่อน แล้วค่อยยืนยันหลังจัดตารางจริง: ถ้าตารางจริงโล่ง
+        // (ไม่ล้นวัน/ไม่ต้องย้ายจุด/ไม่ต้องตัด/ไม่ผิดเวลา) แปลว่าประเมินผิด ไม่ต้องเตือน
+        // (เช่น ระยะไกลสุด ~0 กม. แต่ทริปจริงเที่ยวได้สบาย)
+        dayCountTension = `กำหนด ${requestedDays} วัน แต่อาจต้องใช้ ~${recommended.days} วัน ` +
+            `(ระยะไกลสุด ~${recommended.maxDistanceKm} กม.) — แผนอาจแน่นเกินไป`;
     }
 
     const placesContext = formatPlacesContext(places);
@@ -815,7 +826,7 @@ ${tripCalendarHint ? `    - ปฏิทินทริป: ${tripCalendarHint} 
                     }
                 }
                 // ---- จัดลำดับ + เดินโซ่เวลา deterministic (เขียนทับเวลาที่ AI เดามา) ----
-                // จัดลำดับจากจุดเริ่มต้นจริงแล้วเดินโซ่ ถึง→เที่ยว→ออก→เดินทาง→ถึง ต่อเนื่องทั้งวัน
+                // จัดลำดับจากจุดเริ่มต้นจริงแล้วเดินโซ่ ถึง→(รอเวลาเปิดถ้ามาก่อน)→เที่ยว→ออก→เดินทาง→ถึง ต่อเนื่องทั้งวัน
                 // วันแรก origin = GPS ผู้ใช้, วันถัดไป origin = จุดสุดท้ายของวันก่อน
                 applyDeterministicSchedule(planData, {
                     startLat: tripInput.start_latitude,
@@ -823,10 +834,13 @@ ${tripCalendarHint ? `    - ปฏิทินทริป: ${tripCalendarHint} 
                     startMinutes: dayStartMinutes,
                     startName: 'จุดเริ่มต้น',
                     primaryMode: allowedTransportModes[0] || 'car',
+                    places,
                 });
                 // ---- กันเที่ยวดึก: วันที่ล้นถึง ≥21:00 / เกิน 22:00 ให้ย้ายจุดที่เหลือไปวันถัดไป ----
                 // (วันใหม่เริ่มเช้าใหม่ — แก้เคส ถึง 23:09 / 00:45 / 03:21)
                 // ช่วงวันที่ผู้ใช้ล็อกไว้ห้ามเกิน (auto ถึงขยายได้สูงสุด 7 วัน)
+                // scheduleStrain = ตารางจริงมีอาการแน่น (ล้น/ย้าย/ตัด) ใช้ยืนยัน dayCountTension ท้ายสุด
+                let scheduleStrain = false;
                 try {
                     const { moved, createdDays } = splitOverflowingDays(planData, {
                         startMinutes: dayStartMinutes,
@@ -835,6 +849,7 @@ ${tripCalendarHint ? `    - ปฏิทินทริป: ${tripCalendarHint} 
                             : MAX_PLAN_DAYS,
                     });
                     if (moved > 0) {
+                        scheduleStrain = true;
                         console.warn(`[ai] split ${moved} late-night stops to next day (+${createdDays} days)`);
                         await tripRepository.updateTripDays(tripId, planData.days.length).catch(() => {});
                     }
@@ -867,6 +882,29 @@ ${tripCalendarHint ? `    - ปฏิทินทริป: ${tripCalendarHint} 
                 } catch (repairError) {
                     console.warn(`[ai] opening-hours repair skipped: ${repairError.message}`);
                 }
+                // ---- ย้ายจุดที่ยังหลุดไปวันอื่นที่ใส่ได้ (เช่น ตลาดเย็นไปอยู่เย็นวันที่แน่นกว่า) ----
+                // สลับในวันเดียวแก้ไม่ได้ (วันโล่งยังไงก็เช้า) — ลองทุกตำแหน่งทุกวันก่อนตัดทิ้ง
+                // must-visit ข้ามเสมอ (คงไว้ + เตือนตามกติกาเดิม)
+                try {
+                    const { moved } = relocateTimeViolationsToFittingDay(planData, places, {
+                        startLat: tripInput.start_latitude,
+                        startLng: tripInput.start_longitude,
+                        startMinutes: dayStartMinutes,
+                        primaryMode: allowedTransportModes[0] || 'car',
+                        startDate: tripInput.start_date,
+                        mustVisit: mustVisitPlaces,
+                        maxDays: !autoDays && requestedDays != null
+                            ? requestedDays
+                            : MAX_PLAN_DAYS,
+                    });
+                    if (moved > 0) {
+                        scheduleStrain = true;
+                        console.warn(`[ai] relocated ${moved} stops to fitting days`);
+                        await tripRepository.updateTripDays(tripId, planData.days.length).catch(() => {});
+                    }
+                } catch (relocateError) {
+                    console.warn(`[ai] relocate violations skipped: ${relocateError.message}`);
+                }
                 // ---- ตัดที่ AI เลือกเองแต่ยังผิดกติกาเวลาออก (must-visit คงไว้ + เตือน) ----
                 // รับประกันว่า stop ที่เหลือของ AI ไม่ก่อ warnings เวลา — วันว่างโดนทิ้งทั้งวัน
                 try {
@@ -876,11 +914,22 @@ ${tripCalendarHint ? `    - ปฏิทินทริป: ${tripCalendarHint} 
                         defaultStartMinutes: dayStartMinutes,
                     });
                     if (dropped.length > 0) {
+                        scheduleStrain = true;
                         console.warn(`[ai] dropped ${dropped.length} stops violating opening hours: ${dropped.join(', ')}`);
                         await tripRepository.updateTripDays(tripId, planData.days.length).catch(() => {});
                     }
                 } catch (dropError) {
                     console.warn(`[ai] drop violations skipped: ${dropError.message}`);
+                }
+                // ค่าอาหารตามมื้อที่ตารางเวลาครอบจริง (ล้างค่า AI เดาทิ้งทั้งหมด)
+                // เช้า 60 / กลางวัน 80 / เย็น 100 ต่อมื้อ (ดู STANDARD_MEAL_COSTS)
+                try {
+                    const { food } = applyMealFoodCosts(planData);
+                    if (food > 0) {
+                        console.warn(`[ai] applied meal food costs: ฿${food}`);
+                    }
+                } catch (mealError) {
+                    console.warn(`[ai] meal food costs skipped: ${mealError.message}`);
                 }
                 // รถยนต์ทุกคันคือรถส่วนตัว: เขียนทับขารถยนต์ทุกขา (รวมที่ AI เดามา)
                 // เป็นค่าน้ำมัน ~3 บาท/กม. จ่ายตามระยะจริง
@@ -893,12 +942,22 @@ ${tripCalendarHint ? `    - ปฏิทินทริป: ${tripCalendarHint} 
                     const fuelTip = 'ค่าเดินทางรถยนต์คิดตามค่าน้ำมันรถส่วนตัว (~3 บาท/กม.) โดยรวมทั้งวันไว้ที่จุดแรกของวันแล้ว';
                     if (!planData.tips.includes(fuelTip)) planData.tips.push(fuelTip);
                 }
+                // ยอดงบประมาณคำนวณใหม่จากรายจุดทั้งหมด (ค่าเข้าจริง DB + อาหารตามมื้อ + เดินทางตามระยะ)
+                // รับประกันยอดตรงกับรายจุดเสมอ ไม่ใช่ยอด AI เดา
+                recomputeBudgetTotals(planData);
                 const { warnings: fitWarnings } = validateDayFit(planData);
                 // ตรวจเที่ยวดึก + นอกเวลาเปิด-ปิด + ปิดทำการประจำวัน จากข้อมูล DB/เว็บจริง
                 const timeWarnings = validateOpeningAndLateNight(planData, places, {
                     startDate: tripInput.start_date,
                 });
-                const allWarnings = [...new Set([...earlyWarnings, ...fitWarnings, ...timeWarnings])];
+                // ยืนยัน dayCountTension ด้วยตารางจริง: ถ้าตารางจริงโล่ง
+                // (ไม่ล้น/ไม่ย้าย/ไม่ตัด/วันไม่เกินกรอบ/ไม่ผิดเวลา) แปลว่าวางได้พอดี ไม่ต้องเตือน
+                const verifiedEarly = [...earlyWarnings];
+                if (dayCountTension != null
+                    && (scheduleStrain || fitWarnings.length > 0 || timeWarnings.length > 0)) {
+                    verifiedEarly.push(dayCountTension);
+                }
+                const allWarnings = [...new Set([...verifiedEarly, ...fitWarnings, ...timeWarnings])];
                 if (allWarnings.length > 0) {
                     planData.warnings = allWarnings;
                     planData.tips = Array.isArray(planData.tips) ? planData.tips : [];

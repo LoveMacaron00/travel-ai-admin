@@ -29,6 +29,7 @@ const destinationSelectFields = `
     d.opening_time,
     d.closing_time,
     d.opening_hours,
+    d.admission_fee,
     d.tat_raw`;
 
 // สถานที่ approved ตามตัวกรอง (ใช้เมื่อไม่มีคำค้น) ใหม่สุดก่อน

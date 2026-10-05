@@ -5,10 +5,11 @@ const pool = require('../config/db');
 
 // สถานที่ approved สำหรับ normalize แผนที่เก็บไว้
 // รวมเวลาเปิด-ปิดด้วยเพื่อตรวจตารางเที่ยวดึก/นอกเวลาเปิด (planScheduler.validateOpeningAndLateNight)
+// และ admission_fee เพื่อ map ค่าเข้าชมจริง (thaiAdult) ทับค่า AI (planPlaceNormalizer)
 const findApprovedPlanPlaces = async (db = pool) => {
     const { rows } = await db.query(
         `SELECT id, name, image_url, latitude, longitude,
-                opening_time, closing_time, opening_hours, tat_raw
+                opening_time, closing_time, opening_hours, admission_fee, tat_raw
          FROM destinations
          WHERE status = 'approved'`,
     );

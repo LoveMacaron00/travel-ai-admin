@@ -34,6 +34,10 @@ const LATE_NIGHT_START_MINUTES = 21 * 60;
 const DAY_HARD_END_MINUTES = 22 * 60;
 const MAX_PLAN_DAYS = 7;
 
+// มาถึงก่อนเวลาเปิดให้รอได้สูงสุดกี่นาที — เกินนี้ถือว่าลำดับไม่ดี ให้ repair สลับลำดับแทน
+// (เช่น ถึง 09:08 เปิด 10:00 รอ 52 นาทีได้ แต่ถึง 09:00 เปิด 18:00 รอ 9 ชม. ไม่ควร)
+const MAX_OPENING_WAIT_MINUTES = 180;
+
 const clampDurationMinutes = (value, fallback = 90) => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -225,6 +229,19 @@ const appendRestNote = (tip, travelMinutes, restMinutes) => {
     return base ? `${base} ${note}` : note;
 };
 
+// ล้างโน้ตเวลาที่ chain เติมอัตโนมัติ (รอเวลาเปิด/พักขาเดินทาง) — ใช้ก่อนเดินโซ่ใหม่
+// กันโน้ตค้างตอนลองหลายลำดับใน repair/relocate
+const stripDynamicTimeNotes = (stop) => {
+    if (!stop || typeof stop !== 'object') return;
+    const base = String(stop.tip || '')
+        .replace(/มาถึงก่อนเวลาเปิด รอ \d+ นาที \(เปิด \d{1,2}:\d{2}\)/g, '')
+        .replace(/ขานี้เดินทางนาน ~[\d.]+ ชม\. เผื่อพักระหว่างทาง \d+ นาทีแล้ว/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    if (!base && stop.tip) stop.tip = '';
+    else if (base !== String(stop.tip || '')) stop.tip = base;
+};
+
 // จัดลำดับจุดแวะในวันนั้นแบบ greedy nearest-neighbor จากจุดเริ่มต้นจริง
 // เพื่อลดการย้อนเส้นทาง — ไม่ fix ลำดับตายตัว
 const orderStopsNearestNeighbor = (stops, startLat, startLng) => {
@@ -351,16 +368,85 @@ const applyCarFuelCosts = (planData, { startLat, startLng } = {}) => {
     return { saved };
 };
 
+// มาตรฐานค่าอาหารต่อมื้อ (บาท/ทริป 1 ท่าน) — จุดเดียวที่ปรับได้ทั้งระบบ
+// DB ไม่มีราคาอาหารรายจาน จึงใช้มาตรฐานโปร่งใสแทนค่า AI เดา:
+// เช้าครอบ 06:00–10:00 = 60, กลางวันครอบ 11:00–14:00 = 80, เย็นครอบ 17:00–21:00 = 100
+const STANDARD_MEAL_COSTS = Object.freeze({
+    breakfast: { open: 6 * 60, close: 10 * 60, cost: 60 },
+    lunch: { open: 11 * 60, close: 14 * 60, cost: 80 },
+    dinner: { open: 17 * 60, close: 21 * 60, cost: 100 },
+});
+
+// ใส่ค่าอาหารตามมื้อที่ตารางเวลาครอบจริง (mutate planData — เรียกหลังเดินโซ่เวลาแล้ว)
+// วิธี: ล้าง foodCost ทุกจุดก่อน แล้วแต่ละวันแต่ละมื้อ หยิบจุดแรกที่ช่วงเที่ยว
+// [arrival, departure) คร่อมหน้าต่างมื้อ → ลงค่ามื้อนั้นที่จุดนั้น (มื้อละครั้ง/วัน)
+// วันไหนไม่คร่อมมื้อไหนก็ไม่คิดมื้อนั้น (เช่น ครึ่งวันเช้าไม่คิดค่ามื้อเย็น)
+// คืนยอดอาหารรวมทั้งแผน
+const applyMealFoodCosts = (planData) => {
+    if (!planData || typeof planData !== 'object') return { food: 0 };
+    const days = Array.isArray(planData.days) ? planData.days : [];
+    let total = 0;
+    for (const day of days) {
+        const stops = Array.isArray(day?.stops) ? day.stops : [];
+        for (const stop of stops) {
+            if (stop && typeof stop === 'object') stop.foodCost = 0;
+        }
+        for (const meal of Object.values(STANDARD_MEAL_COSTS)) {
+            for (const stop of stops) {
+                if (!stop || typeof stop !== 'object') continue;
+                const arrival = parseClockToMinutes(stop.arrivalTime);
+                if (arrival == null) continue;
+                const departure = arrival + clampDurationMinutes(stop.durationMinutes);
+                if (arrival < meal.close && departure > meal.open) {
+                    stop.foodCost = (Number(stop.foodCost) || 0) + meal.cost;
+                    total += meal.cost;
+                    break;
+                }
+            }
+        }
+    }
+    return { food: total };
+};
+
+// คำนวณยอดงบใหม่จาก stop ทั้งหมด (mutate planData)
+// food = รวม foodCost, transport = รวม transportCost, activities = รวม entryCost
+// ใช้หลัง pipeline ค่าใช้จ่าย (meal/fuel/drop) เพื่อรับประกันยอดตรงกับรายจุดเสมอ
+const recomputeBudgetTotals = (planData) => {
+    if (!planData || typeof planData !== 'object') return { food: 0, transport: 0, activities: 0, total: 0 };
+    let food = 0;
+    let transport = 0;
+    let activities = 0;
+    for (const day of planData?.days || []) {
+        for (const stop of day?.stops || []) {
+            if (!stop || typeof stop !== 'object') continue;
+            const foodCost = Number(stop.foodCost);
+            const transportCost = Number(stop.transportCost);
+            const entryCost = Number(stop.entryCost);
+            if (Number.isFinite(foodCost) && foodCost > 0) food += foodCost;
+            if (Number.isFinite(transportCost) && transportCost > 0) transport += transportCost;
+            if (Number.isFinite(entryCost) && entryCost > 0) activities += entryCost;
+        }
+    }
+    food = Math.round(food);
+    transport = Math.round(transport);
+    activities = Math.round(activities);
+    planData.budgetBreakdown = { food, transport, activities };
+    planData.totalEstimatedCost = food + transport + activities;
+    return { food, transport, activities, total: planData.totalEstimatedCost };
+};
+
 // เดินโซ่เวลา arrivalTime ต่อเนื่องทั้งวัน (mutate day):
-// ถึง → เที่ยว durationMinutes → ออก → เดินทาง (segments นาทีจริง) → ถึงจุดถัดไป
+// ถึง → (ถ้ามาก่อนเวลาเปิดให้รอจนถึงเวลาเปิด) → เที่ยว durationMinutes → ออก → เดินทาง (segments นาทีจริง) → ถึงจุดถัดไป
 // startMinutes คือเวลาออกเดินทาง (departure) — arrival จุดแรก = start + ขาแรกจาก origin
 // origin { lat, lng, name, mode } ใช้คำนวณขาแรกจากจุดเริ่มต้นจริงเข้าจุดแรก
 // ไม่มี origin: คงพฤติกรรมเดิม arrival0 = startMinutes (ยกเว้นสาขา preservation ข้างล่าง)
-// คืนเวลาที่ใช้รวมของวัน + นาทีเดินทางรวม
-const chainDayTimes = (day, startMinutes, origin) => {
+// placesIndex (optional, จาก buildPlacesById) ใช้ lookup เวลาเปิดเมื่อ stop ไม่ได้พกมาเอง
+// คืนเวลาที่ใช้รวมของวัน + นาทีเดินทางรวม + นาทีที่รอเวลาเปิดรวม
+const chainDayTimes = (day, startMinutes, origin, placesIndex = null) => {
     const stops = Array.isArray(day?.stops) ? day.stops : [];
     let cursor = startMinutes;
     let travelTotal = 0;
+    let waitTotal = 0;
     // origin ใช้ได้เมื่อพิกัด origin ครบและจุดแรกมีพิกัดจริง
     const originLat = finiteCoord(origin?.lat ?? origin?.latitude);
     const originLng = finiteCoord(origin?.lng ?? origin?.longitude);
@@ -403,15 +489,11 @@ const chainDayTimes = (day, startMinutes, origin) => {
             const mode = String(stop.transportMode || 'car').toLowerCase();
             const { travelMinutes, restMinutes } = computeLegMinutes(km, mode);
             const legTotal = travelMinutes + restMinutes;
-            // เดิน/ปั่นจักรยานของตัวเองฟรีเสมอ — ล้างค่า AI ที่อาจใส่มา (กันยอด transport มีค่าฟรี)
+            // ค่าเดินทางคำนวณใหม่ทุกขาจากระยะทางจริงเสมอ (ไม่คงค่า AI ไว้):
+            // เดิน/ปั่นจักรยานของตัวเองฟรี, รถยนต์ค่าน้ำมัน ~3 บาท/กม.,
+            // bus 7/กม., train 12/กม., ferry 25/กม., อื่นๆ 15/กม. (ดู estimateLegCostKm)
             const isFreeMode = mode === 'walking' || mode === 'bicycle';
-            const keepCost = Number(stop.segments?.[0]?.estimatedCost);
-            // ค่า leg จริงจากระยะทาง — คงค่า AI ที่เป็นบวกไว้ ไม่เขียนทับ (กันยอดรวมร่วง)
-            const legCost = isFreeMode
-                ? 0
-                : Number.isFinite(keepCost) && keepCost > 0
-                ? keepCost
-                : estimateLegCostKm(km, mode);
+            const legCost = isFreeMode ? 0 : estimateLegCostKm(km, mode);
             stop.segments = [{
                 mode,
                 from: String(prev.place || ''),
@@ -419,22 +501,48 @@ const chainDayTimes = (day, startMinutes, origin) => {
                 estimatedMinutes: legTotal,
                 estimatedCost: legCost,
             }];
-            const existingTransport = Number(stop.transportCost);
-            stop.transportCost = isFreeMode
-                ? 0
-                : Number.isFinite(existingTransport) && existingTransport > 0
-                ? existingTransport
-                : legCost;
+            stop.transportCost = isFreeMode ? 0 : legCost;
             if (restMinutes > 0) stop.tip = appendRestNote(stop.tip, travelMinutes, restMinutes);
             cursor += legTotal;
             travelTotal += legTotal;
         }
         const duration = clampDurationMinutes(stop.durationMinutes);
         stop.durationMinutes = duration;
-        stop.arrivalTime = formatClock(cursor);
-        cursor += duration;
+        // จัดให้ตรงเวลาเปิด-ปิด: มาถึงก่อนเวลาเปิดให้รอจนถึงเวลาเปิด (ไม่ถือว่าผิด)
+        // เฉพาะกรอบวันเดียวกัน (close > open) และรอไม่เกิน MAX_OPENING_WAIT_MINUTES
+        // ข้ามคืน (close < open เช่น 18:00-02:00) ไม่รอ — ปล่อยให้ repair/validate จัดการ
+        let arrivalCandidate = cursor;
+        try {
+            const window = getStopOpeningWindow(stop, placesIndex);
+            if (window && window.open != null && window.close != null
+                && window.close !== window.open && window.close > window.open
+                && arrivalCandidate < window.open) {
+                const wait = window.open - arrivalCandidate;
+                if (wait > 0 && wait <= MAX_OPENING_WAIT_MINUTES) {
+                    cursor = window.open;
+                    arrivalCandidate = window.open;
+                    waitTotal += wait;
+                    const waitNote = `มาถึงก่อนเวลาเปิด รอ ${wait} นาที (เปิด ${formatClock(window.open)})`;
+                    // ล้างโน้ตรอเก่าออกก่อน (กันค้างตอนลองหลายลำดับใน repair)
+                    const tipBase = String(stop.tip || '')
+                        .replace(/มาถึงก่อนเวลาเปิด รอ \d+ นาที \(เปิด \d{1,2}:\d{2}\)/g, '')
+                        .replace(/\s{2,}/g, ' ')
+                        .trim();
+                    if (!tipBase.includes('ก่อนเวลาเปิด')) {
+                        stop.tip = tipBase ? `${tipBase} ${waitNote}` : waitNote;
+                    } else {
+                        // มีโน้ตรอแบบอื่นค้างอยู่แล้ว — คงไว้กันสแปม
+                        stop.tip = tipBase;
+                    }
+                }
+            }
+        } catch {
+            // best-effort — หา window ไม่ได้คงเวลาเดิม
+        }
+        stop.arrivalTime = formatClock(arrivalCandidate);
+        cursor = arrivalCandidate + duration;
     });
-    return { usedMinutes: cursor - startMinutes, travelMinutes: travelTotal };
+    return { usedMinutes: cursor - startMinutes, travelMinutes: travelTotal, waitMinutes: waitTotal };
 };
 
 // ประเมินจำนวนวันที่เหมาะสมจากสถานที่บังคับ + ระยะทางไกลสุดจากจุดเริ่มต้น
@@ -751,7 +859,9 @@ const splitOverflowingDays = (planData, {
 };
 
 // ซ่อมจุดที่หลุดเวลาเปิด-ปิดด้วยการลองสลับลำดับภายในวันเดียวกัน (mutate planData)
-// วิธี: ล้างขาเข้าเก่าทิ้ง เดินโซ่ใหม่ แล้วลองย้ายทีละจุดไปทุกตำแหน่ง นับ violation ใหม่
+// วิธี: ล้างขาเข้าเก่าทิ้ง เดินโซ่ใหม่แบบรอเวลาเปิด แล้วลองทุกคำตอบที่เป็นไปได้
+// (n ≤ 6 ลองทุก permutation ให้ตรงเวลาเปิดที่สุด + เดินทาง+รอน้อยสุด, n ใหญ่กว่านั้นลองย้ายทีละจุด)
+// chainDayTimes รอเวลาเปิดให้เองแล้ว (มาก่อนเปิด ≤3 ชม. = รอ ไม่นับว่าผิด)
 // รับเฉพาะท่าที่ลดจำนวนลงและไม่เพิ่มเที่ยวดึก — ซ่อมไม่ได้คงลำดับเดิมไว้
 // ไม่มี origin (เช่น ทริปล่วงหน้าไม่ส่งพิกัดเริ่ม) จุดแรกเริ่ม startMinutes ตรง ๆ แล้วเทียบแบบสัมพัทธ์
 // ใช้เฉพาะตอนสร้างแผน (PUT เคารพลำดับที่ผู้ใช้จัดเอง ห้ามสลับ)
@@ -772,6 +882,16 @@ const repairDayOpeningOrder = (planData, places = [], {
     let prevLng = finiteCoord(startLng);
     let prevName = 'จุดเริ่มต้น';
     let prevMode = String(primaryMode || 'car').toLowerCase();
+    // สร้างทุก permutation ของ array (n ≤ 6 เท่านั้น — เกินนั้นใช้วิธีขยับทีละจุดแทน)
+    const permute = (arr) => {
+        if (arr.length <= 1) return [arr];
+        const out = [];
+        for (let i = 0; i < arr.length; i++) {
+            const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+            for (const tail of permute(rest)) out.push([arr[i], ...tail]);
+        }
+        return out;
+    };
     for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
         const day = days[dayIndex];
         // วันที่จริงของวันนี้ (ถ้ารู้วันเริ่มทริป) — ใช้ตรวจที่ปิดทำการประจำวัน
@@ -798,53 +918,104 @@ const repairDayOpeningOrder = (planData, places = [], {
             }
         };
         if (stops.length < 2) {
+            for (const stop of stops) {
+                if (stop && typeof stop === 'object') stop.segments = [];
+            }
+            chainDayTimes(day, startMinutes, origin, index);
             advancePrev();
             continue;
         }
         // ล้างขาเข้าเก่าทิ้งก่อน — กันเวลาค้างตามลำดับเดิมกวนผลเปรียบเทียบ
         // มี origin ขาแรกคำนวณจาก origin, ไม่มี origin จุดแรกเริ่ม startMinutes ตรง ๆ
+        // (stripDynamicTimeNotes อยู่ระดับโมดูล — ล้างโน้ตรอเวลาเปิด/พักทางก่อนเดินโซ่ใหม่)
         for (const stop of stops) {
-            if (stop && typeof stop === 'object') stop.segments = [];
+            if (stop && typeof stop === 'object') {
+                stop.segments = [];
+                stripDynamicTimeNotes(stop);
+            }
         }
-        chainDayTimes(day, startMinutes, origin);
+        chainDayTimes(day, startMinutes, origin, index);
         const original = [...day.stops];
         // คะแนนรวม = หลุดเวลาเปิด + ปิดทำการวันนี้ (สลับในวันแก้วันปิดไม่ได้ แต่กันไม่ให้แย่ลง)
         const baseOpening = countDayOpeningViolations(day, index);
         const baseClosed = countDayClosedViolations(day, dayDate);
         const baseScore = baseOpening + baseClosed;
+        const baseLate = countDayLateNight(day);
+        const baseChain = { travelMinutes: 0, waitMinutes: 0 };
+        try {
+            // วัดค่าน้ำหนักเดิม (เดินทาง+รอ) ไว้เทียบ tie-break
+            const probe = [...original];
+            day.stops = probe;
+            for (const s of probe) { if (s && typeof s === 'object') { s.segments = []; stripDynamicTimeNotes(s); } }
+            const r = chainDayTimes(day, startMinutes, origin, index);
+            baseChain.travelMinutes = r.travelMinutes || 0;
+            baseChain.waitMinutes = r.waitMinutes || 0;
+            day.stops = original;
+            for (const s of original) { if (s && typeof s === 'object') { s.segments = []; stripDynamicTimeNotes(s); } }
+            chainDayTimes(day, startMinutes, origin, index);
+        } catch {
+            // best-effort
+        }
         if (baseScore === 0) {
             advancePrev();
             continue;
         }
-        const baseLate = countDayLateNight(day);
+        const scoreOf = (order) => {
+            day.stops = order;
+            for (const s of order) { if (s && typeof s === 'object') { s.segments = []; stripDynamicTimeNotes(s); } }
+            const r = chainDayTimes(day, startMinutes, origin, index);
+            const opening = countDayOpeningViolations(day, index);
+            const closed = countDayClosedViolations(day, dayDate);
+            const late = countDayLateNight(day);
+            return {
+                score: opening + closed,
+                late,
+                travel: r.travelMinutes || 0,
+                wait: r.waitMinutes || 0,
+                cost: (r.travelMinutes || 0) + (r.waitMinutes || 0),
+            };
+        };
         let best = null;
-        for (let i = 0; i < original.length && (best == null || best.score > 0); i++) {
-            for (let j = 0; j < original.length; j++) {
-                if (i === j) continue;
-                const trial = [...original];
-                const [moved] = trial.splice(i, 1);
-                trial.splice(j, 0, moved);
-                day.stops = trial;
-                chainDayTimes(day, startMinutes, origin);
-                const opening = countDayOpeningViolations(day, index);
-                const closed = countDayClosedViolations(day, dayDate);
-                const late = countDayLateNight(day);
-                // รับเฉพาะท่าที่ดีขึ้นจริงและไม่สร้างเที่ยวดึกเพิ่ม
-                if (opening + closed < baseScore && late <= baseLate
-                    && (best == null || opening + closed < best.score)) {
-                    best = { order: [...trial], score: opening + closed };
-                    if (opening + closed === 0) break;
+        let bestMetrics = null;
+        const consider = (trial, metrics) => {
+            // รับเฉพาะท่าที่ดีขึ้นจริงและไม่สร้างเที่ยวดึกเพิ่ม
+            if (metrics.score < baseScore && metrics.late <= baseLate
+                && (best == null || metrics.score < bestMetrics.score
+                    || (metrics.score === bestMetrics.score && metrics.cost < bestMetrics.cost))) {
+                best = [...trial];
+                bestMetrics = metrics;
+            }
+        };
+        if (original.length <= 6) {
+            // ลองทุก permutation — รับประกันว่าถ้ามีลำดับที่ตรงเวลาเปิดจะเจอ
+            for (const trial of permute(original)) {
+                const metrics = scoreOf(trial);
+                consider(trial, metrics);
+                if (bestMetrics && bestMetrics.score === 0 && bestMetrics.cost === 0) break;
+            }
+        } else {
+            for (let i = 0; i < original.length && (best == null || bestMetrics.score > 0); i++) {
+                for (let j = 0; j < original.length; j++) {
+                    if (i === j) continue;
+                    const trial = [...original];
+                    const [moved] = trial.splice(i, 1);
+                    trial.splice(j, 0, moved);
+                    const metrics = scoreOf(trial);
+                    consider(trial, metrics);
+                    if (bestMetrics && bestMetrics.score === 0) break;
                 }
             }
         }
         if (best != null) {
-            day.stops = best.order;
-            chainDayTimes(day, startMinutes, origin);
-            fixed += baseScore - best.score;
+            day.stops = best;
+            for (const s of best) { if (s && typeof s === 'object') { s.segments = []; stripDynamicTimeNotes(s); } }
+            chainDayTimes(day, startMinutes, origin, index);
+            fixed += baseScore - bestMetrics.score;
         } else {
-            // ซ่อมไม่ได้ — คืนลำดับเดิมแล้วเดินโซ่ใหม่ให้เวลาตรงเหมือนก่อนลอง
+            // ซ่อมไม่ได้ — คืนลำดับเดิมแล้วเดินโซ่ใหม่ให้เวลาตรงเหมือนก่อนลอง (รวมรอเวลาเปิด)
             day.stops = original;
-            chainDayTimes(day, startMinutes, origin);
+            for (const s of original) { if (s && typeof s === 'object') { s.segments = []; stripDynamicTimeNotes(s); } }
+            chainDayTimes(day, startMinutes, origin, index);
         }
         advancePrev();
     }
@@ -854,6 +1025,205 @@ const repairDayOpeningOrder = (planData, places = [], {
         if (!planData.tips.includes(note)) planData.tips.push(note);
     }
     return { fixed };
+};
+
+// ย้ายจุดที่ยังหลุดเวลาเปิด-ปิด/ปิดทำการวันนี้ไปวันอื่นที่ใส่ได้ (mutate planData)
+// ใช้หลัง repairDayOpeningOrder ก่อน dropUnfixableTimeViolations
+// (repair สลับได้แค่ในวันเดียว — ตลาดเย็นในวันโล่งสลับยังไงก็ยังเช้าเกิน)
+// วิธี: ถอดจุดที่หลุด (ยกเว้น must-visit) แล้วลองเสียบทุกตำแหน่งของวันอื่น
+// รวมวันใหม่ถ้ายังไม่เกิน maxDays — รับท่าที่ลด violation รวมทั้งแผนและไม่เพิ่มเที่ยวดึก
+// ซ่อมไม่ได้ปล่อยไว้ให้ drop ตัด (AI เลือกเอง) หรือเตือน (must-visit)
+// คืน { moved }
+const relocateTimeViolationsToFittingDay = (planData, places = [], {
+    startLat,
+    startLng,
+    startMinutes = DEFAULT_DAY_START_MINUTES,
+    primaryMode = 'car',
+    startDate = null,
+    mustVisit = [],
+    maxDays = MAX_PLAN_DAYS,
+} = {}) => {
+    if (!planData || typeof planData !== 'object') return { moved: 0 };
+    if (!Array.isArray(planData.days) || planData.days.length === 0) return { moved: 0 };
+    const index = buildPlacesById(places);
+    const mustIds = new Set();
+    const mustNames = new Set();
+    for (const place of mustVisit || []) {
+        const id = String(place?.id ?? '').trim();
+        if (id) mustIds.add(id);
+        const name = normalizeThaiName(place?.name);
+        if (name) mustNames.add(name);
+    }
+    const isMustVisit = (stop) => {
+        const id = String(stop?.destinationId ?? '').trim();
+        if (id && mustIds.has(id)) return true;
+        const name = normalizeThaiName(stop?.place);
+        return !!name && mustNames.has(name);
+    };
+    // เดินโซ่ใหม่ทุกวันโดยคงลำดับ (anchor วันถัดไป = จุดสุดท้ายวันก่อนหน้า)
+    const rechainAll = () => {
+        let aLat = finiteCoord(startLat);
+        let aLng = finiteCoord(startLng);
+        let aName = 'จุดเริ่มต้น';
+        let aMode = String(primaryMode || 'car').toLowerCase();
+        for (const day of planData.days) {
+            const stops = Array.isArray(day?.stops) ? day.stops : [];
+            for (const s of stops) {
+                if (s && typeof s === 'object') {
+                    s.segments = [];
+                    stripDynamicTimeNotes(s);
+                }
+            }
+            const hasAnchor = aLat != null && aLng != null;
+            chainDayTimes(
+                day,
+                startMinutes,
+                hasAnchor ? { lat: aLat, lng: aLng, name: aName, mode: aMode } : undefined,
+                index,
+            );
+            const last = stops[stops.length - 1];
+            const lastLat = finiteCoord(last?.latitude);
+            const lastLng = finiteCoord(last?.longitude);
+            if (lastLat != null && lastLng != null) {
+                aLat = lastLat;
+                aLng = lastLng;
+                aName = String(last?.place || '').trim() || aName;
+                aMode = String(last?.transportMode || aMode || 'car').toLowerCase();
+            } else {
+                aLat = null;
+                aLng = null;
+            }
+        }
+    };
+    // violation รวมทั้งแผน (เปิด-ปิด + ปิดทำการวันนี้) + เที่ยวดึก + ต้นทุนเดินทาง
+    const totalMetrics = () => {
+        let score = 0;
+        let late = 0;
+        let cost = 0;
+        planData.days.forEach((day, di) => {
+            const dayDate = startDate != null ? dayDateOfTrip(startDate, di) : null;
+            score += countDayOpeningViolations(day, index);
+            score += countDayClosedViolations(day, dayDate);
+            late += countDayLateNight(day);
+            for (const s of day?.stops || []) {
+                cost += Number(s?.segments?.[0]?.estimatedMinutes) || 0;
+            }
+        });
+        return { score, late, cost };
+    };
+    // จุดนี้หลุดกติกาเวลาเองไหม (ตรวจรายจุด — ใช้เลือกตัวที่จะย้าย)
+    const isStopViolating = (stop, dayDate) => {
+        if (!stop || typeof stop !== 'object') return false;
+        if (dayDate != null && !(dayDate instanceof Date && Number.isNaN(dayDate.getTime()))) {
+            const openDays = getStopOpenDays(stop);
+            if (openDays && !openDays.includes(weekdayOf(dayDate))) return true;
+        }
+        const arrival = parseClockToMinutes(stop.arrivalTime);
+        if (arrival == null) return false;
+        const duration = clampDurationMinutes(stop.durationMinutes);
+        const departure = arrival + duration;
+        if (isLateNightVisit(stop, arrival, departure)) return true;
+        const window = getStopOpeningWindow(stop, index);
+        if (window && !isWithinOpeningHours(arrival, departure, window)) return true;
+        return false;
+    };
+    const better = (candidate, best) => {
+        if (best == null) return true;
+        if (candidate.score !== best.score) return candidate.score < best.score;
+        return candidate.cost < best.cost;
+    };
+    rechainAll();
+    let base = totalMetrics();
+    if (base.score === 0) return { moved: 0 };
+    let moved = 0;
+    let guard = 0;
+    let improved = true;
+    while (improved && guard < 10 && base.score > 0) {
+        guard++;
+        improved = false;
+        let movedThisRound = false;
+        for (let di = 0; di < planData.days.length && !movedThisRound; di++) {
+            const day = planData.days[di];
+            const stops = Array.isArray(day?.stops) ? day.stops : [];
+            const dayDate = startDate != null ? dayDateOfTrip(startDate, di) : null;
+            for (let si = 0; si < stops.length && !movedThisRound; si++) {
+                const stop = stops[si];
+                if (!stop || isMustVisit(stop)) continue;
+                if (!isStopViolating(stop, dayDate)) continue;
+                const [taken] = stops.splice(si, 1);
+                let best = null;
+                // ลองเสียบทุกตำแหน่งของทุกวัน (รวมวันเดิมตำแหน่งอื่น)
+                for (let tj = 0; tj < planData.days.length; tj++) {
+                    const target = planData.days[tj].stops;
+                    for (let pos = 0; pos <= target.length; pos++) {
+                        if (tj === di && (pos === si || pos === si + 1)) continue;
+                        target.splice(pos, 0, taken);
+                        rechainAll();
+                        const metrics = totalMetrics();
+                        if (metrics.score < base.score && metrics.late <= base.late
+                            && better(metrics, best?.metrics)) {
+                            best = { dayIdx: tj, pos, metrics, isNewDay: false };
+                        }
+                        target.splice(pos, 1);
+                    }
+                }
+                // ลองวันใหม่ (ไม่เกิน maxDays)
+                if (planData.days.length < maxDays) {
+                    planData.days.push({
+                        day: planData.days.length + 1,
+                        theme: 'ต่อจากวันก่อน',
+                        stops: [taken],
+                    });
+                    rechainAll();
+                    const metrics = totalMetrics();
+                    if (metrics.score < base.score && metrics.late <= base.late
+                        && better(metrics, best?.metrics)) {
+                        best = {
+                            dayIdx: planData.days.length - 1,
+                            pos: 0,
+                            metrics,
+                            isNewDay: true,
+                        };
+                    }
+                    planData.days.pop();
+                }
+                if (best != null) {
+                    if (best.isNewDay) {
+                        planData.days.push({
+                            day: planData.days.length + 1,
+                            theme: 'ต่อจากวันก่อน',
+                            stops: [],
+                        });
+                    }
+                    planData.days[best.dayIdx].stops.splice(best.pos, 0, taken);
+                    // วันที่ต้นทางว่างเปล่าหลังย้าย — ตัดทิ้งกันวันโหว่
+                    if (stops.length === 0) {
+                        planData.days.splice(di, 1);
+                    }
+                    planData.days.forEach((d, i) => {
+                        if (d && typeof d === 'object') d.day = i + 1;
+                    });
+                    rechainAll();
+                    base = totalMetrics();
+                    moved++;
+                    improved = true;
+                    movedThisRound = true;
+                } else {
+                    // ย้ายแล้วไม่ดีขึ้น — คืนที่เดิม
+                    stops.splice(si, 0, taken);
+                    rechainAll();
+                }
+            }
+        }
+    }
+    if (moved > 0) {
+        planData.days.forEach((d, i) => { if (d && typeof d === 'object') d.day = i + 1; });
+        rechainAll();
+        planData.tips = Array.isArray(planData.tips) ? planData.tips : [];
+        const note = `ย้าย ${moved} จุดไปวันที่ตรงเวลาเปิด-ปิดของสถานที่แล้ว`;
+        if (!planData.tips.includes(note)) planData.tips.push(note);
+    }
+    return { moved };
 };
 
 // ตัด stop ที่ AI เลือกเองแต่ยังผิดกติกาเวลาออก (mutate planData)
@@ -1038,11 +1408,13 @@ const stripLegacyLodgingAndRestStops = (planData) => {
 // เดินโซ่เวลาทุกวันโดยคงลำดับเดิมทุกจุด (ใช้ตอน PUT — เคารพลำดับที่ผู้ใช้จัดเอง)
 // จุดแรก: arrival ที่เก็บไว้รวมขาแรกแล้ว จึงหักขาแรกออกเป็น departure ก่อนเดินโซ่ใหม่
 // แล้ว chainDayTimes สาขา preservation จะคงขาแรกนั้นไว้ (เวลา/ราคาไม่ขยับ)
+// มาก่อนเวลาเปิดให้รอจนถึงเวลาเปิดเหมือนกัน (ไม่สลับลำดับ) — คืน warnings ที่เหลือจริงเท่านั้น
 // คืน warnings ของวันที่แน่น + เที่ยวดึก/นอกเวลาเปิด-ปิด (ถ้าส่ง places มาจะตรวจเปิด-ปิดด้วย)
 const chainAllDaysPreservingOrder = (
     planData,
     { defaultStartMinutes = DEFAULT_DAY_START_MINUTES, dayBudgetMinutes = DAY_BUDGET_MINUTES, places = null, startDate = null } = {},
 ) => {
+    const placesIndex = places ? buildPlacesById(places) : null;
     for (const day of planData?.days || []) {
         const stops = Array.isArray(day?.stops) ? day.stops : [];
         if (stops.length === 0) continue;
@@ -1052,7 +1424,7 @@ const chainAllDaysPreservingOrder = (
         const departure = arrival0 != null && Number.isFinite(firstLegMinutes) && firstLegMinutes > 0
             ? arrival0 - firstLegMinutes
             : (arrival0 ?? defaultStartMinutes);
-        chainDayTimes(day, departure);
+        chainDayTimes(day, departure, undefined, placesIndex);
     }
     const warnings = validateDayFit(planData, { dayBudgetMinutes }).warnings;
     const timeWarnings = validateOpeningAndLateNight(planData, places || [], { startDate });
@@ -1066,6 +1438,7 @@ module.exports = {
     LATE_NIGHT_START_MINUTES,
     DAY_HARD_END_MINUTES,
     MAX_PLAN_DAYS,
+    MAX_OPENING_WAIT_MINUTES,
     LOCAL_FUEL_RATE_PER_KM,
     parseClockToMinutes,
     parseStartTimeInput,
@@ -1086,6 +1459,9 @@ module.exports = {
     estimateLegCostKm,
     estimateFuelCostKm,
     applyCarFuelCosts,
+    STANDARD_MEAL_COSTS,
+    applyMealFoodCosts,
+    recomputeBudgetTotals,
     orderStopsNearestNeighbor,
     chainDayTimes,
     estimateRecommendedDays,
@@ -1094,6 +1470,7 @@ module.exports = {
     validateOpeningAndLateNight,
     splitOverflowingDays,
     repairDayOpeningOrder,
+    relocateTimeViolationsToFittingDay,
     dropUnfixableTimeViolations,
     stripLegacyLodgingAndRestStops,
     chainAllDaysPreservingOrder,
