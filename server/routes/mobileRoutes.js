@@ -35,6 +35,8 @@ router.post('/diary', requireUserAuth, travelDiaryController.upsertEntry);
 router.delete('/diary/:externalId', requireUserAuth, travelDiaryController.deleteEntry);
 // POST /api/mobile/diary/upload — อัปโหลดรูปประกอบ diary (multipart) คืน URL รูป
 router.post('/diary/upload', requireUserAuth, upload.single('image'), travelDiaryController.uploadImage);
+// POST /api/mobile/diary/image/delete — ลบไฟล์รูป uploads ที่ถอดออกจาก entry แล้ว (ลบจริงเฉพาะไฟล์ที่ไม่มีใครอ้างอิงแล้ว)
+router.post('/diary/image/delete', requireUserAuth, travelDiaryController.deleteImage);
 // POST /api/mobile/feedback — ส่ง feedback ของผู้ใช้ถึงทีมงาน
 router.post('/feedback', requireUserAuth, feedbackController.createFeedback);
 // GET /api/mobile/feedback/my — ประวัติ feedback ที่ผู้ใช้เคยส่ง

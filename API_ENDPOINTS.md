@@ -56,8 +56,9 @@
 | GET | `/api/mobile/provinces` | `DestinationService.getProvinces` รายชื่อจังหวัด |
 | GET | `/api/mobile/diary` | `TravelDiaryService.load` โหลดบันทึก + footprint |
 | POST | `/api/mobile/diary` | `TravelDiaryService.upsert` สร้าง/อัปเดตบันทึก (upsert ด้วย `external_id`) |
-| DELETE | `/api/mobile/diary/:externalId` | `TravelDiaryService.delete` ลบบันทึก |
+| DELETE | `/api/mobile/diary/:externalId` | `TravelDiaryService.delete` ลบบันทึก + ลบไฟล์รูปใน uploads ที่ไม่มี entry ไหนอ้างอิงแล้ว |
 | POST | `/api/mobile/diary/upload` | อัปโหลดรูป diary ผ่าน `TravelDiaryService` + `MediaUploadService` |
+| POST | `/api/mobile/diary/image/delete` | `TravelDiaryService.deleteImage` ลบไฟล์รูป `{url}` ที่ถอดออกจาก entry แล้ว (ลบจริงเฉพาะไฟล์ root `/uploads/` ที่ไม่มีใครอ้างอิง — กันลบรูป TAT/preferences/chat) |
 | POST | `/api/mobile/feedback` | `FeedbackService.submitFeedback` ส่งความคิดเห็น |
 | GET | `/api/mobile/feedback/my` | `FeedbackService.getUserFeedback` ประวัติความคิดเห็นของตัวเอง |
 | POST | `/api/chat/navigation` | `ChatService.logNavigation` บันทึกการกดนำทางจากแชทไปแผนที่ |

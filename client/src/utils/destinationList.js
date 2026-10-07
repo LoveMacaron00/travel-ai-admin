@@ -1,4 +1,4 @@
-export const PAGE_SIZE = 10;
+export const PAGE_SIZE = 12;
 export const DEBOUNCE_MS = 500;
 
 // ค่า id ต้องเป็น categoryCode ที่ TAT API รองรับ ไม่ใช่ label ภาษาไทย
