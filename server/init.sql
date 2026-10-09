@@ -50,6 +50,13 @@ CREATE TABLE IF NOT EXISTS admins (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- บัญชีเริ่มต้นสำหรับเข้า Admin Dashboard (รหัสผ่านถูก hash ด้วย bcrypt)
+-- อีเมล: admin@gmail.com | รหัสผ่านเริ่มต้น: 1234
+-- เปลี่ยนรหัสผ่านทันทีหลังเข้าสู่ระบบครั้งแรกก่อนใช้งานจริง
+INSERT INTO admins (email, password)
+VALUES ('admin@gmail.com', '$2a$12$i8WvWGQK/FjRaDjxa3kg/Ol7phfZk34ouyj85hfIOcOpIjzPfmY3G')
+ON CONFLICT (email) DO NOTHING;
+
 -- users
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,

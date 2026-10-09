@@ -12,6 +12,8 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - pgvector_data:/var/lib/postgresql/data
+      # สคริปต์นี้ทำงานอัตโนมัติเมื่อสร้าง data volume เปล่าครั้งแรกเท่านั้น
+      - ./init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
     healthcheck:
       # ใช้ตัวแปรสภาพแวดล้อมภายในคอนเทนเนอร์เพื่อความ Consistency และถูกต้อง
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
